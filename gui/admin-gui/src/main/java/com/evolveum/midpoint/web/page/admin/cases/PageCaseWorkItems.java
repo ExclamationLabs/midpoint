@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2015 Evolveum
+ * Copyright (c) 2010-2018 Evolveum et al.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,47 +16,20 @@
 
 package com.evolveum.midpoint.web.page.admin.cases;
 
-import com.evolveum.midpoint.gui.api.component.MainObjectListPanel;
-import com.evolveum.midpoint.gui.api.component.ObjectListPanel;
-import com.evolveum.midpoint.gui.api.component.button.CsvDownloadButtonPanel;
-import com.evolveum.midpoint.gui.api.page.PageBase;
-import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
-import com.evolveum.midpoint.model.api.ModelAuthorizationAction;
-import com.evolveum.midpoint.prism.PrismConstants;
-import com.evolveum.midpoint.prism.PrismObject;
-import com.evolveum.midpoint.prism.query.ObjectQuery;
-import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
-import com.evolveum.midpoint.prism.query.builder.S_FilterEntryOrEmpty;
-import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
-import com.evolveum.midpoint.security.api.AuthorizationConstants;
-import com.evolveum.midpoint.util.exception.SchemaException;
-import com.evolveum.midpoint.util.exception.SecurityViolationException;
-import com.evolveum.midpoint.util.exception.SystemException;
-import com.evolveum.midpoint.util.logging.Trace;
-import com.evolveum.midpoint.util.logging.TraceManager;
-import com.evolveum.midpoint.web.component.AjaxButton;
-import com.evolveum.midpoint.web.component.AjaxIconButton;
-import com.evolveum.midpoint.web.component.DateLabelComponent;
-import com.evolveum.midpoint.web.component.data.BoxedTablePanel;
-import com.evolveum.midpoint.web.component.data.Table;
-import com.evolveum.midpoint.web.component.data.column.*;
-import com.evolveum.midpoint.web.component.form.multivalue.MultiValueChoosePanel;
-import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
-import com.evolveum.midpoint.web.page.admin.cases.dto.CaseWorkItemDto;
-import com.evolveum.midpoint.web.page.admin.cases.dto.CaseWorkItemDtoProvider;
-import com.evolveum.midpoint.web.page.admin.cases.dto.SearchingUtils;
-import com.evolveum.midpoint.web.page.admin.configuration.PageImportObject;
-import com.evolveum.midpoint.web.page.admin.dto.ObjectViewDto;
-import com.evolveum.midpoint.web.page.admin.reports.component.SingleValueChoosePanel;
-import com.evolveum.midpoint.web.security.SecurityUtils;
-import com.evolveum.midpoint.web.session.UserProfileStorage;
-import com.evolveum.midpoint.web.util.TooltipBehavior;
-import com.evolveum.midpoint.wf.util.QueryUtils;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+import java.util.function.Function;
+
+import javax.xml.datatype.XMLGregorianCalendar;
+
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.apache.wicket.AttributeModifier;
 import org.apache.wicket.Component;
-import org.apache.wicket.MarkupContainer;
 import org.apache.wicket.ajax.AjaxRequestTarget;
+import org.apache.wicket.ajax.form.OnChangeAjaxBehavior;
 import org.apache.wicket.extensions.markup.html.repeater.data.grid.ICellPopulator;
 import org.apache.wicket.extensions.markup.html.repeater.data.sort.SortOrder;
 import org.apache.wicket.extensions.markup.html.repeater.data.table.DataTable;
@@ -74,12 +47,42 @@ import org.apache.wicket.model.Model;
 import org.apache.wicket.model.PropertyModel;
 import org.apache.wicket.request.mapper.parameter.PageParameters;
 
-import javax.xml.datatype.XMLGregorianCalendar;
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.function.Function;
+import com.evolveum.midpoint.gui.api.page.PageBase;
+import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
+import com.evolveum.midpoint.model.api.ModelAuthorizationAction;
+import com.evolveum.midpoint.prism.PrismConstants;
+import com.evolveum.midpoint.prism.PrismObject;
+import com.evolveum.midpoint.prism.query.ObjectQuery;
+import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
+import com.evolveum.midpoint.prism.query.builder.S_FilterEntryOrEmpty;
+import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
+import com.evolveum.midpoint.util.exception.CommunicationException;
+import com.evolveum.midpoint.util.exception.ConfigurationException;
+import com.evolveum.midpoint.util.exception.ExpressionEvaluationException;
+import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
+import com.evolveum.midpoint.util.exception.SchemaException;
+import com.evolveum.midpoint.util.exception.SecurityViolationException;
+import com.evolveum.midpoint.util.exception.SystemException;
+import com.evolveum.midpoint.util.logging.Trace;
+import com.evolveum.midpoint.util.logging.TraceManager;
+import com.evolveum.midpoint.web.component.AjaxButton;
+import com.evolveum.midpoint.web.component.DateLabelComponent;
+import com.evolveum.midpoint.web.component.data.BoxedTablePanel;
+import com.evolveum.midpoint.web.component.data.Table;
+import com.evolveum.midpoint.web.component.data.column.LinkColumn;
+import com.evolveum.midpoint.web.component.form.multivalue.MultiValueChoosePanel;
+import com.evolveum.midpoint.web.component.input.DropDownChoicePanel;
+import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
+import com.evolveum.midpoint.web.page.admin.cases.dto.CaseWorkItemDto;
+import com.evolveum.midpoint.web.page.admin.cases.dto.CaseWorkItemDtoProvider;
+import com.evolveum.midpoint.web.page.admin.cases.dto.SearchingUtils;
+import com.evolveum.midpoint.web.page.admin.dto.ObjectViewDto;
+import com.evolveum.midpoint.web.page.admin.reports.component.SingleValueChoosePanel;
+import com.evolveum.midpoint.web.security.SecurityUtils;
+import com.evolveum.midpoint.web.session.UserProfileStorage;
+import com.evolveum.midpoint.web.util.StringResourceChoiceRenderer;
+import com.evolveum.midpoint.web.util.TooltipBehavior;
+import com.evolveum.midpoint.wf.util.QueryUtils;
 
 import static com.evolveum.midpoint.gui.api.util.WebComponentUtil.isAuthorized;
 
@@ -87,8 +90,9 @@ import static com.evolveum.midpoint.gui.api.util.WebComponentUtil.isAuthorized;
  * @author bpowers
  */
 public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
+	private static final long serialVersionUID = 1L;
 
-    private static final Trace LOGGER = TraceManager.getTrace(PageCaseWorkItems.class);
+	private static final Trace LOGGER = TraceManager.getTrace(PageCaseWorkItems.class);
 
     private static final String DOT_CLASS = PageCaseWorkItems.class.getName() + ".";
     private static final String PARAMETER_CASE_ID = "caseId";
@@ -99,12 +103,19 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
     private static final String ID_SEARCH_FILTER_RESOURCE = "filterResource";
     private static final String ID_SEARCH_FILTER_ASSIGNEE_CONTAINER = "filterAssigneeContainer";
     private static final String ID_SEARCH_FILTER_ASSIGNEE = "filterAssignee";
-    private static final String ID_SEARCH_FILTER_INCLUDE_CLOSED_CASES = "filterIncludeClosedCases";
+    private static final String ID_SEARCH_FILTER_CASES = "filterCases";
     // Data Table
     private static final String ID_CASE_WORK_ITEMS_TABLE = "caseWorkItemsTable";
     private static final String ID_BUTTON_BAR = "buttonBar";
     // Buttons
     private static final String ID_CREATE_CASE_BUTTON = "createCaseButton";
+
+    protected static final String SEARCH_FILTER_CASES_CLOSED = "closed";
+    protected static final String SEARCH_FILTER_CASES_OPEN = "open";
+	protected static final String SEARCH_FILTER_CASES_ANY = "any";
+
+	protected static final List<String> SEARCH_FILTER_CASES_VALUES = Arrays.asList(SEARCH_FILTER_CASES_OPEN,
+    SEARCH_FILTER_CASES_CLOSED, SEARCH_FILTER_CASES_ANY);
 
     private boolean all;
 
@@ -117,8 +128,9 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
     private CaseWorkItemDtoProvider createProvider() {
         CaseWorkItemDtoProvider provider = new CaseWorkItemDtoProvider(PageCaseWorkItems.this);
         try {
-            provider.setQuery(createQuery());
-        } catch (SchemaException e) {
+			provider.setQuery(createQuery());
+		} catch (SchemaException | ObjectNotFoundException | ExpressionEvaluationException | CommunicationException
+					| ConfigurationException | SecurityViolationException e) {
             // TODO handle more cleanly
             throw new SystemException("Couldn't create case work item query", e);
         }
@@ -126,7 +138,7 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         return provider;
     }
 
-    private ObjectQuery createQuery() throws SchemaException {
+    private ObjectQuery createQuery() throws SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException, SecurityViolationException {
         ObjectQuery query;
         boolean authorizedToSeeAll = isAuthorized(ModelAuthorizationAction.READ_ALL_WORK_ITEMS.getUrl());
         S_FilterEntryOrEmpty q = QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext());
@@ -139,11 +151,19 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
                     OtherPrivilegesLimitationType.F_APPROVAL_WORK_ITEMS)
                     .and().item(CaseWorkItemType.F_CLOSE_TIMESTAMP).isNull().build();
         }
-        CheckBoxPanel includeClosedCases = (CheckBoxPanel) getCaseWorkItemsSearchField(ID_SEARCH_FILTER_INCLUDE_CLOSED_CASES);
-        if (includeClosedCases == null || !includeClosedCases.getValue()) {
+
+        // State Filter
+        DropDownChoicePanel<String> filterCasesChoice = (DropDownChoicePanel<String>) getCaseWorkItemsSearchField(ID_SEARCH_FILTER_CASES);
+        //getBaseFormComponent().getModel().getObject()
+        if (filterCasesChoice == null || filterCasesChoice.getBaseFormComponent().getModelObject().equals(SEARCH_FILTER_CASES_OPEN)) {
             query.addFilter(
                 QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
-                            .item(PrismConstants.T_PARENT, CaseType.F_STATE).eq("open").build().getFilter()
+                            .item(PrismConstants.T_PARENT, CaseType.F_STATE).eq(SEARCH_FILTER_CASES_OPEN).build().getFilter()
+            );
+        } else if(filterCasesChoice.getBaseFormComponent().getModelObject().equals(SEARCH_FILTER_CASES_CLOSED)) {
+            query.addFilter(
+                QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
+                            .item(PrismConstants.T_PARENT, CaseType.F_STATE).eq(SEARCH_FILTER_CASES_CLOSED).build().getFilter()
             );
         }
 
@@ -332,7 +352,7 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         allowedClasses.add(ResourceType.class);
         MultiValueChoosePanel<ObjectType> resource = new SingleValueChoosePanel<ObjectReferenceType, ObjectType>(
                 ID_SEARCH_FILTER_RESOURCE, allowedClasses, objectReferenceTransformer,
-                new PropertyModel<ObjectReferenceType>(Model.of(new ObjectViewDto()), ObjectViewDto.F_NAME)){
+                new PropertyModel<ObjectReferenceType>(Model.of(new ObjectViewDto()), ObjectViewDto.F_NAME)) {
 
             @Override
             protected void choosePerformedHook(AjaxRequestTarget target, List<ObjectType> selected) {
@@ -353,7 +373,7 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         WebMarkupContainer assigneeContainer = new WebMarkupContainer(ID_SEARCH_FILTER_ASSIGNEE_CONTAINER);
         MultiValueChoosePanel<ObjectType> assignee = new SingleValueChoosePanel<ObjectReferenceType, ObjectType>(
                 ID_SEARCH_FILTER_ASSIGNEE, allowedClasses, objectReferenceTransformer,
-                new PropertyModel<ObjectReferenceType>(Model.of(new ObjectViewDto()), ObjectViewDto.F_NAME)){
+                new PropertyModel<ObjectReferenceType>(Model.of(new ObjectViewDto()), ObjectViewDto.F_NAME)) {
 
             @Override
             protected void choosePerformedHook(AjaxRequestTarget target, List<ObjectType> selected) {
@@ -379,14 +399,16 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         });
         searchFilterForm.add(assigneeContainer);
 
-        CheckBoxPanel includeClosedCases = new CheckBoxPanel(ID_SEARCH_FILTER_INCLUDE_CLOSED_CASES, new Model<Boolean>(false)) {
+        DropDownChoicePanel<String> filterCases = new DropDownChoicePanel<String>(ID_SEARCH_FILTER_CASES, Model.of(SEARCH_FILTER_CASES_OPEN), Model.ofList(SEARCH_FILTER_CASES_VALUES), new StringResourceChoiceRenderer("PageCaseWorkItems.search.caseState.value"));
+        filterCases.getBaseFormComponent().add(new OnChangeAjaxBehavior() {
             private static final long serialVersionUID = 1L;
 
-            public void onUpdate(AjaxRequestTarget target) {
+            @Override
+            protected void onUpdate(AjaxRequestTarget target) {
                 searchFilterPerformed(target);
             }
-        };
-        searchFilterForm.add(includeClosedCases);
+        });
+        searchFilterForm.add(filterCases);
     }
 
     private boolean isAuthorizedToSeeAllCases(){
@@ -400,7 +422,8 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         ObjectQuery query;
         try {
             query = createQuery();
-        } catch (SchemaException e) {
+        } catch (SchemaException | ObjectNotFoundException | ExpressionEvaluationException | CommunicationException
+                | ConfigurationException | SecurityViolationException e) {
             // TODO handle more cleanly
             throw new SystemException("Couldn't create case work item query", e);
         }
