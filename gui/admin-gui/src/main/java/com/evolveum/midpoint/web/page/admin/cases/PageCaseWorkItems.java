@@ -70,6 +70,7 @@ import com.evolveum.midpoint.web.component.DateLabelComponent;
 import com.evolveum.midpoint.web.component.data.BoxedTablePanel;
 import com.evolveum.midpoint.web.component.data.Table;
 import com.evolveum.midpoint.web.component.data.column.LinkColumn;
+import com.evolveum.midpoint.web.component.data.column.CheckBoxPanel;
 import com.evolveum.midpoint.web.component.form.multivalue.MultiValueChoosePanel;
 import com.evolveum.midpoint.web.component.input.DropDownChoicePanel;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
@@ -85,6 +86,7 @@ import com.evolveum.midpoint.web.util.TooltipBehavior;
 import com.evolveum.midpoint.wf.util.QueryUtils;
 
 import static com.evolveum.midpoint.gui.api.util.WebComponentUtil.isAuthorized;
+import static com.evolveum.midpoint.xml.ns._public.common.common_3.AbstractWorkItemType.F_OUTPUT;
 
 /**
  * @author bpowers
@@ -104,6 +106,7 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
     private static final String ID_SEARCH_FILTER_ASSIGNEE_CONTAINER = "filterAssigneeContainer";
     private static final String ID_SEARCH_FILTER_ASSIGNEE = "filterAssignee";
     private static final String ID_SEARCH_FILTER_CASES = "filterCases";
+    private static final String ID_SEARCH_FILTER_OUTCOME_ITEMS = "filterOutcomeItems";
     // Data Table
     private static final String ID_CASE_WORK_ITEMS_TABLE = "caseWorkItemsTable";
     private static final String ID_BUTTON_BAR = "buttonBar";
@@ -154,7 +157,6 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
 
         // State Filter
         DropDownChoicePanel<String> filterCasesChoice = (DropDownChoicePanel<String>) getCaseWorkItemsSearchField(ID_SEARCH_FILTER_CASES);
-        //getBaseFormComponent().getModel().getObject()
         if (filterCasesChoice == null || filterCasesChoice.getBaseFormComponent().getModelObject().equals(SEARCH_FILTER_CASES_OPEN)) {
             query.addFilter(
                 QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
@@ -164,6 +166,16 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
             query.addFilter(
                 QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
                             .item(PrismConstants.T_PARENT, CaseType.F_STATE).eq(SEARCH_FILTER_CASES_CLOSED).build().getFilter()
+            );
+        }
+
+        //WorkItem Outcome Filter
+        CheckBoxPanel onlyOutcomeItems = (CheckBoxPanel) getCaseWorkItemsSearchField(ID_SEARCH_FILTER_OUTCOME_ITEMS);
+        if (onlyOutcomeItems != null && onlyOutcomeItems.getValue()) {
+            query.addFilter(
+                QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
+                        .item(F_OUTPUT, AbstractWorkItemOutputType.F_OUTCOME).isNull()
+                            .build().getFilter()
             );
         }
 
@@ -399,16 +411,24 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         });
         searchFilterForm.add(assigneeContainer);
 
-        DropDownChoicePanel<String> filterCases = new DropDownChoicePanel<String>(ID_SEARCH_FILTER_CASES, Model.of(SEARCH_FILTER_CASES_OPEN), Model.ofList(SEARCH_FILTER_CASES_VALUES), new StringResourceChoiceRenderer("PageCaseWorkItems.search.caseState.value"));
+        DropDownChoicePanel<String> filterCases = new DropDownChoicePanel<String> (ID_SEARCH_FILTER_CASES, Model.of(SEARCH_FILTER_CASES_OPEN), Model.ofList(SEARCH_FILTER_CASES_VALUES), new StringResourceChoiceRenderer("PageCaseWorkItems.search.caseState.value"));
         filterCases.getBaseFormComponent().add(new OnChangeAjaxBehavior() {
-            private static final long serialVersionUID = 1L;
+			private static final long serialVersionUID = 1L;
 
-            @Override
-            protected void onUpdate(AjaxRequestTarget target) {
+			@Override
+			protected void onUpdate(AjaxRequestTarget target) {
+				searchFilterPerformed(target);
+			}
+		});
+        searchFilterForm.add(filterCases);
+
+        CheckBoxPanel onlyOutcomeItems = new CheckBoxPanel(ID_SEARCH_FILTER_OUTCOME_ITEMS, new Model<Boolean>(false)) {
+            private static final long serialVersionUID = 1L;
+            public void onUpdate(AjaxRequestTarget target) {
                 searchFilterPerformed(target);
             }
-        });
-        searchFilterForm.add(filterCases);
+        };
+        searchFilterForm.add(onlyOutcomeItems);
     }
 
     private boolean isAuthorizedToSeeAllCases(){
@@ -423,7 +443,7 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         try {
             query = createQuery();
         } catch (SchemaException | ObjectNotFoundException | ExpressionEvaluationException | CommunicationException
-                | ConfigurationException | SecurityViolationException e) {
+				| ConfigurationException | SecurityViolationException e) {
             // TODO handle more cleanly
             throw new SystemException("Couldn't create case work item query", e);
         }
