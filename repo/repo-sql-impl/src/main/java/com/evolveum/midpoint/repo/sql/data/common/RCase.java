@@ -53,6 +53,7 @@ public class RCase extends RObject<CaseType> {
 
     private RPolyString name;
     private String state;
+    private String description;
     private REmbeddedReference objectRef;
     private Set<RCaseWorkItem> workItems = new HashSet<>();
 
@@ -72,6 +73,15 @@ public class RCase extends RObject<CaseType> {
 
     public void setState(String state) {
         this.state = state;
+    }
+
+    @Column
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     @Embedded
@@ -127,6 +137,7 @@ public class RCase extends RObject<CaseType> {
 		RObject.copyFromJAXB(jaxb, repo, context, generatorResult);
         repo.setObjectRef(RUtil.jaxbRefToEmbeddedRepoRef(jaxb.getObjectRef(), context.prismContext));
         repo.setState(jaxb.getState());
+        repo.setDescription(jaxb.getDescription());
         for (CaseWorkItemType workItem : jaxb.getWorkItem()) {
             repo.getWorkItems().add(RCaseWorkItem.toRepo(repo, workItem, context));
         }
