@@ -16,8 +16,6 @@
 
 package com.evolveum.midpoint.repo.sql;
 
-import com.evolveum.midpoint.common.LoggingConfigurationManager;
-import com.evolveum.midpoint.common.ProfilingConfigurationManager;
 import com.evolveum.midpoint.common.configuration.api.MidpointConfiguration;
 import com.evolveum.midpoint.common.crypto.CryptoUtil;
 import com.evolveum.midpoint.prism.ConsistencyCheckScope;
@@ -49,9 +47,9 @@ import com.evolveum.midpoint.schema.internals.InternalMonitor;
 import com.evolveum.midpoint.schema.internals.InternalsConfig;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.result.OperationResultStatus;
+import com.evolveum.midpoint.schema.util.FocusTypeUtil;
 import com.evolveum.midpoint.schema.util.ObjectQueryUtil;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
-import com.evolveum.midpoint.schema.util.SystemConfigurationTypeUtil;
 import com.evolveum.midpoint.util.DebugUtil;
 import com.evolveum.midpoint.util.PrettyPrinter;
 import com.evolveum.midpoint.util.QNameUtil;
@@ -62,15 +60,12 @@ import com.evolveum.midpoint.util.exception.ObjectAlreadyExistsException;
 import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.exception.SecurityViolationException;
-import com.evolveum.midpoint.util.exception.SystemException;
 import com.evolveum.midpoint.util.logging.LoggingUtils;
 import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import com.evolveum.prism.xml.ns._public.query_3.SearchFilterType;
-import com.evolveum.prism.xml.ns._public.types_3.PolyStringNormalizerConfigurationType;
 import com.evolveum.prism.xml.ns._public.types_3.PolyStringType;
-import org.apache.commons.configuration.Configuration;
 import org.apache.commons.lang.Validate;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
@@ -128,6 +123,8 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
     @Autowired private MatchingRuleRegistry matchingRuleRegistry;
     @Autowired private MidpointConfiguration midpointConfiguration;
     @Autowired private PrismContext prismContext;
+    @Autowired private RelationRegistry relationRegistry;
+    @Autowired private SystemConfigurationChangeDispatcher systemConfigurationChangeDispatcher;
 
     private final ThreadLocal<List<ConflictWatcherImpl>> conflictWatchersThreadLocal = new ThreadLocal<>();
 
@@ -374,12 +371,10 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
             return;
         }
 
-        LOGGER.trace("Full query\n{}\nFull paging\n{}", new Object[]{
-                (query == null ? "undefined" : query.debugDump()),
-                (paging != null ? paging.debugDump() : "undefined")});
+        LOGGER.trace("Full query\n{}", query == null ? "undefined" : query.debugDump());
 
         if (iterative) {
-            LOGGER.trace("Iterative search by paging: {}, batch size {}",
+            LOGGER.trace("Iterative search by paging defined by the configuration: {}, batch size {}",
                     getConfiguration().isIterativeSearchByPaging(),
                     getConfiguration().getIterativeSearchByPagingBatchSize());
         }
@@ -703,8 +698,17 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
             SessionFactoryImpl sessionFactoryImpl = (SessionFactoryImpl) sessionFactory;
             // we try to override configuration which was read from sql repo configuration with
             // real configuration from session factory
-            String dialect = sessionFactoryImpl.getDialect() != null ? sessionFactoryImpl.getDialect().getClass().getName() : null;
-            details.add(new LabeledString(DETAILS_HIBERNATE_DIALECT, dialect));
+            if(sessionFactoryImpl.getDialect() != null) {
+            	for(int i =0; i<details.size(); i++) {
+            		if(details.get(i).getLabel().equals(DETAILS_HIBERNATE_DIALECT)) {
+            			details.remove(i);
+            			break;
+            		}
+            	}
+            	String dialect = sessionFactoryImpl.getDialect().getClass().getName();
+                details.add(new LabeledString(DETAILS_HIBERNATE_DIALECT, dialect));
+            }
+            
         } catch (Throwable th) {
             //nowhere to report error (no operation result available)
             session.getTransaction().rollback();
@@ -822,20 +826,37 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
 	    // against DB that does not support it, or if he requests simple paging where strictly sequential one is
 	    // indicated, we will obey (with a warning in some cases).
 	    IterationMethodType iterationMethod;
-	    IterationMethodType specificIterationMethod = GetOperationOptions.getIterationMethod(SelectorOptions.findRootOptions(options));
-        if (specificIterationMethod == null || specificIterationMethod == IterationMethodType.DEFAULT) {
+	    IterationMethodType explicitIterationMethod = GetOperationOptions.getIterationMethod(SelectorOptions.findRootOptions(options));
+        if (explicitIterationMethod == null || explicitIterationMethod == IterationMethodType.DEFAULT) {
 	        if (getConfiguration().isIterativeSearchByPaging()) {
-		        iterationMethod = strictlySequential ? IterationMethodType.STRICTLY_SEQUENTIAL_PAGING : IterationMethodType.SIMPLE_PAGING;
+		        if (strictlySequential) {
+		        	if (isCustomPagingOkWithPagedSeqIteration(query)) {
+				        iterationMethod = IterationMethodType.STRICTLY_SEQUENTIAL_PAGING;
+			        } else if (isCustomPagingOkWithFetchAllIteration(query)) {
+				        LOGGER.debug("Iterative search by paging was defined in the repository configuration, and strict sequentiality "
+						        + "was requested. However, a custom paging precludes its application. Therefore switching to "
+						        + "'fetch all' iteration method. Paging requested: " + query.getPaging());
+				        iterationMethod = IterationMethodType.FETCH_ALL;
+			        } else {
+		        		LOGGER.warn("Iterative search by paging was defined in the repository configuration, and strict sequentiality "
+						        + "was requested. However, a custom paging precludes its application and maxSize is either "
+						        + "undefined or too large (over " + getConfiguration().getMaxObjectsForImplicitFetchAllIterationMethod()
+						        + "). Therefore switching to simple paging iteration method. Paging requested: " + query.getPaging());
+				        iterationMethod = IterationMethodType.SIMPLE_PAGING;
+			        }
+		        } else {
+		        	iterationMethod = IterationMethodType.SIMPLE_PAGING;
+		        }
 	        } else {
 		        iterationMethod = IterationMethodType.SINGLE_TRANSACTION;
 	        }
         } else {
-        	iterationMethod = specificIterationMethod;
+        	iterationMethod = explicitIterationMethod;
         }
 
         if (strictlySequential && iterationMethod == IterationMethodType.SIMPLE_PAGING) {
         	LOGGER.warn("Using simple paging where strictly sequential one is indicated: type={}, query={}", type, query);
-        } else if (getConfiguration().isIterativeSearchByPaging() && specificIterationMethod == IterationMethodType.SINGLE_TRANSACTION) {
+        } else if (getConfiguration().isIterativeSearchByPaging() && explicitIterationMethod == IterationMethodType.SINGLE_TRANSACTION) {
         	// we should introduce some 'native iteration supported' flag for the DB configuration to avoid false warnings here
 	        // based on 'iterativeSearchByPaging' setting for databases that support native iteration
 	        LOGGER.warn("Using single transaction iteration where DB indicates paging should be used: type={}, query={}", type, query);
@@ -847,10 +868,26 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
         	case SINGLE_TRANSACTION: searchObjectsIterativeBySingleTransaction(type, query, handler, options, subResult); break;
         	case SIMPLE_PAGING: objectRetriever.searchObjectsIterativeByPaging(type, query, handler, options, subResult); break;
 	        case STRICTLY_SEQUENTIAL_PAGING: objectRetriever.searchObjectsIterativeByPagingStrictlySequential(type, query, handler, options, subResult); break;
+	        case FETCH_ALL: objectRetriever.searchObjectsIterativeByFetchAll(type, query, handler, options, subResult); break;
 	        default: throw new AssertionError("iterationMethod: " + iterationMethod);
         }
 	    return null;
     }
+
+	private boolean isCustomPagingOkWithFetchAllIteration(ObjectQuery query) {
+		return query != null
+				&& query.getPaging() != null
+				&& query.getPaging().getMaxSize() != null
+				&& query.getPaging().getMaxSize() <= getConfiguration().getMaxObjectsForImplicitFetchAllIterationMethod();
+	}
+
+	public static boolean isCustomPagingOkWithPagedSeqIteration(ObjectQuery query) {
+    	if (query == null || query.getPaging() == null) {
+    		return true;
+	    }
+		ObjectPaging paging = query.getPaging();
+    	return !paging.hasOrdering() && !paging.hasGrouping() && paging.getOffset() == null;
+	}
 
 	@Nullable
 	private <T extends ObjectType> SearchResultMetadata searchObjectsIterativeBySingleTransaction(Class<T> type,
@@ -1031,8 +1068,8 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
 		PrismObjectDefinition<O> objectDefinition = object.getDefinition();
 
 		// Type
-		if (specTypeQName != null && !QNameUtil.match(specTypeQName, objectDefinition.getTypeName())) {
-			if (LOGGER.isTraceEnabled()) {
+		if (specTypeQName != null && !object.canRepresent(specTypeQName)) {
+			if (logger.isTraceEnabled()) {
 				logger.trace("{} type mismatch, expected {}, was {}", 
 						logMessagePrefix, PrettyPrinter.prettyPrint(specTypeQName), PrettyPrinter.prettyPrint(objectDefinition.getTypeName()));
 			}
@@ -1042,7 +1079,7 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
 		// Subtype
 		String specSubtype = objectSelector.getSubtype();
 		if (specSubtype != null) {
-			Collection<String> actualSubtypeValues = ObjectTypeUtil.getSubtypeValues(object);
+			Collection<String> actualSubtypeValues = FocusTypeUtil.determineSubTypes(object);
 			if (!actualSubtypeValues.contains(specSubtype)) {
 				logger.trace("{} subtype mismatch, expected {}, was {}", logMessagePrefix, specSubtype, actualSubtypeValues);
 				return false;
@@ -1055,7 +1092,7 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
 			if (filterEvaluator != null) {
 				specFilter = filterEvaluator.evaluate(specFilter);
 			}
-            ObjectTypeUtil.normalizeFilter(specFilter);		//  we assume object is already normalized
+            ObjectTypeUtil.normalizeFilter(specFilter, relationRegistry);		//  we assume object is already normalized
             if (specFilter != null) {
 				ObjectQueryUtil.assertPropertyOnly(specFilter, logMessagePrefix + " filter is not property-only filter");
 			}
@@ -1073,7 +1110,7 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
 		// Org
 		if (specOrgRef != null) {
 			if (!isDescendant(object, specOrgRef.getOid())) {
-				LOGGER.trace("{} object OID {} (org={})",
+				logger.trace("{} object OID {} (org={})",
 						logMessagePrefix, object.getOid(), specOrgRef.getOid());
 				return false;
 			}
@@ -1120,56 +1157,17 @@ public class SqlRepositoryServiceImpl extends SqlBaseService implements Reposito
 		fullTextSearchConfiguration = fullTextSearch;
 	}
 
-	@Override
+    @Override
 	public FullTextSearchConfigurationType getFullTextSearchConfiguration() {
 		return fullTextSearchConfiguration;
 	}
 
 	@Override
 	public void postInit(OperationResult result) throws SchemaException {
-
-		SystemConfigurationType systemConfiguration;
-		try {
-			systemConfiguration = getObject(SystemConfigurationType.class,
-					SystemObjectsType.SYSTEM_CONFIGURATION.value(), null, result).asObjectable();
-		} catch (ObjectNotFoundException e) {
-			// ok, no problem e.g. for tests or initial startup
-			result.muteLastSubresultError();
-			LOGGER.debug("System configuration not found, exiting postInit method.");
-			return;
-		}
-
-		Configuration systemConfigFromFile = midpointConfiguration.getConfiguration(MidpointConfiguration.SYSTEM_CONFIGURATION_SECTION);
-		if (systemConfigFromFile != null && systemConfigFromFile
-				.getBoolean(LoggingConfigurationManager.SYSTEM_CONFIGURATION_SKIP_REPOSITORY_LOGGING_SETTINGS, false)) {
-			LOGGER.warn("Skipping application of repository logging configuration because {}=true", LoggingConfigurationManager.SYSTEM_CONFIGURATION_SKIP_REPOSITORY_LOGGING_SETTINGS);
-		} else {
-			LoggingConfigurationType loggingConfig = ProfilingConfigurationManager.checkSystemProfilingConfiguration(
-					systemConfiguration.asPrismObject());
-			if (loggingConfig != null) {
-				LoggingConfigurationManager.configure(loggingConfig, systemConfiguration.getVersion(), result);
-			}
-		}
-		applyFullTextSearchConfiguration(systemConfiguration.getFullTextSearch());
-        SystemConfigurationTypeUtil.applyOperationResultHandling(systemConfiguration);
-        applyPrismConfiguration(systemConfiguration);
+        LOGGER.debug("Executing repository postInit method");
+        systemConfigurationChangeDispatcher.dispatch(true, true, result);
 	}
 	
-	 private void applyPrismConfiguration(SystemConfigurationType configType) {
-	    	PolyStringNormalizerConfigurationType normalizerConfig = null;
-			InternalsConfigurationType internals = configType.getInternals();
-			if (internals != null) {
-				normalizerConfig = internals.getPolyStringNormalizer();
-			}
-			try {
-				prismContext.configurePolyStringNormalizer(normalizerConfig);
-				LOGGER.trace("Applied PolyString normalizer configuration {}", DebugUtil.shortDumpLazily(normalizerConfig));
-			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
-				LOGGER.error("Error applying polystring normalizer configuration: "+e.getMessage(), e);
-				throw new SystemException("Error applying polystring normalizer configuration: "+e.getMessage(), e);
-			}
-		}
-
     @Override
     public ConflictWatcher createAndRegisterConflictWatcher(String oid) {
 	    List<ConflictWatcherImpl> watchers = conflictWatchersThreadLocal.get();

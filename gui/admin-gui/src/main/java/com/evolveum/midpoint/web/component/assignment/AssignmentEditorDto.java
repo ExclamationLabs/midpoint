@@ -17,18 +17,16 @@
 package com.evolveum.midpoint.web.component.assignment;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 
 import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.common.refinery.RefinedResourceSchemaImpl;
 import com.evolveum.midpoint.prism.*;
 import com.evolveum.midpoint.prism.path.ItemPath;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
-import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
+import com.evolveum.midpoint.util.QNameUtil;
 import com.evolveum.midpoint.web.page.admin.users.component.AssignmentInfoDto;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import com.evolveum.prism.xml.ns._public.types_3.PolyStringType;
@@ -42,7 +40,6 @@ import com.evolveum.midpoint.gui.api.page.PageBase;
 import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.gui.api.util.WebModelServiceUtils;
 import com.evolveum.midpoint.prism.util.ItemPathUtil;
-import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.exception.SchemaException;
@@ -68,6 +65,7 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 	private static final String OPERATION_LOAD_RESOURCE = DOT_CLASS + "loadResource";
 	private static final String OPERATION_LOAD_REFERENCE_OBJECT = DOT_CLASS + "loadReferenceObject";
 	private static final String OPERATION_LOAD_ATTRIBUTES = DOT_CLASS + "loadAttributes";
+	private static final String OPERATION_LOAD_RELATION_DEFINITIONS = DOT_CLASS + "loadRelationDefinitions";
 
 	public static final String F_TYPE = "type";
 	public static final String F_NAME = "name";
@@ -97,7 +95,7 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 
 	private boolean isAlreadyAssigned = false;		//used only for role request functionality
 	private AssignmentConstraintsType defualtAssignmentConstraints;				//used only for role request functionality
-	private List<RelationTypes> assignedRelationsList = new ArrayList<>(); //used only for role request functionalityp
+	private List<QName> assignedRelationsList = new ArrayList<>(); //used only for role request functionalityp
 
 	private Boolean isOrgUnitManager = Boolean.FALSE;
 	private AssignmentType newAssignment;
@@ -148,7 +146,7 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 		this.altName = getAlternativeName(assignment);
 
 		this.attributes = prepareAssignmentAttributes(assignment, pageBase);
-		this.isOrgUnitManager = determineUserOrgRelation(assignment);
+		this.isOrgUnitManager = isOrgUnitManager(assignment);
 		this.privilegeLimitationList = getAssignmentPrivilegesList(assignment);
 	}
 
@@ -164,7 +162,7 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 																	 PageBase pageBase, UserType delegationOwner) {
 		AssignmentEditorDto dto = createDtoFromObject(object, UserDtoStatus.ADD, relation, pageBase);
 		dto.setDelegationOwner(delegationOwner);
-		if (SchemaConstants.ORG_DEPUTY.equals(relation)){
+		if (pageBase.getRelationRegistry().isDelegation(relation)) {
 			OtherPrivilegesLimitationType limitations = new OtherPrivilegesLimitationType();
 
 			WorkItemSelectorType approvalWorkItemSelector = new WorkItemSelectorType();
@@ -245,18 +243,11 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 		}
 		return list;
 	}
-	private Boolean determineUserOrgRelation(AssignmentType assignment) {
-
-		if (assignment == null || assignment.getTargetRef() == null
-				|| ObjectTypeUtil.isDefaultRelation(assignment.getTargetRef().getRelation())) {
-			return Boolean.FALSE;
-		}
-
-		if (ObjectTypeUtil.isManagerRelation(assignment.getTargetRef().getRelation())) {
-			return Boolean.TRUE;
-		}
-
-		return Boolean.FALSE;
+	private boolean isOrgUnitManager(AssignmentType assignment) {
+		RelationRegistry relationRegistry = pageBase.getRelationRegistry();
+		return assignment != null
+				&& assignment.getTargetRef() != null
+				&& relationRegistry.isManager(assignment.getTargetRef().getRelation());
 	}
 
 	private List<ACAttributeDto> prepareAssignmentAttributes(AssignmentType assignment, PageBase pageBase) {
@@ -439,7 +430,9 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 		}
 
 		if (assignment.getTargetRef() != null && assignment.getTargetRef().getRelation() != null) {
-			sb.append(" - "  + RelationTypes.getRelationType(assignment.getTargetRef().getRelation()).getHeaderLabel());
+			String relationName = pageBase
+					.getString(WebComponentUtil.getRelationHeaderLabelKey(assignment.getTargetRef().getRelation()));
+			sb.append(" - ").append(relationName);
 		}
 
 		return sb.toString();
@@ -727,11 +720,11 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 		this.defualtAssignmentConstraints = defualtAssignmentConstraints;
 	}
 
-	public List<RelationTypes> getAssignedRelationsList() {
+	public List<QName> getAssignedRelationsList() {
 		return assignedRelationsList;
 	}
 
-	public void setAssignedRelationsList(List<RelationTypes> assignedRelationsList) {
+	public void setAssignedRelationsList(List<QName> assignedRelationsList) {
 		this.assignedRelationsList = assignedRelationsList;
 	}
 
@@ -791,17 +784,23 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 		this.delegationOwner = delegationOwner;
 	}
 
-	public List<RelationTypes> getNotAssignedRelationsList(){
-		List<RelationTypes> relations = new ArrayList<>(Arrays.asList(RelationTypes.values()));
-		if (getAssignedRelationsList() == null || getAssignedRelationsList().size() == 0){
-			return relations;
+	public List<QName> getNotAssignedRelationsList(){
+		List<QName> availableRelations = WebComponentUtil.getCategoryRelationChoices(AreaCategoryType.ADMINISTRATION, pageBase);
+		List<QName> assignedRelationsList = getAssignedRelationsList();
+		if (assignedRelationsList == null || assignedRelationsList.size() == 0){
+			return availableRelations;
 		}
-		for (RelationTypes relation : getAssignedRelationsList()){
-			if (relations.contains(relation)){
-				relations.remove(relation);
+		for (QName assignedRelation : assignedRelationsList){
+			Iterator<QName> availableRelationsIterator = availableRelations.iterator();
+			while (availableRelationsIterator.hasNext()){
+				QName rel = availableRelationsIterator.next();
+				if (QNameUtil.match(assignedRelation, rel)){
+					availableRelationsIterator.remove();
+					break;
+				}
 			}
 		}
-		return relations;
+		return availableRelations;
 	}
 
 	public boolean isAssignable() {
@@ -814,15 +813,13 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 		if (defualtAssignmentConstraints.isAllowSameTarget() && defualtAssignmentConstraints.isAllowSameRelation()){
 			return true;
 		}
+		List<QName> availableRelations = WebComponentUtil.getCategoryRelationChoices(AreaCategoryType.ADMINISTRATION, pageBase);
+		int relationsListSize = availableRelations == null ? 0 : availableRelations.size();
 		if (defualtAssignmentConstraints.isAllowSameTarget() && !defualtAssignmentConstraints.isAllowSameRelation()
-				&& getAssignedRelationsList().size() < RelationTypes.values().length){
+				&& getAssignedRelationsList().size() < relationsListSize){
 			return true;
 		}
-		if (!defualtAssignmentConstraints.isAllowSameTarget() && defualtAssignmentConstraints.isAllowSameRelation()
-				&& getAssignedRelationsList().size() < RelationTypes.values().length){
-			return true;
-		}
-		if (!defualtAssignmentConstraints.isAllowSameTarget() && !defualtAssignmentConstraints.isAllowSameRelation()){
+		if (!defualtAssignmentConstraints.isAllowSameTarget()){
 			return false;
 		}
 		return false;
@@ -848,18 +845,18 @@ public class AssignmentEditorDto extends SelectableBean implements Comparable<As
 		return false;
 	}
 
-	public void setDefaultRelation(){
-		if (getTargetRef() == null){
-			return;
-		}
-		if (!getAssignedRelationsList().contains(RelationTypes.MEMBER)){
-			getTargetRef().setRelation(SchemaConstants.ORG_DEFAULT);
-		}
-		List<RelationTypes> availableRelations = getNotAssignedRelationsList();
-		if (availableRelations.size() > 0){
-			getTargetRef().setRelation(availableRelations.get(0).getRelation());
-		}
-	}
+//	public void setDefaultRelation(){
+//		if (getTargetRef() == null){
+//			return;
+//		}
+//		if (!getAssignedRelationsList().contains(RelationTypes.MEMBER)){
+//			getTargetRef().setRelation(SchemaConstants.ORG_DEFAULT);
+//		}
+//		List<RelationTypes> availableRelations = getNotAssignedRelationsList();
+//		if (availableRelations.size() > 0){
+//			getTargetRef().setRelation(availableRelations.get(0).getRelation());
+//		}
+//	}
 
 	public OtherPrivilegesLimitationType getPrivilegesLimitation() {
 		return newAssignment.getLimitOtherPrivileges();

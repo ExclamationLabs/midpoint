@@ -17,8 +17,11 @@ package com.evolveum.midpoint.model.impl.controller;
 
 import com.evolveum.midpoint.common.crypto.CryptoUtil;
 import com.evolveum.midpoint.model.api.ModelAuthorizationAction;
+import com.evolveum.midpoint.model.api.ModelExecuteOptions;
 import com.evolveum.midpoint.model.api.util.ModelUtils;
 import com.evolveum.midpoint.model.common.SystemObjectCache;
+import com.evolveum.midpoint.model.impl.lens.LensContext;
+import com.evolveum.midpoint.model.impl.lens.LensFocusContext;
 import com.evolveum.midpoint.prism.*;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.prism.path.ItemPath;
@@ -28,6 +31,7 @@ import com.evolveum.midpoint.schema.DefinitionProcessingOption;
 import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.SearchResultList;
 import com.evolveum.midpoint.schema.SelectorOptions;
+import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.internals.InternalsConfig;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.MiscSchemaUtil;
@@ -182,28 +186,14 @@ public class SchemaTransformer {
 			Collection<SelectorOptions<GetOperationOptions>> options,
 			AuthorizationPhaseType phase, Task task, OperationResult parentResult)
 					throws SchemaException, SecurityViolationException, ConfigurationException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException {
-		LOGGER.trace("applySchemasAndSecurity starting");
+		LOGGER.trace("applySchemasAndSecurity({}) starting", object);
     	OperationResult result = parentResult.createMinorSubresult(SchemaTransformer.class.getName()+".applySchemasAndSecurity");
     	authorizeOptions(rootOptions, object, null, phase, task, result);
     	validateObject(object, rootOptions, result);
 
+    	ObjectSecurityConstraints securityConstraints = compileSecurityConstraints(object, task, result);
     	PrismObjectDefinition<O> objectDefinition = object.deepCloneDefinition(true, this::setFullAccessFlags);
-
-    	ObjectSecurityConstraints securityConstraints;
-    	try {
-	    	securityConstraints = securityEnforcer.compileSecurityConstraints(object, null, task, result);
-			if (LOGGER.isTraceEnabled()) {
-				LOGGER.trace("Security constraints for {}:\n{}", object, securityConstraints==null?"null":securityConstraints.debugDump());
-			}
-			if (securityConstraints == null) {
-				SecurityUtil.logSecurityDeny(object, "because no security constraints are defined (default deny)");
-				throw new AuthorizationException("Access denied");
-			}
-    	} catch (SecurityViolationException | SchemaException | RuntimeException e) {
-			result.recordFatalError(e);
-			throw e;
-		}
-
+    	
     	if (phase == null) {
     		if (!GetOperationOptions.isExecutionPhase(rootOptions)) {
     			applySchemasAndSecurityPhase(object, securityConstraints, objectDefinition, rootOptions, AuthorizationPhaseType.REQUEST, task, result);
@@ -247,6 +237,55 @@ public class SchemaTransformer {
 		LOGGER.trace("applySchemasAndSecurity finishing");			// to allow folding in log viewer
     }
 	
+	public <O extends ObjectType> void applySchemasAndSecurity(LensContext<O> context,
+			AuthorizationPhaseType phase, Task task, OperationResult parentResult) throws SecurityViolationException, SchemaException, ConfigurationException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException {
+		LOGGER.trace("applySchemasAndSecurity({}) starting", context);
+    	LensFocusContext<O> focusContext = context.getFocusContext();
+    	if (focusContext == null) {
+    		return; 
+    	}
+    	OperationResult result = parentResult.createMinorSubresult(SchemaTransformer.class.getName()+".applySchemasAndSecurity");
+    	
+    	try {
+	    	PrismObject<O> object = focusContext.getObjectAny();
+	    	GetOperationOptions getOptions = ModelExecuteOptions.toGetOperationOptions(context.getOptions());
+	    	authorizeOptions(getOptions, object, null, phase, task, result);
+	    	
+	    	ObjectSecurityConstraints securityConstraints = compileSecurityConstraints(object, task, result);
+	    	// TODO: object definition? Do we really need to apply security to that?
+	    	
+	    	AuthorizationDecisionType globalReadDecision = securityConstraints.findAllItemsDecision(ModelAuthorizationAction.AUTZ_ACTIONS_URLS_GET, phase);
+			if (globalReadDecision == AuthorizationDecisionType.DENY) {
+				// shortcut
+				SecurityUtil.logSecurityDeny(object, "because the authorization denies access");
+				throw new AuthorizationException("Access denied");
+			}
+	
+			AuthorizationDecisionType globalAddDecision = securityConstraints.findAllItemsDecision(ModelAuthorizationAction.ADD.getUrl(), phase);
+			AuthorizationDecisionType globalModifyDecision = securityConstraints.findAllItemsDecision(ModelAuthorizationAction.MODIFY.getUrl(), phase);
+	
+			focusContext.forEachObject(focusObject -> 
+				applySecurityConstraints(focusObject.getValue().getItems(), securityConstraints, globalReadDecision,
+					globalAddDecision, globalModifyDecision, phase));
+	
+			AuthorizationDecisionType assignmentDecision = securityConstraints.findItemDecision(SchemaConstants.PATH_ASSIGNMENT, ModelAuthorizationAction.AUTZ_ACTIONS_URLS_GET, phase);
+			if (!AuthorizationDecisionType.ALLOW.equals(assignmentDecision)) {
+				context.setEvaluatedAssignmentTriple(null);
+			}
+			
+			// TODO: process projections?
+			
+			result.computeStatus();
+			result.recordSuccessIfUnknown();
+			
+    	} catch (Throwable e) {
+    		result.recordFatalError(e);
+    		throw e;
+    	}
+    	
+		LOGGER.trace("applySchemasAndSecurity finishing");			// to allow folding in log viewer
+	}
+	
 	public void setFullAccessFlags(ItemDefinition<?> itemDef) {		
 		itemDef.setCanRead(true);
 		itemDef.setCanAdd(true);
@@ -258,15 +297,15 @@ public class SchemaTransformer {
 					throws SchemaException, SecurityViolationException, ConfigurationException, ObjectNotFoundException {
 		Validate.notNull(phase);
 		try {
-			AuthorizationDecisionType globalReadDecision = securityConstraints.getActionDecision(ModelAuthorizationAction.READ.getUrl(), phase);
+			AuthorizationDecisionType globalReadDecision = securityConstraints.findAllItemsDecision(ModelAuthorizationAction.AUTZ_ACTIONS_URLS_GET, phase);
 			if (globalReadDecision == AuthorizationDecisionType.DENY) {
 				// shortcut
 				SecurityUtil.logSecurityDeny(object, "because the authorization denies access");
 				throw new AuthorizationException("Access denied");
 			}
 
-			AuthorizationDecisionType globalAddDecision = securityConstraints.getActionDecision(ModelAuthorizationAction.ADD.getUrl(), phase);
-			AuthorizationDecisionType globalModifyDecision = securityConstraints.getActionDecision(ModelAuthorizationAction.MODIFY.getUrl(), phase);
+			AuthorizationDecisionType globalAddDecision = securityConstraints.findAllItemsDecision(ModelAuthorizationAction.ADD.getUrl(), phase);
+			AuthorizationDecisionType globalModifyDecision = securityConstraints.findAllItemsDecision(ModelAuthorizationAction.MODIFY.getUrl(), phase);
 			applySecurityConstraints(object.getValue().getItems(), securityConstraints, globalReadDecision,
 					globalAddDecision, globalModifyDecision, phase);
 			if (object.isEmpty()) {
@@ -277,6 +316,23 @@ public class SchemaTransformer {
 
 			applySecurityConstraintsItemDef(objectDefinition, new IdentityHashMap<>(), ItemPath.EMPTY_PATH, securityConstraints, globalReadDecision, globalAddDecision, globalModifyDecision, phase);
 		} catch (SecurityViolationException | RuntimeException e) {
+			result.recordFatalError(e);
+			throw e;
+		}
+	}
+	
+	private <O extends ObjectType> ObjectSecurityConstraints compileSecurityConstraints(PrismObject<O> object, Task task, OperationResult result) throws SecurityViolationException, SchemaException, ConfigurationException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException {
+    	try {
+    		ObjectSecurityConstraints securityConstraints = securityEnforcer.compileSecurityConstraints(object, null, task, result);
+			if (LOGGER.isTraceEnabled()) {
+				LOGGER.trace("Security constraints for {}:\n{}", object, securityConstraints==null?"null":securityConstraints.debugDump());
+			}
+			if (securityConstraints == null) {
+				SecurityUtil.logSecurityDeny(object, "because no security constraints are defined (default deny)");
+				throw new AuthorizationException("Access denied");
+			}
+			return securityConstraints;
+    	} catch (Throwable e) {
 			result.recordFatalError(e);
 			throw e;
 		}
@@ -300,9 +356,9 @@ public class SchemaTransformer {
 				continue;
 			}
 			ItemPath nameOnlyItemPath = itemPath.namedSegmentsOnly();
-			AuthorizationDecisionType itemReadDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.READ.getUrl(), defaultReadDecision, phase);
-			AuthorizationDecisionType itemAddDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.ADD.getUrl(), defaultReadDecision, phase);
-			AuthorizationDecisionType itemModifyDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.MODIFY.getUrl(), defaultReadDecision, phase);
+			AuthorizationDecisionType itemReadDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.AUTZ_ACTIONS_URLS_GET, defaultReadDecision, phase);
+			AuthorizationDecisionType itemAddDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.AUTZ_ACTIONS_URLS_ADD, defaultReadDecision, phase);
+			AuthorizationDecisionType itemModifyDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.AUTZ_ACTIONS_URLS_MODIFY, defaultReadDecision, phase);
 			LOGGER.trace("applySecurityConstraints(item): {}: decisions R={}, A={}, M={}",
 					itemPath, itemReadDecision, itemAddDecision, itemModifyDecision);
 			if (itemDef != null) {
@@ -380,9 +436,9 @@ public class SchemaTransformer {
 		boolean thisWasSeen = definitionsSeen.containsKey(itemDefinition);
 		definitionsSeen.put(itemDefinition, null);
 
-		AuthorizationDecisionType readDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.READ.getUrl(), defaultReadDecision, phase);
-		AuthorizationDecisionType addDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.ADD.getUrl(), defaultAddDecision, phase);
-		AuthorizationDecisionType modifyDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.MODIFY.getUrl(), defaultModifyDecision, phase);
+		AuthorizationDecisionType readDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.AUTZ_ACTIONS_URLS_GET, defaultReadDecision, phase);
+		AuthorizationDecisionType addDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.AUTZ_ACTIONS_URLS_ADD, defaultAddDecision, phase);
+		AuthorizationDecisionType modifyDecision = computeItemDecision(securityConstraints, nameOnlyItemPath, ModelAuthorizationAction.AUTZ_ACTIONS_URLS_MODIFY, defaultModifyDecision, phase);
 
 		boolean anySubElementRead = false;
 		boolean anySubElementAdd = false;
@@ -436,9 +492,9 @@ public class SchemaTransformer {
 		}
 	}
 
-    public AuthorizationDecisionType computeItemDecision(ObjectSecurityConstraints securityConstraints, ItemPath nameOnlyItemPath, String actionUrl,
+    public AuthorizationDecisionType computeItemDecision(ObjectSecurityConstraints securityConstraints, ItemPath nameOnlyItemPath, String[] actionUrls,
 			AuthorizationDecisionType defaultDecision, AuthorizationPhaseType phase) {
-    	AuthorizationDecisionType explicitDecision = securityConstraints.findItemDecision(nameOnlyItemPath, actionUrl, phase);
+    	AuthorizationDecisionType explicitDecision = securityConstraints.findItemDecision(nameOnlyItemPath, actionUrls, phase);
 //    	LOGGER.trace("Explicit decision for {} ({} {}): {}", nameOnlyItemPath, actionUrl, phase, explicitDecision);
     	if (explicitDecision != null) {
     		return explicitDecision;
@@ -605,6 +661,11 @@ public class SchemaTransformer {
 		if (valueEnumerationRef != null) {
 			PrismReferenceValue valueEnumerationRVal = MiscSchemaUtil.objectReferenceTypeToReferenceValue(valueEnumerationRef);
 			((ItemDefinitionImpl) itemDef).setValueEnumerationRef(valueEnumerationRVal);
+		}
+		
+		FormItemValidationType templateValidation = templateItemDefType.getValidation();
+		if (templateValidation != null) {
+			itemDef.setAnnotation(ItemRefinedDefinitionType.F_VALIDATION, templateValidation.clone());
 		}
 	}
 

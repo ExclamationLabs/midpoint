@@ -27,7 +27,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import com.evolveum.midpoint.common.Clock;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.model.api.hooks.HookOperationMode;
 import com.evolveum.midpoint.model.impl.lens.projector.ComplexConstructionConsumer;
 import com.evolveum.midpoint.model.impl.lens.projector.ConstructionProcessor;
@@ -41,12 +41,12 @@ import com.evolveum.midpoint.prism.delta.DeltaMapTriple;
 import com.evolveum.midpoint.prism.delta.DeltaSetTriple;
 import com.evolveum.midpoint.prism.delta.ItemDelta;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.repo.api.PreconditionViolationException;
 import com.evolveum.midpoint.repo.api.RepositoryService;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.FocusTypeUtil;
 import com.evolveum.midpoint.schema.util.MiscSchemaUtil;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.DebugUtil;
 import com.evolveum.midpoint.util.HumanReadableDescribable;
@@ -87,6 +87,7 @@ public class PersonaProcessor {
 	private ObjectTemplateProcessor objectTemplateProcessor;
 
 	@Autowired(required=true)
+	@Qualifier("modelObjectResolver")
     private ObjectResolver objectResolver;
 
 	@Autowired
@@ -222,7 +223,7 @@ public class PersonaProcessor {
 	}
 
 
-	public <F extends FocusType> List<FocusType> readExistingPersonas(LensContext<F> context, Task task, OperationResult result) {
+	public <F extends FocusType> List<FocusType> readExistingPersonas(LensContext<F> context, Task task, OperationResult result) throws CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 		LensFocusContext<F> focusContext = context.getFocusContext();
 		PrismObject<F> focus = focusContext.getObjectNew();
 
@@ -301,7 +302,7 @@ public class PersonaProcessor {
 
 		LOGGER.trace("Creating persona:\n{}", target.debugDumpLazily());
 
-		executePersonaDelta(targetDelta, task, result);
+		executePersonaDelta(targetDelta, focus.getOid(), task, result);
 
 		link(context, target.asObjectable(), result);
 	}
@@ -332,7 +333,7 @@ public class PersonaProcessor {
 			targetDelta.addModification(itemDelta);
 		}
 
-		executePersonaDelta(targetDelta, task, result);
+		executePersonaDelta(targetDelta, focus.getOid(), task, result);
 	}
 
 	public <F extends FocusType> void personaDelete(LensContext<F> context, PersonaKey key, FocusType existingPersona, 
@@ -343,7 +344,7 @@ public class PersonaProcessor {
 		LOGGER.debug("Deleting persona {} for {}: {}", key, focus, existingPersona);
 		ObjectDelta<? extends FocusType> targetDelta = existingPersona.asPrismObject().createDeleteDelta();
 
-		executePersonaDelta(targetDelta, task, result);
+		executePersonaDelta(targetDelta, focus.getOid(), task, result);
 
 		unlink(context, existingPersona, result);
 	}
@@ -368,7 +369,7 @@ public class PersonaProcessor {
 		repositoryService.modifyObject(delta.getObjectTypeClass(), delta.getOid(), delta.getModifications(), result);
 	}
 
-	private <O extends ObjectType> void executePersonaDelta(ObjectDelta<O> delta, Task task, OperationResult result) 
+	private <O extends ObjectType> void executePersonaDelta(ObjectDelta<O> delta, String ownerOid, Task task, OperationResult result) 
 			throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException, 
 			PolicyViolationException, ExpressionEvaluationException, ObjectAlreadyExistsException, SecurityViolationException, PreconditionViolationException {
 		Collection<ObjectDelta<? extends ObjectType>> deltas = MiscSchemaUtil.createCollection(delta);
@@ -376,6 +377,7 @@ public class PersonaProcessor {
 		// Persona changes are all "secondary" changes, trigerred by roles and policies. We do not want to authorize
 		// them as REQUEST. Assignment of the persona role was REQUEST. Changes in persona itself is all EXECUTION.
 		context.setExecutionPhaseOnly(true);
+		context.setOwnerOid(ownerOid);
 		clockwork.run(context, task, result);
 	}
 

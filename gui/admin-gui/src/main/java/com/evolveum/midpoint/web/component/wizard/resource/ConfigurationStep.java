@@ -107,6 +107,10 @@ public class ConfigurationStep extends WizardStep {
 
 		List<ContainerWrapper> containerWrappers = new ArrayList<>();
 
+		if(parentPage.isNewResource()) {
+			return containerWrappers;
+		}
+		
 		if (configuration == null) {
 			PrismObject<ConnectorType> connector = ResourceTypeUtil.getConnectorIfPresent(resource);
 			if (connector == null) {
@@ -135,10 +139,10 @@ public class ConfigurationStep extends WizardStep {
 			ContainerWrapper containerWrapper;
 			Task task = getPageBase().createSimpleTask("Creting configuration container");
 			if (container != null) {
-				containerWrapper = cwf.createContainerWrapper(container, ContainerStatus.MODIFYING, ContainerStatus.MODIFYING, containerPath, parentPage.isReadOnly(), task);
+				containerWrapper = cwf.createContainerWrapper(null, container, ContainerStatus.MODIFYING, containerPath, parentPage.isReadOnly(), task);
 			} else {
 				container = containerDef.instantiate();
-				containerWrapper = cwf.createContainerWrapper(container, ContainerStatus.ADDING, ContainerStatus.ADDING, containerPath, parentPage.isReadOnly(), task);
+				containerWrapper = cwf.createContainerWrapper(null, container, ContainerStatus.ADDING, containerPath, parentPage.isReadOnly(), task);
 				containerWrapper.setShowEmpty(true, true);
 			}
 			containerWrappers.add(containerWrapper);
@@ -165,17 +169,17 @@ public class ConfigurationStep extends WizardStep {
 		return relevantDefinitions;
 	}
 
-	@Override
-	protected void onConfigure() {
-		updateConfigurationTabs();
-	}
+//     @Override
+//     protected void onConfigure() {
+//             updateConfigurationTabs();
+//     }
 
 	private void initLayout() {
     	com.evolveum.midpoint.web.component.form.Form form = new com.evolveum.midpoint.web.component.form.Form<>(ID_MAIN, true);
         form.setOutputMarkupId(true);
         add(form);
 
-		form.add(WebComponentUtil.createTabPanel(ID_CONFIGURATION, parentPage, new ArrayList<>(), null));
+		form.add(WebComponentUtil.createTabPanel(ID_CONFIGURATION, parentPage, createConfigurationTabs(), null));
 
 		AjaxSubmitButton testConnection = new AjaxSubmitButton(ID_TEST_CONNECTION,
                 createStringResource("ConfigurationStep.button.testConnection")) {
@@ -199,12 +203,9 @@ public class ConfigurationStep extends WizardStep {
         add(testConnection);
     }
 
-	private void updateConfigurationTabs() {
+	private List<ITab> createConfigurationTabs() {
 		final com.evolveum.midpoint.web.component.form.Form form = getForm();
-		TabbedPanel<ITab> tabbedPanel = getConfigurationTabbedPanel();
-		List<ITab> tabs = tabbedPanel.getTabs().getObject();
-		tabs.clear();
-
+		List<ITab> tabs = new ArrayList<>();
 		List<ContainerWrapper> wrappers = configurationPropertiesModel.getObject();
 		for (final ContainerWrapper wrapper : wrappers) {
 			String tabName = getString(wrapper.getDisplayName(), null, wrapper.getDisplayName());
@@ -215,6 +216,17 @@ public class ConfigurationStep extends WizardStep {
 				}
 			});
 		}
+		
+		return tabs;
+	}
+	
+	public void updateConfigurationTabs() {
+		
+		TabbedPanel<ITab> tabbedPanel = getConfigurationTabbedPanel();
+		List<ITab> tabs = tabbedPanel.getTabs().getObject();
+		tabs.clear();
+
+		tabs.addAll(createConfigurationTabs());
 		int i = tabbedPanel.getSelectedTab();
 		if (i < 0 || i > tabs.size()) {
 			i = 0;

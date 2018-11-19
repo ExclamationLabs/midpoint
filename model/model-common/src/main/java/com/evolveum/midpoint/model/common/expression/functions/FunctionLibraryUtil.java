@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.evolveum.midpoint.model.common.expression.functions;
 
+import com.evolveum.midpoint.common.Clock;
 import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.prism.crypto.Protector;
 import com.evolveum.midpoint.schema.constants.MidPointConstants;
@@ -25,14 +26,12 @@ import com.evolveum.midpoint.schema.constants.MidPointConstants;
  */
 public class FunctionLibraryUtil {
 
-	public static FunctionLibrary createBasicFunctionLibrary(PrismContext prismContext, Protector protector) {
+	public static FunctionLibrary createBasicFunctionLibrary(PrismContext prismContext, Protector protector, Clock clock) {
 		FunctionLibrary lib = new FunctionLibrary();
 		lib.setVariableName(MidPointConstants.FUNCTION_LIBRARY_BASIC_VARIABLE_NAME);
 		lib.setNamespace(MidPointConstants.NS_FUNC_BASIC);
-		BasicExpressionFunctions func = new BasicExpressionFunctions(prismContext, protector);
+		BasicExpressionFunctions func = new BasicExpressionFunctions(prismContext, protector, clock);
 		lib.setGenericFunctions(func);
-		BasicExpressionFunctionsXPath funcXPath = new BasicExpressionFunctionsXPath(func);
-		lib.setXmlFunctions(funcXPath);
 		return lib;
 	}
 	

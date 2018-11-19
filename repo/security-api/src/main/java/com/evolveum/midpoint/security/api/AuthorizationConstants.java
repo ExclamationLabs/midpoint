@@ -17,6 +17,8 @@ package com.evolveum.midpoint.security.api;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.xml.namespace.QName;
 
@@ -26,8 +28,11 @@ import com.evolveum.midpoint.util.QNameUtil;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.AbstractRoleType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ActivationType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.AssignmentType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.CredentialsType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.FocusType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.PasswordType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
 
 /**
  * @author semancik
@@ -96,6 +101,9 @@ public class AuthorizationConstants {
 	public static final QName AUTZ_UI_USERS_QNAME = new QName(NS_AUTHORIZATION_UI, "users");
 	public static final String AUTZ_UI_USERS_URL = NS_AUTHORIZATION_UI + "#users";
 
+	public static final QName AUTZ_UI_USERS_VIEW_QNAME = new QName(NS_AUTHORIZATION_UI, "usersView");
+	public static final String AUTZ_UI_USERS_VIEW_URL = NS_AUTHORIZATION_UI + "usersView";
+
     public static final QName AUTZ_UI_FIND_USERS_QNAME = new QName(NS_AUTHORIZATION_UI, "findUsers");
     public static final String AUTZ_UI_FIND_USERS_URL = NS_AUTHORIZATION_UI + "#findUsers";
 
@@ -104,6 +112,15 @@ public class AuthorizationConstants {
 
 	public static final QName AUTZ_UI_USER_HISTORY_QNAME = new QName(NS_AUTHORIZATION_UI, "userHistory");
 	public static final String AUTZ_UI_USER_HISTORY_URL = NS_AUTHORIZATION_UI + "#userHistory";
+
+	public static final QName AUTZ_UI_ORG_UNIT_HISTORY_QNAME = new QName(NS_AUTHORIZATION_UI, "orgUnitHistory");
+	public static final String AUTZ_UI_ORG_UNIT_HISTORY_URL = NS_AUTHORIZATION_UI + "#orgUnitHistory";
+
+	public static final QName AUTZ_UI_ROLE_HISTORY_QNAME = new QName(NS_AUTHORIZATION_UI, "roleHistory");
+	public static final String AUTZ_UI_ROLE_HISTORY_URL = NS_AUTHORIZATION_UI + "#roleHistory";
+
+	public static final QName AUTZ_UI_SERVICE_HISTORY_QNAME = new QName(NS_AUTHORIZATION_UI, "serviceHistory");
+	public static final String AUTZ_UI_SERVICE_HISTORY_URL = NS_AUTHORIZATION_UI + "#serviceHistory";
 
 	public static final QName AUTZ_UI_USER_HISTORY_XML_REVIEW_QNAME = new QName(NS_AUTHORIZATION_UI, "userHistoryXmlReview");
 	public static final String AUTZ_UI_USER_HISTORY_XML_REVIEW_URL = NS_AUTHORIZATION_UI + "#userHistoryXmlReview";
@@ -355,6 +372,9 @@ public class AuthorizationConstants {
 
 	public static final QName AUTZ_UI_SELF_DASHBOARD_QNAME = new QName(NS_AUTHORIZATION_UI, "selfDashboard");
 	public static final String AUTZ_UI_SELF_DASHBOARD_URL = NS_AUTHORIZATION_UI + "#selfDashboard";
+	
+	public static final QName AUTZ_UI_SELF_POST_AUTHENTICATION_QNAME = new QName(NS_AUTHORIZATION_UI, "postAuthentication");
+	public static final String AUTZ_UI_SELF_POST_AUTHENTICATION_URL = NS_AUTHORIZATION_UI + "#postAuthentication";
 
 
 	//About
@@ -400,10 +420,16 @@ public class AuthorizationConstants {
 	public static final String AUTZ_UI_ADMIN_ADD_MEMBER_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_ADD_MEMBER_ACTION_QNAME);
 
 	public static final QName AUTZ_UI_ADMIN_UNASSIGN_MEMBER_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminUnassignMember");
-	public static final String AUTZ_UI_ADMIN_UNASSIGN_MEMBER_TAB_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_UNASSIGN_MEMBER_ACTION_QNAME);
+	public static final String AUTZ_UI_ADMIN_UNASSIGN_MEMBER_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_UNASSIGN_MEMBER_ACTION_QNAME);
+	
+	public static final QName AUTZ_UI_ADMIN_UNASSIGN_ALL_MEMBERS_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminUnassignAllMembers");
+	public static final String AUTZ_UI_ADMIN_UNASSIGN_ALL_MEMBERS_TAB_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_UNASSIGN_ALL_MEMBERS_ACTION_QNAME);
 
 	public static final QName AUTZ_UI_ADMIN_RECOMPUTE_MEMBER_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminRecomputeMember");
 	public static final String AUTZ_UI_ADMIN_RECOMPUTE_MEMBER_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_RECOMPUTE_MEMBER_ACTION_QNAME);
+	
+	public static final QName AUTZ_UI_ADMIN_DELETE_MEMBER_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminDeleteMember");
+    public static final String AUTZ_UI_ADMIN_DELETE_MEMBER_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_DELETE_MEMBER_ACTION_QNAME);
 
 	//ui authorizations for menu items on the Governance members tab of Role type object
 	public static final QName AUTZ_UI_ADMIN_ASSIGN_GOVERNANCE_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminAssignGovernance");
@@ -411,6 +437,12 @@ public class AuthorizationConstants {
 
 	public static final QName AUTZ_UI_ADMIN_UNASSIGN_GOVERNANCE_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminUnassignGovernance");
 	public static final String AUTZ_UI_ADMIN_UNASSIGN_GOVERNANCE_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_UNASSIGN_GOVERNANCE_ACTION_QNAME);
+	
+	public static final QName AUTZ_UI_ADMIN_RECOMPUTE_GOVERNANCE_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminRecomputeGovernance");
+	public static final String AUTZ_UI_ADMIN_RECOMPUTE_GOVERNANCE_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_RECOMPUTE_GOVERNANCE_ACTION_QNAME);
+	
+	public static final QName AUTZ_UI_ADMIN_DELETE_GOVERNANCE_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminDeleteGovernance");
+	public static final String AUTZ_UI_ADMIN_DELETE_GOVERNANCE_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_DELETE_GOVERNANCE_ACTION_QNAME);
 
 	public static final QName AUTZ_UI_ADMIN_ADD_GOVERNANCE_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminAddGovernance");
 	public static final String AUTZ_UI_ADMIN_ADD_GOVERNANCE_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_ADD_GOVERNANCE_ACTION_QNAME);
@@ -430,11 +462,17 @@ public class AuthorizationConstants {
 
 	public static final QName AUTZ_UI_ADMIN_RECOMPUTE_ORG_MEMBER_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminRecomputeOrgMember");
     public static final String AUTZ_UI_ADMIN_RECOMPUTE_ORG_MEMBER_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_RECOMPUTE_ORG_MEMBER_ACTION_QNAME);
+    
+    public static final QName AUTZ_UI_ADMIN_ORG_MOVE_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminOrgMove");
+    public static final String AUTZ_UI_ADMIN_ORG_MOVE_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_ORG_MOVE_ACTION_QNAME);
+    
+    public static final QName AUTZ_UI_ADMIN_ORG_MAKE_ROOT_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminOrgMakeRoot");
+    public static final String AUTZ_UI_ADMIN_ORG_MAKE_ROOT_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_ORG_MAKE_ROOT_ACTION_QNAME);
 
 	//ui authorization for CSV export button (will be applied everywhere over mp)
 	public static final QName AUTZ_UI_ADMIN_CSV_EXPORT_ACTION_QNAME = new QName(NS_AUTHORIZATION_UI, "adminCSVexport");
 	public static final String AUTZ_UI_ADMIN_CSV_EXPORT_ACTION_URI = QNameUtil.qNameToUri(AUTZ_UI_ADMIN_CSV_EXPORT_ACTION_QNAME);
-	
+
 	/**
 	 * Those are the items that midPoint logic controls directly. They have exception from execution-phase
 	 * authorization enforcement. Their modification in execution phase is always allowed. If it was not
@@ -493,6 +531,7 @@ public class AuthorizationConstants {
 			new ItemPath(AbstractRoleType.F_INDUCEMENT, FocusType.F_ASSIGNMENT, AssignmentType.F_METADATA),
 			new ItemPath(AbstractRoleType.F_INDUCEMENT, FocusType.F_ASSIGNMENT, AssignmentType.F_POLICY_SITUATION),
 			new ItemPath(AbstractRoleType.F_INDUCEMENT, FocusType.F_ASSIGNMENT, AssignmentType.F_TRIGGERED_POLICY_RULE),
+			new ItemPath(UserType.F_CREDENTIALS, CredentialsType.F_PASSWORD, PasswordType.F_METADATA),
 			new ItemPath(FocusType.F_DELEGATED_REF),
 			new ItemPath(FocusType.F_ITERATION),
 			new ItemPath(FocusType.F_ITERATION_TOKEN),
@@ -553,5 +592,5 @@ public class AuthorizationConstants {
 			new ItemPath(AbstractRoleType.F_INDUCEMENT, FocusType.F_ASSIGNMENT, AssignmentType.F_POLICY_SITUATION),
 			new ItemPath(AbstractRoleType.F_INDUCEMENT, FocusType.F_ASSIGNMENT, AssignmentType.F_TRIGGERED_POLICY_RULE)
 		);
-
+	
 }

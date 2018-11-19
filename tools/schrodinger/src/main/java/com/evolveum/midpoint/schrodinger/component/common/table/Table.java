@@ -20,11 +20,11 @@ import com.codeborne.selenide.Condition;
 import com.codeborne.selenide.SelenideElement;
 import com.evolveum.midpoint.schrodinger.MidPoint;
 import com.evolveum.midpoint.schrodinger.component.Component;
-import com.evolveum.midpoint.schrodinger.component.common.ConfirmationModal;
 import com.evolveum.midpoint.schrodinger.component.common.Paging;
 import com.evolveum.midpoint.schrodinger.component.common.Search;
 import com.evolveum.midpoint.schrodinger.util.Schrodinger;
 import org.openqa.selenium.By;
+
 
 import static com.codeborne.selenide.Selenide.$;
 
@@ -53,13 +53,20 @@ public class Table<T> extends Component<T> {
     public Table<T> selectAll() {
 
         $(Schrodinger.bySelfOrAncestorElementAttributeValue("input", "type", "checkbox", "data-s-id", "topToolbars"))
-                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT).click();
+                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT_2_S).click();
 
         return this;
     }
 
     public boolean currentTableContains(String name) {
 
-        return $(Schrodinger.byElementValue("Span", name)).is(Condition.visible);
+        // TODO replate catch Throwable with some less generic error
+        try {
+            return $(Schrodinger.byElementValue("Span", name)).waitUntil(Condition.visible, MidPoint.TIMEOUT_MEDIUM_6_S).is(Condition.visible);
+        } catch (Throwable t) {
+            return false;
+        }
+
     }
+
 }

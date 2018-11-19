@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.evolveum.midpoint.web.component.dialog.ConfirmationPanel;
+import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItemAction;
 import com.evolveum.midpoint.web.component.search.*;
 import org.apache.wicket.Component;
 import org.apache.wicket.ajax.AjaxRequestTarget;
@@ -173,24 +174,36 @@ public class PageConnectorHosts extends PageAdminResources {
 
 	private List<InlineMenuItem> initInlineHostsMenu() {
 		List<InlineMenuItem> headerMenuItems = new ArrayList<>();
-		headerMenuItems.add(new InlineMenuItem(createStringResource("PageBase.button.delete"),
-				new HeaderMenuAction(this) {
+		headerMenuItems.add(new InlineMenuItem(createStringResource("PageBase.button.delete")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new HeaderMenuAction(PageConnectorHosts.this) {
 					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
 						deleteHostPerformed(target);
 					}
-				}));
-		headerMenuItems.add(new InlineMenuItem(createStringResource("pageResources.button.discoveryRemote"),
-				new HeaderMenuAction(this) {
+				};
+			}
+		});
+		headerMenuItems.add(new InlineMenuItem(createStringResource("pageResources.button.discoveryRemote")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new HeaderMenuAction(PageConnectorHosts.this) {
 					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
 						discoveryRemotePerformed(target);
 					}
-				}));
+				};
+			}
+		});
 
 		return headerMenuItems;
 	}
@@ -210,7 +223,6 @@ public class PageConnectorHosts extends PageAdminResources {
 			private static final long serialVersionUID = 1L;
 			@Override
 			public void yesPerformed(AjaxRequestTarget target) {
-				((PageBase) getPage()).hideMainPopup(target);
 				deleteHostConfirmedPerformed(target);
 			}
 		};
@@ -267,15 +279,14 @@ public class PageConnectorHosts extends PageAdminResources {
 							result);
 				}
 			} catch (Exception ex) {
-				result.recordPartialError("Couldn't delete host.", ex);
+				result.recordPartialError(createStringResource("PageConnectorHosts.message.deleteHostConfirmedPerformed.partialError").getString(), ex);
 				LoggingUtils.logUnexpectedException(LOGGER, "Couldn't delete host", ex);
 			}
 		}
 
 		result.recomputeStatus();
 		if (result.isSuccess()) {
-			result.recordStatus(OperationResultStatus.SUCCESS,
-					"The resource(s) have been successfully deleted.");     // todo i18n
+			result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("PageConnectorHosts.message.deleteHostConfirmedPerformed.success").getString());
 		}
 
 		BaseSortableDataProvider provider = (BaseSortableDataProvider) hostTable.getDataTable()
@@ -305,8 +316,7 @@ public class PageConnectorHosts extends PageAdminResources {
 				try {
 					getModelService().discoverConnectors(host, task, result);
 				} catch (Exception ex) {
-					result.recordFatalError("Fail to discover connectors on host '" + host.getHostname() + ":"
-							+ host.getPort() + "'", ex);
+					result.recordFatalError(createStringResource("PageConnectorHosts.message.discoveryRemotePerformed.fatalError", host.getHostname(), host.getPort()).getString(), ex);
 				}
 			}
 		}

@@ -27,6 +27,7 @@ import com.evolveum.midpoint.model.api.RoleSelectionSpecification;
 import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
+import com.evolveum.midpoint.schema.constants.RelationTypes;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.task.api.Task;
@@ -55,7 +56,6 @@ import com.evolveum.midpoint.gui.api.model.LoadableModel;
 import com.evolveum.midpoint.gui.api.page.PageBase;
 import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.web.component.AjaxButton;
-import com.evolveum.midpoint.web.component.assignment.RelationTypes;
 import com.evolveum.midpoint.web.component.dialog.Popupable;
 import com.evolveum.midpoint.web.component.input.DropDownChoicePanel;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
@@ -364,7 +364,7 @@ public class TypedAssignablePanel<T extends ObjectType> extends BasePanel<T> imp
 		DropDownChoicePanel<RelationTypes> relationPanel = (DropDownChoicePanel<RelationTypes>) get(ID_RELATION_CONTAINER).get(ID_RELATION);
 		RelationTypes relation = relationPanel.getModel().getObject();
 		if (relation == null) {
-			return SchemaConstants.ORG_DEFAULT;
+			return WebComponentUtil.getDefaultRelationOrFail();
 		}
 		return relation.getRelation();
 	}
@@ -415,7 +415,7 @@ public class TypedAssignablePanel<T extends ObjectType> extends BasePanel<T> imp
 			private static final long serialVersionUID = 1L;
 
 			@Override
-			protected void onUpdateCheckbox(AjaxRequestTarget target) {
+			protected void onUpdateCheckbox(AjaxRequestTarget target, IModel<SelectableBean<T>> rowModel) {
 				if (type.equals(ObjectTypes.RESOURCE)) {
 					target.add(TypedAssignablePanel.this);
 				}
@@ -449,7 +449,7 @@ public class TypedAssignablePanel<T extends ObjectType> extends BasePanel<T> imp
                     try {
                         ModelInteractionService mis = TypedAssignablePanel.this.getPageBase().getModelInteractionService();
                         RoleSelectionSpecification roleSpec =
-                                mis.getAssignableRoleSpecification(SecurityUtils.getPrincipalUser().getUser().asPrismObject(), task, result);
+                                mis.getAssignableRoleSpecification(SecurityUtils.getPrincipalUser().getUser().asPrismObject(), AbstractRoleType.class, task, result);
                         filter = roleSpec.getFilter();
                     } catch (Exception ex) {
                         LoggingUtils.logUnexpectedException(LOGGER, "Couldn't load available roles", ex);
@@ -501,6 +501,16 @@ public class TypedAssignablePanel<T extends ObjectType> extends BasePanel<T> imp
 	@Override
 	public int getHeight() {
 		return 500;
+	}
+
+	@Override
+	public String getWidthUnit(){
+		return "px";
+	}
+
+	@Override
+	public String getHeightUnit(){
+		return "px";
 	}
 
 	@Override

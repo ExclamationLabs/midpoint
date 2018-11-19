@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ package com.evolveum.midpoint.provisioning.api;
 
 import java.io.Serializable;
 
-public class ProvisioningOperationOptions implements Serializable {
+import com.evolveum.midpoint.util.ShortDumpable;
+
+public class ProvisioningOperationOptions implements Serializable, ShortDumpable {
     private static final long serialVersionUID = -6960273605308871338L;
 
     /**
@@ -36,6 +38,24 @@ public class ProvisioningOperationOptions implements Serializable {
 	private Boolean doNotDiscovery;
 
 	private Boolean overwrite;
+	
+	/**
+	 * Run the operations on resource using the specified identity.
+	 * The value is a OID of an account shadow.
+	 * 
+	 * This option should be considered a suggestion, not a command.
+	 * Therefore if the connector can run operation as specified user
+	 * the it should run it. But if it is not capable to run such
+	 * operation as specified user but it can run it as administrator
+	 * then it should run the operation as administrator.
+	 * That case may happen e.g. if account cleartext password is not
+	 * known at that time.
+	 * 
+	 * Note: maybe later we need some kind of flag that makes this
+	 * option "critical", i.e. that an error is thrown if the
+	 * operation cannot be executed as specified identity.
+	 */
+	private String runAsAccountOid;
 	
 	public Boolean getCompletePostponed() {
 		return completePostponed;
@@ -182,19 +202,25 @@ public class ProvisioningOperationOptions implements Serializable {
 		opts.setRaw(true);
 		return opts;
 	}
+	
+	public String getRunAsAccountOid() {
+		return runAsAccountOid;
+	}
+
+	public void setRunAsAccountOid(String runAsAccountOid) {
+		this.runAsAccountOid = runAsAccountOid;
+	}
+	
+	public static ProvisioningOperationOptions createRunAsAccountOid(String runAsAccountOid) {
+		ProvisioningOperationOptions opts = new ProvisioningOperationOptions();
+		opts.setRunAsAccountOid(runAsAccountOid);
+		return opts;
+	}
 
 	@Override
     public String toString() {
     	StringBuilder sb = new StringBuilder("ProvisioningOperationOptions(");
-    	appendFlag(sb, "raw", raw);
-    	appendFlag(sb, "completePostponed", completePostponed);
-    	appendFlag(sb, "force", force);
-    	appendFlag(sb, "postpone", postpone);
-    	appendFlag(sb, "doNotDiscovery", doNotDiscovery);
-    	appendFlag(sb, "overwrite", overwrite);
-    	if (sb.charAt(sb.length() - 1) == ',') {
-			sb.deleteCharAt(sb.length() - 1);
-		}
+    	shortDump(sb);
 		sb.append(")");
 		return sb.toString();
     }
@@ -209,6 +235,28 @@ public class ProvisioningOperationOptions implements Serializable {
 			sb.append(name);
 			sb.append("=false,");
 		}
+	}
+
+	@Override
+	public void shortDump(StringBuilder sb) {
+		appendFlag(sb, "raw", raw);
+    	appendFlag(sb, "completePostponed", completePostponed);
+    	appendFlag(sb, "force", force);
+    	appendFlag(sb, "postpone", postpone);
+    	appendFlag(sb, "doNotDiscovery", doNotDiscovery);
+    	appendFlag(sb, "overwrite", overwrite);
+    	if (runAsAccountOid != null) {
+    		sb.append("runAsAccountOid=").append(runAsAccountOid).append(",");
+    	}
+    	if (isEmpty()) {
+    		sb.append("(empty)");
+    	} else {
+			sb.deleteCharAt(sb.length() - 1);
+		}
+	}
+
+	private boolean isEmpty() {
+		return raw == null && completePostponed == null && force == null && postpone == null && doNotDiscovery == null && overwrite == null && runAsAccountOid == null;
 	}
 	
 }

@@ -139,64 +139,54 @@ public abstract class SchemaConstants {
 	// public static final QName T_PROTECTED_BYTE_ARRAY_TYPE = new QName(NS_C,
 	// "ProtectedByteArrayType");
 
+	/*
+	 * Constants for default relations.
+	 *
+	 * Please DO NOT use these in production code. Use RelationKind values instead.
+	 * ===========================================
+	 *
+	 * You can, however, freely use these in tests.
+	 */
+
 	/**
-	 * Default relation, usually meaning "has" or "is member of". Used as a relation value in object references.
-	 * Specifies that the subject is a member of organization, or that the subject
-	 * has been assigned a role in a way that he gets authorizations and other content
-	 * provided by that role.
+	 * Default membership relation. Used as a relation value in object references.
+	 * See RelationKind.MEMBER for more details.
 	 */
 	public static final QName ORG_DEFAULT = new QName(NS_ORG, "default");
 
 	/**
-	 * Relation "is manager of". Used as a relation value in object references.
-	 * Specifies that the subject is a manager of organizational unit.
+	 * Default 'manager' relation. Used as a relation value in object references.
+	 * See RelationKind.MANAGER for more details.
 	 */
 	public static final QName ORG_MANAGER = new QName(NS_ORG, "manager");
 
 	/**
-	 * Relation used for metarole assignments. Sometimes it is important to
-	 * distinguish metarole and member assignments. This relation is used
-	 * for that purpose.
+	 * Default 'metarole assignment' relation. Used as a relation value in object references.
+	 * See RelationKind.META for more details.
 	 */
 	public static final QName ORG_META = new QName(NS_ORG, "meta");
 
 	/**
-	 * Relation "is deputy of". Used as a relation value in object references.
-	 * Specifies that the subject is a deputy of another user.
+	 * Default delegation relation. Used as a relation value in object references.
+	 * See RelationKind.DELEGATION for more details.
 	 */
 	public static final QName ORG_DEPUTY = new QName(NS_ORG, "deputy");
 
 	/**
-	 * Relation "is approver of". Used as a relation value in object references.
-	 * Specifies that the subject is a (general) approver of specified (abstract) role.
-	 * The approver will be asked for decision if the role is assigned, if there is
-	 * a rule conflict during assignment (e.g. SoD conflict) or if there is any similar
-	 * situation.
-	 *
-	 * This is a generic approver used for all the situation. The system may be customized
-	 * with more specific approver roles, e.g. technicalApprover, securityApprover, etc.
-	 *
-	 * This approver is responsible for the use of the role, which mostly means
-	 * that he decides about role assignment. It is NOT meant to approve role changes.
-	 * Role owner is meant for that purpose.
+	 * Default 'approver' relation. Used as a relation value in object references.
+	 * See RelationKind.APPROVER for more details.
 	 */
 	public static final QName ORG_APPROVER = new QName(NS_ORG, "approver");
 
 	/**
-	 * Relation "is owner of". Used as a relation value in object references.
-	 * Specifies that the subject is a (business) owner of specified (abstract) role.
-	 * The owner will be asked for decision if the role is modified, when the associated
-	 * policy changes and so on.
-	 *
-	 * This owner is responsible for maintaining role definition and policies. It is
-	 * NPT necessarily concerned with role use (e.g. assignment). The approver relation
-	 * is meant for that purpose.
+	 * Default 'owner' relation. Used as a relation value in object references.
+	 * See RelationKind.OWNER for more details.
 	 */
 	public static final QName ORG_OWNER = new QName(NS_ORG, "owner");
 
 	/**
-	 * Relation "is consent for". Used as a relation value in object references.
-	 * Specifies that the subject gave a consent for using personnel information related to this role.
+	 * Default 'consent' relation. Used as a relation value in object references.
+	 * See RelationKind.CONSENT for more details.
 	 */
 	public static final QName ORG_CONSENT = new QName(NS_ORG, "consent");
 
@@ -233,6 +223,7 @@ public abstract class SchemaConstants {
 			ResourceType.F_OPERATIONAL_STATE, OperationalStateType.F_LAST_AVAILABILITY_STATUS);
 	public static final ItemPath PATH_ATTRIBUTES = new ItemPath(C_ATTRIBUTES);
 	public static final ItemPath PATH_ASSIGNMENT = new ItemPath(FocusType.F_ASSIGNMENT);
+	public static final ItemPath PATH_INDUCEMENT = new ItemPath(AbstractRoleType.F_INDUCEMENT);
 	public static final ItemPath PATH_ASSIGNMENT_ACTIVATION = new ItemPath(FocusType.F_ASSIGNMENT, AssignmentType.F_ACTIVATION);
 	public static final ItemPath PATH_ASSIGNMENT_ACTIVATION_EFFECTIVE_STATUS = new ItemPath(FocusType.F_ASSIGNMENT, AssignmentType.F_ACTIVATION, ActivationType.F_EFFECTIVE_STATUS);
 	public static final ItemPath PATH_ASSIGNMENT_ACTIVATION_VALID_FROM = new ItemPath(FocusType.F_ASSIGNMENT, AssignmentType.F_ACTIVATION, ActivationType.F_VALID_FROM);
@@ -253,6 +244,7 @@ public abstract class SchemaConstants {
 	public static final ItemPath PATH_AUXILIARY_OBJECT_CLASS = new ItemPath(ShadowType.F_AUXILIARY_OBJECT_CLASS);
 	public static final ItemPath PATH_AUTOASSIGN_ENABLED = new ItemPath(AbstractRoleType.F_AUTOASSIGN, AutoassignSpecificationType.F_ENABLED);
 	public static final ItemPath PATH_PARENT_ORG_REF = new ItemPath(ObjectType.F_PARENT_ORG_REF);
+	public static final ItemPath PATH_METADATA_MODIFY_TIMESTAMP = new ItemPath(ObjectType.F_METADATA, MetadataType.F_MODIFY_TIMESTAMP);
 
 	public static final String NS_PROVISIONING = NS_MIDPOINT_PUBLIC + "/provisioning";
 	public static final String NS_PROVISIONING_LIVE_SYNC = NS_PROVISIONING + "/liveSync-3";
@@ -300,7 +292,7 @@ public abstract class SchemaConstants {
 	public static final QName MODEL_EXTENSION_FINISH_OPERATIONS_ONLY = new QName(NS_MODEL_EXTENSION, "finishOperationsOnly");
 	public static final QName MODEL_EXTENSION_KIND = new QName(NS_MODEL_EXTENSION, "kind");
 	public static final QName MODEL_EXTENSION_INTENT = new QName(NS_MODEL_EXTENSION, "intent");
-	public static final QName OBJECTCLASS_PROPERTY_NAME = new QName(NS_MODEL_EXTENSION, "objectclass");
+	public static final QName MODEL_EXTENSION_OBJECTCLASS = new QName(NS_MODEL_EXTENSION, "objectclass");
 	public static final QName MODEL_EXTENSION_LAST_SCAN_TIMESTAMP_PROPERTY_NAME = new QName(
 			NS_MODEL_EXTENSION, "lastScanTimestamp");
 
@@ -360,6 +352,7 @@ public abstract class SchemaConstants {
 	public static final QName MODEL_EXTENSION_OBJECT_TYPE = new QName(NS_MODEL_EXTENSION, "objectType");
 	public static final QName MODEL_EXTENSION_OBJECT_QUERY = new QName(NS_MODEL_EXTENSION, "objectQuery");
 	public static final QName MODEL_EXTENSION_SEARCH_OPTIONS = new QName(NS_MODEL_EXTENSION, "searchOptions");
+	public static final QName MODEL_EXTENSION_USE_REPOSITORY_DIRECTLY = new QName(NS_MODEL_EXTENSION, "useRepositoryDirectly");
 	public static final QName MODEL_EXTENSION_ITERATION_METHOD = new QName(NS_MODEL_EXTENSION, "iterationMethod");
 	public static final QName MODEL_EXTENSION_OBJECT_DELTA = new QName(NS_MODEL_EXTENSION, "objectDelta");
 	public static final QName MODEL_EXTENSION_OBJECT_DELTAS = new QName(NS_MODEL_EXTENSION, "objectDeltas");
@@ -398,12 +391,24 @@ public abstract class SchemaConstants {
 
 	public static final String NS_GUI = NS_MIDPOINT_PUBLIC + "/gui";
 	public static final String NS_GUI_CHANNEL = NS_GUI + "/channels-3";
+	
+	// Init channel, used when system is initializing itself
 	public static final QName CHANNEL_GUI_INIT_QNAME = new QName(NS_GUI_CHANNEL, "init");
 	public static final String CHANNEL_GUI_INIT_URI = QNameUtil.qNameToUri(CHANNEL_GUI_INIT_QNAME);
+	
 	public static final QName CHANNEL_GUI_SELF_REGISTRATION_QNAME = new QName(NS_GUI_CHANNEL, "selfRegistration");
 	public static final String CHANNEL_GUI_SELF_REGISTRATION_URI = QNameUtil.qNameToUri(CHANNEL_GUI_SELF_REGISTRATION_QNAME);
+	
+	// Channel for self-service part of the user interface. These are the pages when user is changing his own data.
+	// E.g. update of his own profile and password change are considered to be self-service.
+	public static final QName CHANNEL_GUI_SELF_SERVICE_QNAME = new QName(NS_GUI_CHANNEL, "selfService");
+	public static final String CHANNEL_GUI_SELF_SERVICE_URI = QNameUtil.qNameToUri(CHANNEL_GUI_SELF_SERVICE_QNAME);
+	
+	// Password reset channel. This is *reset*, which means that the user does not know the old password and cannot log in.
 	public static final QName CHANNEL_GUI_RESET_PASSWORD_QNAME = new QName(NS_GUI_CHANNEL, "resetPassword");
 	public static final String CHANNEL_GUI_RESET_PASSWORD_URI = QNameUtil.qNameToUri(CHANNEL_GUI_RESET_PASSWORD_QNAME);
+	
+	// Catch-all channel for all user operations in user interface.
 	public static final QName CHANNEL_GUI_USER_QNAME = new QName(NS_GUI_CHANNEL, "user");
 	public static final String CHANNEL_GUI_USER_URI = QNameUtil.qNameToUri(CHANNEL_GUI_USER_QNAME);
 
@@ -413,6 +418,7 @@ public abstract class SchemaConstants {
 	public static final String ACCOUNT_ACTIVATION_PREFIX = "/activate/accounts";
 
 	public static final String INTENT_DEFAULT = "default";
+	public static final String INTENT_UNKNOWN = "unknown";
 
 	public static final String CONNECTOR_SCHEMA_CONFIGURATION_TYPE_LOCAL_NAME = "ConfigurationType";
 
@@ -462,6 +468,7 @@ public abstract class SchemaConstants {
 	public static final QName C_EVENT = new QName(NS_C, "event");
 	public static final QName C_EVENT_HANDLER = new QName(NS_C, "eventHandler");			// TODO: no such element in common-3 - is it OK?
 	public static final QName C_TEXT_FORMATTER = new QName(NS_C, "textFormatter");
+	public static final QName C_NOTIFICATION_FUNCTIONS = new QName(NS_C, "notificationFunctions");
 
 	public static final QName C_TRANSPORT_NAME = new QName(NS_C, "transportName");
 	public static final QName C_FROM = new QName(NS_C, "from");
@@ -544,7 +551,7 @@ public abstract class SchemaConstants {
 	// Misc
 
 	public static String BUNDLE_NAME = "schema";
-	public static String SCHEMA_LOCALIZATION_PROPERTIES_RESOURCE_BASE_PATH = "localization/" + BUNDLE_NAME;
+	public static String SCHEMA_LOCALIZATION_PROPERTIES_RESOURCE_BASE_PATH = "localization/" + BUNDLE_NAME;     // Do not load this bundle explicitly, see MID-4800
 	public static final QName APPROVAL_LEVEL_OUTCOME_TYPE_COMPLEX_TYPE = new QName(SchemaConstants.NS_C, ApprovalLevelOutcomeType.class.getSimpleName());
 
 	// registration

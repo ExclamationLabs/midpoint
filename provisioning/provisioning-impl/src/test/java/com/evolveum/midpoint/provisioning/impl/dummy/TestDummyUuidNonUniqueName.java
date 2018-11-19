@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017 Evolveum
+ * Copyright (c) 2013-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.evolveum.midpoint.provisioning.impl.dummy;
 
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertNotNull;
+import static org.testng.AssertJUnit.assertNull;
 
 import java.io.File;
 import java.io.IOException;
@@ -52,6 +53,7 @@ import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.exception.SecurityViolationException;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowKindType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowType;
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.RunAsCapabilityType;
 
 /**
  * Almost the same as TestDummy but this is using a UUID as ICF UID.
@@ -76,13 +78,25 @@ public class TestDummyUuidNonUniqueName extends TestDummyUuid {
 	public static final String ACCOUNT_FETTUCINI_CARLO_FULLNAME = "Carlo Fettucini";
 
 	@Override
-	protected File getResourceDummyFilename() {
+	protected File getResourceDummyFile() {
 		return RESOURCE_DUMMY_FILE;
 	}
 
 	@Override
 	protected boolean isNameUnique() {
 		return false;
+	}
+	
+	// runAs is using name as an identifier. But name is not unique in this case. runAs won't work.
+	@Override
+	protected void assertRunAsCapability(RunAsCapabilityType capRunAs) {
+		assertNull("Unexpected native runAs capability", capRunAs);
+	}
+
+	// runAs is using name as an identifier. But name is not unique in this case. runAs won't work.
+	@Override
+	protected String getLastModifierName(String expected) {
+		return null;
 	}
 
 	@Test
@@ -118,7 +132,7 @@ public class TestDummyUuidNonUniqueName extends TestDummyUuid {
 		// DO nothing. This test is meaningless in non-unique environment
 	}
 
-	private String addFettucini(final String TEST_NAME, File file, String oid, String expectedFullName) throws SchemaException, ObjectAlreadyExistsException, CommunicationException, ObjectNotFoundException, ConfigurationException, SecurityViolationException, IOException, SchemaViolationException, ConflictException, ExpressionEvaluationException {
+	private String addFettucini(final String TEST_NAME, File file, String oid, String expectedFullName) throws Exception {
 		// GIVEN
 		Task task = createTask(TEST_NAME);
 		OperationResult result = task.getResult();
@@ -173,7 +187,7 @@ public class TestDummyUuidNonUniqueName extends TestDummyUuid {
 
 		ProvisioningTestUtil.checkRepoAccountShadow(shadowFromRepo);
 
-		checkConsistency(accountProvisioning);
+		checkUniqueness(accountProvisioning);
 		assertSteadyResource();
 
 		return icfUid;

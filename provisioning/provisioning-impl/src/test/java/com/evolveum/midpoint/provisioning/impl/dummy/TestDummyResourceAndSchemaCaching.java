@@ -54,6 +54,7 @@ import com.evolveum.midpoint.util.exception.ConfigurationException;
 import com.evolveum.midpoint.util.exception.ExpressionEvaluationException;
 import com.evolveum.midpoint.util.exception.ObjectAlreadyExistsException;
 import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
+import com.evolveum.midpoint.util.exception.PolicyViolationException;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.exception.SecurityViolationException;
 import com.evolveum.midpoint.util.logging.Trace;
@@ -122,9 +123,8 @@ public class TestDummyResourceAndSchemaCaching extends AbstractDummyTest {
 		assertCounterIncrement(InternalCounters.CONNECTOR_SCHEMA_PARSE_COUNT, 1);
 		assertCounterIncrement(InternalCounters.CONNECTOR_CAPABILITIES_FETCH_COUNT, 1);
 		assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 1);
-		assertCounterIncrement(InternalCounters.RESOURCE_SCHEMA_PARSE_COUNT, 1);
-
 		rememberConnectorInstance(resourceProvisioning);
+		assertCounterIncrement(InternalCounters.RESOURCE_SCHEMA_PARSE_COUNT, 1);
 
 		PrismObject<ResourceType> resourceRepoAfter = repositoryService.getObject(ResourceType.class,
 				RESOURCE_DUMMY_OID, null, result);
@@ -242,6 +242,7 @@ public class TestDummyResourceAndSchemaCaching extends AbstractDummyTest {
 		assertCounterIncrement(InternalCounters.CONNECTOR_SCHEMA_PARSE_COUNT, 0);
 		assertCounterIncrement(InternalCounters.CONNECTOR_CAPABILITIES_FETCH_COUNT, 0);
 		assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 0);
+		rememberConnectorInstance(resourceProvisioning);
 		assertCounterIncrement(InternalCounters.RESOURCE_SCHEMA_PARSE_COUNT, 0);
 
 		assertResourceVersionIncrement(resourceProvisioning, 0);
@@ -253,8 +254,6 @@ public class TestDummyResourceAndSchemaCaching extends AbstractDummyTest {
 		assertResourceSchemaUnchanged(RefinedResourceSchemaImpl.getResourceSchema(resourceProvisioning, prismContext));
 		assertRefinedResourceSchemaUnchanged(RefinedResourceSchemaImpl.getRefinedSchema(resourceProvisioning));
 		assertCounterIncrement(InternalCounters.RESOURCE_SCHEMA_PARSE_COUNT, 0);
-
-		assertConnectorInstanceUnchanged(resourceProvisioning);
 	}
 	
 	@Test
@@ -339,11 +338,11 @@ public class TestDummyResourceAndSchemaCaching extends AbstractDummyTest {
 		OperationResult result = task.getResult();
 
 		// Change something that's not that important
-		ProjectionPolicyType accountSynchronizationSettingsType = new ProjectionPolicyType();
-		accountSynchronizationSettingsType.setLegalize(true);
+		ProjectionPolicyType projectionPolicyType = new ProjectionPolicyType();
+		projectionPolicyType.setLegalize(true);
 
-		ObjectDelta<ResourceType> objectDelta = ObjectDelta.createModificationReplaceProperty(ResourceType.class, RESOURCE_DUMMY_OID,
-				ResourceType.F_PROJECTION, prismContext, accountSynchronizationSettingsType);
+		ObjectDelta<ResourceType> objectDelta = ObjectDelta.createModificationReplaceContainer(ResourceType.class, RESOURCE_DUMMY_OID,
+				ResourceType.F_PROJECTION, prismContext, projectionPolicyType);
 
 		// WHEN
 		provisioningService.modifyObject(ResourceType.class, RESOURCE_DUMMY_OID, objectDelta.getModifications(), null, null, task, result);
@@ -418,6 +417,7 @@ public class TestDummyResourceAndSchemaCaching extends AbstractDummyTest {
 		assertCounterIncrement(InternalCounters.CONNECTOR_SCHEMA_PARSE_COUNT, 0);
 		assertCounterIncrement(InternalCounters.CONNECTOR_CAPABILITIES_FETCH_COUNT, 0);
 		assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 0);
+		rememberConnectorInstance(resourceProvisioning);
 		assertCounterIncrement(InternalCounters.RESOURCE_SCHEMA_PARSE_COUNT, 0);
 
 		assertResourceVersionIncrement(resourceProvisioning, 0);
@@ -429,8 +429,6 @@ public class TestDummyResourceAndSchemaCaching extends AbstractDummyTest {
 		assertResourceSchemaUnchanged(RefinedResourceSchemaImpl.getResourceSchema(resourceProvisioning, prismContext));
 		assertRefinedResourceSchemaUnchanged(RefinedResourceSchemaImpl.getRefinedSchema(resourceProvisioning));
 		assertCounterIncrement(InternalCounters.RESOURCE_SCHEMA_PARSE_COUNT, 0);
-
-		assertConnectorInstanceUnchanged(resourceProvisioning);
 	}
 
 	/**
@@ -450,11 +448,11 @@ public class TestDummyResourceAndSchemaCaching extends AbstractDummyTest {
 		OperationResult result = task.getResult();
 
 		// Change something that's not that important
-		ProjectionPolicyType accountSynchronizationSettingsType = new ProjectionPolicyType();
-		accountSynchronizationSettingsType.setLegalize(true);
+		ProjectionPolicyType projectionPolicyType = new ProjectionPolicyType();
+		projectionPolicyType.setLegalize(true);
 
-		ObjectDelta<ResourceType> objectDelta = ObjectDelta.createModificationReplaceProperty(ResourceType.class, RESOURCE_DUMMY_OID,
-				ResourceType.F_PROJECTION, prismContext, accountSynchronizationSettingsType);
+		ObjectDelta<ResourceType> objectDelta = ObjectDelta.createModificationReplaceContainer(ResourceType.class, RESOURCE_DUMMY_OID,
+				ResourceType.F_PROJECTION, prismContext, projectionPolicyType);
 
 		// WHEN
 		repositoryService.modifyObject(ResourceType.class, RESOURCE_DUMMY_OID, objectDelta.getModifications(), result);
@@ -652,7 +650,7 @@ public class TestDummyResourceAndSchemaCaching extends AbstractDummyTest {
 		assertConnectorInstanceChanged(resourceProvisioning);
 	}
 
-	private String addAccount(File file) throws SchemaException, ObjectAlreadyExistsException, CommunicationException, ObjectNotFoundException, ConfigurationException, SecurityViolationException, IOException, ExpressionEvaluationException {
+	private String addAccount(File file) throws SchemaException, ObjectAlreadyExistsException, CommunicationException, ObjectNotFoundException, ConfigurationException, SecurityViolationException, IOException, ExpressionEvaluationException, PolicyViolationException {
 		Task task = taskManager.createTaskInstance(TestDummyResourceAndSchemaCaching.class.getName()
 				+ ".addAccount");
 		OperationResult result = task.getResult();

@@ -29,9 +29,13 @@ import com.evolveum.midpoint.task.quartzimpl.TaskQuartzImpl;
 import com.evolveum.midpoint.task.quartzimpl.TaskQuartzImplUtil;
 import com.evolveum.midpoint.task.quartzimpl.cluster.ClusterStatusInformation;
 import com.evolveum.midpoint.task.quartzimpl.work.WorkStateManager;
+import com.evolveum.midpoint.util.exception.CommunicationException;
+import com.evolveum.midpoint.util.exception.ConfigurationException;
+import com.evolveum.midpoint.util.exception.ExpressionEvaluationException;
 import com.evolveum.midpoint.util.exception.ObjectAlreadyExistsException;
 import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
 import com.evolveum.midpoint.util.exception.SchemaException;
+import com.evolveum.midpoint.util.exception.SecurityViolationException;
 import com.evolveum.midpoint.util.exception.SystemException;
 import com.evolveum.midpoint.util.logging.LoggingUtils;
 import com.evolveum.midpoint.util.logging.Trace;
@@ -181,7 +185,7 @@ public class JobExecutor implements InterruptableJob {
 				// just to be sure we won't run the owner-setting login with any garbage security context (see MID-4160)
 				taskManagerImpl.getSecurityContextManager().setupPreAuthenticatedSecurityContext((Authentication) null);
 				taskManagerImpl.getSecurityContextManager().setupPreAuthenticatedSecurityContext(taskOwner);
-			} catch (SchemaException e) {
+			} catch (SchemaException | CommunicationException | ConfigurationException | SecurityViolationException | ExpressionEvaluationException e) {
 	            LoggingUtils.logUnexpectedException(LOGGER, "Task with OID {} cannot be executed: error setting security context", e, oid);
 	            return;
 			}
@@ -379,7 +383,7 @@ public class JobExecutor implements InterruptableJob {
             return false;
         } else if (task.getThreadStopAction() == ThreadStopActionType.SUSPEND) {
             LOGGER.info("Suspending recovered non-resilient task {}", task);
-            taskManagerImpl.suspendTask(task, TaskManager.DO_NOT_STOP, executionResult);        // we must NOT wait here, as we would wait infinitely -- we do not have to stop the task neither, because we are that task :)
+            taskManagerImpl.suspendTaskQuietly(task, TaskManager.DO_NOT_STOP, executionResult);        // we must NOT wait here, as we would wait infinitely -- we do not have to stop the task neither, because we are that task :)
             return false;
         } else if (task.getThreadStopAction() == null || task.getThreadStopAction() == ThreadStopActionType.RESTART) {
             LOGGER.info("Recovering resilient task {}", task);
@@ -422,7 +426,7 @@ public class JobExecutor implements InterruptableJob {
             closeTask(task, executionResult);
         } else if (task.getThreadStopAction() == ThreadStopActionType.SUSPEND) {
             LOGGER.info("Suspending non-resilient task on node shutdown; task = {}", task);
-            taskManagerImpl.suspendTask(task, TaskManager.DO_NOT_STOP, executionResult);            // we must NOT wait here, as we would wait infinitely -- we do not have to stop the task neither, because we are that task
+            taskManagerImpl.suspendTaskQuietly(task, TaskManager.DO_NOT_STOP, executionResult);            // we must NOT wait here, as we would wait infinitely -- we do not have to stop the task neither, because we are that task
         } else if (task.getThreadStopAction() == null || task.getThreadStopAction() == ThreadStopActionType.RESTART) {
             LOGGER.info("Node going down: Rescheduling resilient task to run immediately; task = {}", task);
             taskManagerImpl.scheduleRunnableTaskNow(task, executionResult);
@@ -487,7 +491,7 @@ public class JobExecutor implements InterruptableJob {
             } else if (runResult.getRunResultStatus() == TaskRunResultStatus.TEMPORARY_ERROR) {
                 // in case of temporary error, we want to suspend the task and exit
                 LOGGER.info("Task encountered temporary error, suspending it. Task = {}", task);
-                taskManagerImpl.suspendTask(task, TaskManager.DO_NOT_STOP, executionResult);
+                taskManagerImpl.suspendTaskQuietly(task, TaskManager.DO_NOT_STOP, executionResult);
             } else if (runResult.getRunResultStatus() == TaskRunResultStatus.RESTART_REQUESTED) {
                 // in case of RESTART_REQUESTED we have to get (new) current handler and restart it
                 // this is implemented by pushHandler and by Quartz
@@ -553,7 +557,7 @@ mainCycle:
                     break;
                 } else if (runResult.getRunResultStatus() == TaskRunResultStatus.PERMANENT_ERROR) {
                     LOGGER.info("Task encountered permanent error, suspending the task. Task = {}", task);
-                    taskManagerImpl.suspendTask(task, TaskManager.DO_NOT_STOP, executionResult);
+                    taskManagerImpl.suspendTaskQuietly(task, TaskManager.DO_NOT_STOP, executionResult);
                     break;
                 } else if (runResult.getRunResultStatus() == TaskRunResultStatus.FINISHED) {
                     LOGGER.trace("Task handler finished, continuing with the execution cycle. Task = {}", task);

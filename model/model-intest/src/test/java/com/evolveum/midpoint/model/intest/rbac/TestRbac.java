@@ -29,6 +29,7 @@ import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.notifications.api.transports.Message;
 import com.evolveum.midpoint.prism.delta.builder.DeltaBuilder;
+import com.evolveum.midpoint.prism.polystring.PolyString;
 import com.evolveum.midpoint.util.QNameUtil;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.springframework.test.annotation.DirtiesContext;
@@ -351,7 +352,7 @@ public class TestRbac extends AbstractRbacTest {
         assertDefaultDummyAccount(ACCOUNT_JACK_DUMMY_USERNAME, ACCOUNT_JACK_DUMMY_FULLNAME, true);
 
         // WHEN
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);		// TODO options?
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);		// TODO options?
 
         // THEN
         result.computeStatus();
@@ -385,7 +386,7 @@ public class TestRbac extends AbstractRbacTest {
         assertDefaultDummyAccount(ACCOUNT_JACK_DUMMY_USERNAME, ACCOUNT_JACK_DUMMY_FULLNAME, true);
 
         // WHEN
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, SchemaConstants.INTENT_DEFAULT, task, result);		// TODO options?
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, SchemaConstants.INTENT_DEFAULT, task, result);		// TODO options?
 
         // THEN
         result.computeStatus();
@@ -415,7 +416,7 @@ public class TestRbac extends AbstractRbacTest {
         OperationResult result = task.getResult();
 
         // WHEN
-        unassignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);			// TODO options?
+        unassignAccountFromUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);			// TODO options?
 
         // THEN
         result.computeStatus();
@@ -444,7 +445,7 @@ public class TestRbac extends AbstractRbacTest {
         OperationResult result = task.getResult();
 
         // WHEN
-        unassignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, SchemaConstants.INTENT_DEFAULT, task, result);		// TODO options?
+        unassignAccountFromUser(USER_JACK_OID, RESOURCE_DUMMY_OID, SchemaConstants.INTENT_DEFAULT, task, result);		// TODO options?
 
         // THEN
         result.computeStatus();
@@ -1601,8 +1602,8 @@ public class TestRbac extends AbstractRbacTest {
 	 * Modify employeeType. This triggers a condition in Wannabe role.
 	 */
 	@Test
-    public void test542JackModifyEmployeeTypeWannabe() throws Exception {
-		final String TEST_NAME = "test542JackModifyEmployeeTypeWannabe";
+    public void test542JackModifySubtypeWannabe() throws Exception {
+		final String TEST_NAME = "test542JackModifySubtypeWannabe";
         displayTestTitle(TEST_NAME);
         assumeAssignmentPolicy(AssignmentPolicyEnforcementType.RELATIVE);
 
@@ -1611,7 +1612,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // WHEN
 		displayWhen(TEST_NAME);
-		modifyUserReplace(USER_JACK_OID, UserType.F_EMPLOYEE_TYPE, getDefaultOptions(), task, result, "wannabe");
+		modifyUserReplace(USER_JACK_OID, UserType.F_SUBTYPE, getDefaultOptions(), task, result, "wannabe");
 
         // THEN
         displayThen(TEST_NAME);
@@ -1940,8 +1941,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertFailure(result);
+        assertFailure(result);
 
         assertNoAssignments(USER_JACK_OID);
 
@@ -1978,8 +1978,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertFailure(result);
+        assertFailure(result);
 
         assertNoAssignments(USER_JACK_OID);
 
@@ -2012,8 +2011,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertSuccess(result);
+        assertSuccess(result);
 
         assertAssignedRole(user.getOid(), ROLE_CANNIBAL_OID, task, result);
         assertDefaultDummyAccount(USER_LEMONHEAD_NAME, USER_LEMONHEAD_FULLNAME, true);
@@ -2044,8 +2042,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertSuccess(result);
+        assertSuccess(result);
 
         assertAssignedRole(user.getOid(), ROLE_CANNIBAL_OID, task, result);
         assertDefaultDummyAccount(USER_SHARPTOOTH_NAME, USER_SHARPTOOTH_FULLNAME, true);
@@ -2076,8 +2073,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertSuccess(result);
+        assertSuccess(result);
 
         assertAssignedRole(user.getOid(), ROLE_CANNIBAL_OID, task, result);
         assertDefaultDummyAccount(USER_REDSKULL_NAME, USER_REDSKULL_FULLNAME, true);
@@ -2116,8 +2112,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertFailure(result);
+        assertFailure(result);
 
         assertNoAssignments(user.getOid());
 
@@ -2142,8 +2137,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertSuccess(result);
+        assertSuccess(result);
 
         assertNoAssignments(userSharptoothOid);
         assertNoDummyAccount(USER_SHARPTOOTH_NAME);
@@ -2177,8 +2171,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertFailure(result);
+        assertFailure(result);
 
         assertAssignedRole(userRedskullOid, ROLE_CANNIBAL_OID, task, result);
         assertDefaultDummyAccount(USER_REDSKULL_NAME, USER_REDSKULL_FULLNAME, true);
@@ -2209,8 +2202,7 @@ public class TestRbac extends AbstractRbacTest {
 
 		// THEN
 		displayThen(TEST_NAME);
-		result.computeStatus();
-		TestUtil.assertSuccess(result);
+		assertSuccess(result);
 
         assertAssignees(ROLE_CANNIBAL_OID, 2);
         assertAssignees(ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER, 1);
@@ -2251,8 +2243,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertFailure(result);
+        assertFailure(result);
 
 		assertAssignees(ROLE_CANNIBAL_OID, 2);
 		assertAssignees(ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER, 1);
@@ -2283,8 +2274,12 @@ public class TestRbac extends AbstractRbacTest {
 
 		// THEN
 		displayThen(TEST_NAME);
-		result.computeStatus();
-		TestUtil.assertSuccess(result);
+		assertSuccess(result);
+		
+		assertUserAfter(userBignoseOid)
+			.assignments()
+				.assertAssignments(1)
+				.assertRole(ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER);
 
 		assertAssignees(ROLE_CANNIBAL_OID, 2);
 		assertAssignees(ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER, 2);
@@ -2315,8 +2310,11 @@ public class TestRbac extends AbstractRbacTest {
 
 		// THEN
 		displayThen(TEST_NAME);
-		result.computeStatus();
-		TestUtil.assertSuccess(result);
+		assertSuccess(result);
+		
+		assertUserAfter(userBignoseOid)
+			.assignments()
+				.assertNone();
 
 		assertAssignees(ROLE_CANNIBAL_OID, 2);
 		assertAssignees(ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER, 1);
@@ -2342,14 +2340,142 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertSuccess(result);
+        assertSuccess(result);
 
         PrismObject<UserType> userAfter = getUser(USER_ELAINE_OID);
         display("User after", userAfter);
         assertAssignedNoRole(userAfter);
 
         assertAssignees(ROLE_GOVERNOR_OID, 0);
+	}
+	
+	@Test
+	public void test650BignoseAssignRoleCannibalAsOwner() throws Exception {
+		final String TEST_NAME = "test650BignoseAssignRoleCannibalAsOwner";
+		displayTestTitle(TEST_NAME);
+		assumeAssignmentPolicy(AssignmentPolicyEnforcementType.RELATIVE);
+
+		assertUserBefore(userBignoseOid)
+		.assignments()
+			.assertNone();
+		
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		assignRole(userBignoseOid, ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER, getDefaultOptions(), task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		assertSuccess(result);
+		
+		assertUserAfter(userBignoseOid)
+			.assignments()
+				.assertAssignments(1)
+				.assertRole(ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER);
+	}
+	
+	@Test
+	public void test651BignoseAssignRoleCannibalAsApprover() throws Exception {
+		final String TEST_NAME = "test651BignoseAssignRoleCannibalAsApprover";
+		displayTestTitle(TEST_NAME);
+		assumeAssignmentPolicy(AssignmentPolicyEnforcementType.RELATIVE);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		assignRole(userBignoseOid, ROLE_CANNIBAL_OID, SchemaConstants.ORG_APPROVER, getDefaultOptions(), task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		assertSuccess(result);
+		
+		assertUserAfter(userBignoseOid)
+			.assignments()
+				.assertAssignments(2)
+				.assertRole(ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER)
+				.assertRole(ROLE_CANNIBAL_OID, SchemaConstants.ORG_APPROVER);
+	}
+	
+	/**
+	 * MID-4952
+	 */
+	@Test
+	public void test655BignoseAssignRoleCannibal() throws Exception {
+		final String TEST_NAME = "test655BignoseAssignRoleCannibal";
+		displayTestTitle(TEST_NAME);
+		assumeAssignmentPolicy(AssignmentPolicyEnforcementType.RELATIVE);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		assignRole(userBignoseOid, ROLE_CANNIBAL_OID, SchemaConstants.ORG_DEFAULT, getDefaultOptions(), task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		assertSuccess(result);
+		
+		assertUserAfter(userBignoseOid)
+			.assignments()
+				.assertAssignments(3)
+				.assertRole(ROLE_CANNIBAL_OID, SchemaConstants.ORG_DEFAULT)
+				.assertRole(ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER)
+				.assertRole(ROLE_CANNIBAL_OID, SchemaConstants.ORG_APPROVER);
+	}
+	
+	@Test
+	public void test656BignoseUnassignRoleCannibal() throws Exception {
+		final String TEST_NAME = "test656BignoseUnassignRoleCannibal";
+		displayTestTitle(TEST_NAME);
+		assumeAssignmentPolicy(AssignmentPolicyEnforcementType.RELATIVE);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		unassignRole(userBignoseOid, ROLE_CANNIBAL_OID, SchemaConstants.ORG_DEFAULT, getDefaultOptions(), task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		assertSuccess(result);
+		
+		assertUserAfter(userBignoseOid)
+			.assignments()
+				.assertAssignments(2)
+				.assertRole(ROLE_CANNIBAL_OID, SchemaConstants.ORG_OWNER)
+				.assertRole(ROLE_CANNIBAL_OID, SchemaConstants.ORG_APPROVER);
+	}
+	
+	@Test
+	public void test658BignoseUnassignRoleCannibalAsOwner() throws Exception {
+		final String TEST_NAME = "test658BignoseUnassignRoleCannibalAsOwner";
+		displayTestTitle(TEST_NAME);
+		assumeAssignmentPolicy(AssignmentPolicyEnforcementType.RELATIVE);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+		
+		Collection<ItemDelta<?,?>> modifications = new ArrayList<>();
+		modifications.add((createAssignmentModification(ROLE_CANNIBAL_OID, RoleType.COMPLEX_TYPE, SchemaConstants.ORG_OWNER, null, null, false)));
+		modifications.add((createAssignmentModification(ROLE_CANNIBAL_OID, RoleType.COMPLEX_TYPE, SchemaConstants.ORG_APPROVER, null, null, false)));
+		ObjectDelta<UserType> userDelta = ObjectDelta.createModifyDelta(userBignoseOid, modifications, UserType.class, prismContext);
+		
+		// WHEN
+		executeChanges(userDelta, getDefaultOptions(), task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		assertSuccess(result);
+		
+		assertUserAfter(userBignoseOid)
+			.assignments()
+				.assertNone();
 	}
 
 	@Test
@@ -2370,8 +2496,7 @@ public class TestRbac extends AbstractRbacTest {
 
         // THEN
         displayThen(TEST_NAME);
-        result.computeStatus();
-        TestUtil.assertSuccess(result);
+        assertSuccess(result);
 
         assertAssignedRole(USER_JACK_OID, ROLE_JUDGE_OID, task, result);
         assertDefaultDummyAccount(ACCOUNT_JACK_DUMMY_USERNAME, ACCOUNT_JACK_DUMMY_FULLNAME, true);
@@ -4602,6 +4727,84 @@ public class TestRbac extends AbstractRbacTest {
 
 		displayWhen(TEST_NAME);
 		executeChangesAssertSuccess(delta, getDefaultOptions(), task, result);
+	}
+
+	@Test(enabled = false)          // MID-4856
+	public void test890DeleteRoleUndeletable() throws Exception {
+		final String TEST_NAME = "test890DeleteRoleUndeletable";
+		displayTestTitle(TEST_NAME);
+		assumeAssignmentPolicy(AssignmentPolicyEnforcementType.FULL);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		try {
+			// WHEN
+			displayWhen(TEST_NAME);
+			deleteObject(RoleType.class, ROLE_UNDELETABLE_OID, task, result);
+			AssertJUnit.fail("Unexpected success");
+		} catch (PolicyViolationException e) {
+			// THEN
+			displayThen(TEST_NAME);
+			result.computeStatus();
+			TestUtil.assertFailure(result);
+		}
+	}
+
+	@Test           // MID-4856
+	public void test892DeleteRoleUndeletableGlobal() throws Exception {
+		final String TEST_NAME = "test892DeleteRoleUndeletableGlobal";
+		displayTestTitle(TEST_NAME);
+		assumeAssignmentPolicy(AssignmentPolicyEnforcementType.FULL);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		try {
+			// WHEN
+			displayWhen(TEST_NAME);
+			deleteObject(RoleType.class, ROLE_UNDELETABLE_GLOBAL_OID, task, result);
+			AssertJUnit.fail("Unexpected success");
+		} catch (PolicyViolationException e) {
+			// THEN
+			displayThen(TEST_NAME);
+			System.out.println("Got expected exception: " + e.getMessage());
+			result.computeStatus();
+			TestUtil.assertFailure(result);
+		}
+	}
+
+	@Test
+	public void test900ModifyDetectingRole() throws Exception {
+		final String TEST_NAME = "test900ModifyDetectingRole";
+		displayTestTitle(TEST_NAME);
+		assumeAssignmentPolicy(AssignmentPolicyEnforcementType.FULL);
+
+		Task task = createTask(TEST_NAME);
+		task.setOwner(getUser(USER_ADMINISTRATOR_OID));
+		OperationResult result = task.getResult();
+
+		PrismObject<RoleType> roleBefore = getRole(ROLE_DETECTING_MODIFICATIONS_OID);
+		display("Role before", roleBefore);
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		ObjectDelta<UserType> delta = DeltaBuilder.deltaFor(RoleType.class, prismContext)
+				.item(RoleType.F_NAME).replace(PolyString.fromOrig("modified"))
+				.asObjectDeltaCast(ROLE_DETECTING_MODIFICATIONS_OID);
+		executeChanges(delta, null, task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		result.computeStatus();
+		TestUtil.assertSuccess(result);
+
+		RoleType roleAfter = getRole(ROLE_DETECTING_MODIFICATIONS_OID).asObjectable();
+		display("Role after", roleAfter);
+
+		assertEquals("Wrong name", "modified", roleAfter.getName().getOrig());
+		assertTrue("Wrong description " + roleAfter.getDescription(),
+				roleAfter.getDescription() != null && roleAfter.getDescription().startsWith("Modified by administrator on "));
 	}
 
 	protected boolean testMultiplicityConstraintsForNonDefaultRelations() {

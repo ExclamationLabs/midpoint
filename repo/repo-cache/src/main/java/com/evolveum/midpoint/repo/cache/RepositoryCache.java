@@ -40,7 +40,6 @@ import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.apache.commons.lang.Validate;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
@@ -64,7 +63,6 @@ public class RepositoryCache implements RepositoryService {
 	private static final Trace LOGGER = TraceManager.getTrace(RepositoryCache.class);
 	private static final Trace PERFORMANCE_ADVISOR = TraceManager.getPerformanceAdvisorTrace();
 
-	private static final String CONFIGURATION_COMPONENT = "midpoint.repository";
 	private static final String PROPERTY_CACHE_MAX_TTL = "cacheMaxTTL";
 
 	private static final Set<Class<? extends ObjectType>> GLOBAL_CACHE_SUPPORTED_TYPES;
@@ -105,9 +103,9 @@ public class RepositoryCache implements RepositoryService {
 
 	@PostConstruct
 	public void initialize() {
-		Integer cacheMaxTTL = midpointConfiguration.getConfiguration(CONFIGURATION_COMPONENT)
+		Integer cacheMaxTTL = midpointConfiguration.getConfiguration(MidpointConfiguration.REPOSITORY_CONFIGURATION)
 				.getInt(PROPERTY_CACHE_MAX_TTL,0);
-		if (cacheMaxTTL == null || cacheMaxTTL < 0) {
+		if (cacheMaxTTL < 0) {
 			cacheMaxTTL = 0;
 		}
 		this.cacheMaxTTL = cacheMaxTTL * 1000;
@@ -273,10 +271,14 @@ public class RepositoryCache implements RepositoryService {
 		// DON't cache the object here. The object may not have proper "JAXB" form, e.g. some pieces may be
 		// DOM element instead of JAXB elements. Not to cache it is safer and the performance loss
 		// is acceptable.
-		if (cache != null) {
-			// Invalidate the cache entry if it happens to be there
-			cache.removeObject(oid);
-			cache.clearQueryResults(object.getCompileTimeClass());
+		if (options != null && options.isOverwrite()) {
+			invalidateCacheEntry(object.getCompileTimeClass(), oid);
+		} else {
+			// just for sure (the object should not be there but ...)
+			if (cache != null) {
+				cache.removeObject(oid);
+				cache.clearQueryResults(object.getCompileTimeClass());
+			}
 		}
 		return oid;
 	}
@@ -350,12 +352,9 @@ public class RepositoryCache implements RepositoryService {
 		// TODO use cached query result if applicable
 		log("Cache: PASS searchObjectsIterative ({})", type.getSimpleName());
 		final Cache cache = getCache();
-		ResultHandler<T> myHandler = new ResultHandler<T>() {
-			@Override
-			public boolean handle(PrismObject<T> object, OperationResult parentResult) {
-				cacheObject(cache, object, GetOperationOptions.isReadOnly(SelectorOptions.findRootOptions(options)));
-				return handler.handle(object, parentResult);
-			}
+		ResultHandler<T> myHandler = (object, parentResult1) -> {
+			cacheObject(cache, object, GetOperationOptions.isReadOnly(SelectorOptions.findRootOptions(options)));
+			return handler.handle(object, parentResult1);
 		};
 		Long startTime = repoOpStart();
 		try {
@@ -448,7 +447,7 @@ public class RepositoryCache implements RepositoryService {
 		}
 	}
 
-	protected <T extends ObjectType> void invalidateCacheEntry(Class<T> type, String oid) {
+	private <T extends ObjectType> void invalidateCacheEntry(Class<T> type, String oid) {
 		Cache cache = getCache();
 		if (cache != null) {
 			cache.removeObject(oid);
@@ -457,7 +456,6 @@ public class RepositoryCache implements RepositoryService {
 
 		globalCache.remove(new CacheKey(type, oid));
 		cacheDispatcher.dispatch(type, oid);
-		
 	}
 
 	@Override
@@ -501,7 +499,8 @@ public class RepositoryCache implements RepositoryService {
 			return false;
 		}
 		GetOperationOptions options1 = selectorOptions.getOptions();
-		if (options1 == null || options1.equals(new GetOperationOptions()) || options1.equals(GetOperationOptions.createAllowNotFound())) {
+		// TODO FIX THIS!!!
+		if (options1 == null || options1.equals(new GetOperationOptions()) || options1.equals(GetOperationOptions.createAllowNotFound()) || options1.equals(GetOperationOptions.createExecutionPhase())) {
 			return true;
 		}
 		return false;

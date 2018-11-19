@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 Evolveum
+ * Copyright (c) 2016-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ public class OperationalDataManager {
 		metaData.setCreateChannel(LensUtil.getChannel(context, task));      // TODO is this really used?
 		metaData.setRequestTimestamp(now);
 		if (task.getOwner() != null) {
-			metaData.setRequestorRef(createObjectRef(task.getOwner()));
+			metaData.setRequestorRef(createObjectRef(task.getOwner(), prismContext));
 		}
 		// It is not necessary to store requestor comment here as it is preserved in context.options field.
 		return metaData;
@@ -228,7 +228,7 @@ public class OperationalDataManager {
 		// The effectiveStatus of existing assignments is processed in FocusProcessor.processAssignmentActivation()
 		// We cannot process that here. Because this code is not even triggered when there is no delta. So recompute will not work.
 		ActivationType activationType = assignmentType.getActivation();
-		ActivationStatusType effectiveStatus = activationComputer.getEffectiveStatus(assignmentType.getLifecycleState(), activationType);
+		ActivationStatusType effectiveStatus = activationComputer.getEffectiveStatus(assignmentType.getLifecycleState(), activationType, null);
 		if (activationType == null) {
 			activationType = new ActivationType();
 			assignmentType.setActivation(activationType);
@@ -254,9 +254,9 @@ public class OperationalDataManager {
 		metaData.setCreateChannel(channel);
 		metaData.setCreateTimestamp(now);
 		if (task.getOwner() != null) {
-			metaData.setCreatorRef(createObjectRef(task.getOwner()));
+			metaData.setCreatorRef(createObjectRef(task.getOwner(), prismContext));
 		}
-		metaData.setCreateTaskRef(task.getOid() != null ? createObjectRef(task.getTaskPrismObject()) : null);
+		metaData.setCreateTaskRef(task.getOid() != null ? createObjectRef(task.getTaskPrismObject(), prismContext) : null);
 	}
 
 	public <F extends ObjectType, T extends ObjectType> Collection<ItemDelta<?,?>> createModifyMetadataDeltas(LensContext<F> context,
@@ -264,9 +264,9 @@ public class OperationalDataManager {
 		return DeltaBuilder.deltaFor(objectType, prismContext)
 				.item(metadataPath.subPath(MetadataType.F_MODIFY_CHANNEL)).replace(LensUtil.getChannel(context, task))
 				.item(metadataPath.subPath(MetadataType.F_MODIFY_TIMESTAMP)).replace(now)
-				.item(metadataPath.subPath(MetadataType.F_MODIFIER_REF)).replace(createObjectRef(task.getOwner()))
+				.item(metadataPath.subPath(MetadataType.F_MODIFIER_REF)).replace(createObjectRef(task.getOwner(), prismContext))
 				.item(metadataPath.subPath(MetadataType.F_MODIFY_TASK_REF)).replaceRealValues(
-						task.getOid() != null ? singleton(createObjectRef(task.getTaskPrismObject())) : emptySet())
+						task.getOid() != null ? singleton(createObjectRef(task.getTaskPrismObject(), prismContext)) : emptySet())
 				.asItemDeltas();
 	}
 

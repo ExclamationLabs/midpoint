@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2010-2017 Evolveum
+  ~ Copyright (c) 2010-2018 Evolveum
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
   ~ limitations under the License.
   -->
 
-<!-- IVORY dummy resource for testing. It is used in multi-resource tests.
+<!-- BEIGE dummy resource for testing. It is used in multi-resource tests.
       Similar to lavender resource but it has only relaxed dependency on default dummy resource. -->
 
 <resource oid="10000000-0000-0000-0000-00000001b504"
@@ -126,10 +126,7 @@
 				    </source>
 					<expression>
 						<script>
-							<language>http://www.w3.org/TR/xpath/</language>
-							<code>
-								concat($name, $iterationToken)
-							</code>
+							<code>name + iterationToken</code>
 						</script>
 					</expression>
 				</outbound>

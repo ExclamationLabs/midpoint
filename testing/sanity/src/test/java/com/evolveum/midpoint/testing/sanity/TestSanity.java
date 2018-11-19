@@ -1020,11 +1020,11 @@ public class TestSanity extends AbstractModelIntegrationTest {
                 REQUEST_USER_MODIFY_ADD_ACCOUNT_OPENDJ_FILENAME, ObjectDeltaType.class);
 
         // WHEN
-        TestUtil.displayWhen(TEST_NAME);
+        displayWhen(TEST_NAME);
         OperationResultType result = modifyObjectViaModelWS(objectChange);
 
         // THEN
-        TestUtil.displayThen(TEST_NAME);
+        displayThen(TEST_NAME);
         assertNoRepoCache();
         displayJaxb("modifyObject result", result, SchemaConstants.C_RESULT);
         TestUtil.assertSuccess("modifyObject has failed", result);
@@ -1657,11 +1657,11 @@ public class TestSanity extends AbstractModelIntegrationTest {
         assertNoRepoCache();
 
         // WHEN
-        TestUtil.displayWhen(TEST_NAME);
+        displayWhen(TEST_NAME);
         OperationResultType result = modifyObjectViaModelWS(objectChange);
 
         // THEN
-        TestUtil.displayThen(TEST_NAME);
+        displayThen(TEST_NAME);
         assertNoRepoCache();
         displayJaxb("modifyObject result:", result, SchemaConstants.C_RESULT);
         TestUtil.assertSuccess("modifyObject has failed", result);
@@ -1718,12 +1718,12 @@ public class TestSanity extends AbstractModelIntegrationTest {
         assertNoRepoCache();
 
         // WHEN
-        TestUtil.displayWhen(TEST_NAME);
+        displayWhen(TEST_NAME);
         modelWeb.getObject(ObjectTypes.SHADOW.getTypeQName(), accountShadowOidOpendj,
                 options, objectHolder, resultHolder);
 
         // THEN
-        TestUtil.displayThen(TEST_NAME);
+        displayThen(TEST_NAME);
         assertNoRepoCache();
         displayJaxb("getObject result", resultHolder.value, SchemaConstants.C_RESULT);
         TestUtil.assertSuccess("getObject has failed", resultHolder.value);
@@ -2906,15 +2906,16 @@ public class TestSanity extends AbstractModelIntegrationTest {
         display("Sync token before", tokenBefore.toString());
 
         // WHEN
+        displayWhen(TEST_NAME);
 
         Entry entry = openDJController.addEntryFromLdifFile(LDIF_WILL_FILENAME);
         display("Entry from LDIF", entry);
 
-        // THEN
-
         // Wait a bit to give the sync cycle time to detect the change
-        basicWaitForSyncChangeDetection(syncCycle, tokenBefore, 4, result);
+        basicWaitForSyncChangeDetection(syncCycle, tokenBefore, 2, result);
 
+        // THEN
+        displayThen(TEST_NAME);
         // Search for the user that should be created now
         UserType user = searchUserByName(WILL_NAME);
 
@@ -2925,7 +2926,7 @@ public class TestSanity extends AbstractModelIntegrationTest {
 
         // TODO: more checks
 
-        assertAndStoreSyncTokenIncrement(syncCycle, 4);
+        assertAndStoreSyncTokenIncrement(syncCycle, 2);
         checkAllShadows();
     }
 
@@ -2987,6 +2988,8 @@ public class TestSanity extends AbstractModelIntegrationTest {
 //        AssertJUnit.assertEquals(userOid, oidHolder.value);
 
         //WHEN
+        displayWhen(TEST_NAME);
+        
         //create account for e which should be correlated
         final OperationResult result = new OperationResult(TestSanity.class.getName()
                 + "." + TEST_NAME);
@@ -2999,10 +3002,12 @@ public class TestSanity extends AbstractModelIntegrationTest {
         Entry entry = openDJController.addEntryFromLdifFile(LDIF_E_FILENAME_LINK);
         display("Entry from LDIF", entry);
 
-        // THEN
         // Wait a bit to give the sync cycle time to detect the change
-        basicWaitForSyncChangeDetection(syncCycle, tokenBefore, 4, result);
+        basicWaitForSyncChangeDetection(syncCycle, tokenBefore, 1, result);
 
+        // THEN
+        displayThen(TEST_NAME);
+        
         //check user and account ref
         userType = searchUserByName("e");
 
@@ -3015,7 +3020,7 @@ public class TestSanity extends AbstractModelIntegrationTest {
 
         assertEqualsPolyString("Name doesn't match",  "uid=e,ou=People,dc=example,dc=com", account.getName());
 
-        assertAndStoreSyncTokenIncrement(syncCycle, 4);
+        assertAndStoreSyncTokenIncrement(syncCycle, 1);
         checkAllShadows();
     }
 
@@ -3130,11 +3135,11 @@ public class TestSanity extends AbstractModelIntegrationTest {
         display("Entry from LDIF", addEntry);
 
         // WHEN
-        TestUtil.displayWhen(TEST_NAME);
+        displayWhen(TEST_NAME);
         TaskType taskType = modelWeb.importFromResource(RESOURCE_OPENDJ_OID, RESOURCE_OPENDJ_ACCOUNT_OBJECTCLASS);
 
         // THEN
-        TestUtil.displayThen(TEST_NAME);
+        displayThen(TEST_NAME);
         assertNoRepoCache();
         displayJaxb("importFromResource result", taskType.getResult(), SchemaConstants.C_RESULT);
         AssertJUnit.assertEquals("importFromResource has failed", OperationResultStatusType.IN_PROGRESS, taskType.getResult().getStatus());

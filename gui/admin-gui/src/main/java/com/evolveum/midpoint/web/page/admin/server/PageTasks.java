@@ -24,7 +24,6 @@ import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.gui.api.util.WebModelServiceUtils;
 import com.evolveum.midpoint.model.api.ModelPublicConstants;
 import com.evolveum.midpoint.prism.PrismObject;
-import com.evolveum.midpoint.prism.PrismProperty;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.prism.polystring.PolyStringNormalizer;
 import com.evolveum.midpoint.prism.query.*;
@@ -52,7 +51,9 @@ import com.evolveum.midpoint.web.component.data.BoxedTablePanel;
 import com.evolveum.midpoint.web.component.data.Table;
 import com.evolveum.midpoint.web.component.data.column.*;
 import com.evolveum.midpoint.web.component.input.StringChoiceRenderer;
+import com.evolveum.midpoint.web.component.menu.cog.ButtonInlineMenuItem;
 import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItem;
+import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItemAction;
 import com.evolveum.midpoint.web.component.refresh.AutoRefreshDto;
 import com.evolveum.midpoint.web.component.refresh.AutoRefreshPanel;
 import com.evolveum.midpoint.web.component.refresh.Refreshable;
@@ -395,87 +396,21 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 		columns.add(check);
 		columns.add(new PropertyColumn(createStringResource("pageTasks.node.statusMessage"), "statusMessage"));
 
-		IColumn<NodeDto, String> menuColumn = new InlineMenuButtonColumn<NodeDto>(createNodesInlineMenu(false), 2,
-				PageTasks.this) {
-			@Override
-			protected int getHeaderNumberOfButtons() {
-				return 2;
-			}
-
-			@Override
-			protected List<InlineMenuItem> getHeaderMenuItems() {
-				return createNodesInlineMenu(true);
-			}
-		};
+		IColumn<NodeDto, String> menuColumn = new InlineMenuButtonColumn<NodeDto>(createNodesInlineMenu(), PageTasks.this);
 		columns.add(menuColumn);
 
 		return columns;
 	}
 
-	private List<InlineMenuItem> createNodesInlineMenu(boolean isHeader) {
+	private List<InlineMenuItem> createNodesInlineMenu() {
 		List<InlineMenuItem> items = new ArrayList<>();
-		items.add(new InlineMenuItem(createStringResource("pageTasks.button.stopScheduler"),
-				new Model<>(false),
-				new Model<>(false),
-				false,
-				new ColumnMenuAction<NodeDto>() {
-
-					@Override
-					public void onClick(AjaxRequestTarget target) {
-						if (getRowModel() == null) {
-							stopSchedulersPerformed(target);
-						} else {
-							NodeDto rowDto = getRowModel().getObject();
-							stopSchedulersPerformed(target, rowDto);
-						}
-					}
-				}, InlineMenuItem.TASKS_INLINE_MENU_ITEM_ID.NODE_STOP_SCHEDULER.getMenuItemId(),
-				GuiStyleConstants.CLASS_STOP_MENU_ITEM,
-				DoubleButtonColumn.BUTTON_COLOR_CLASS.INFO.toString()) {
-
+		items.add(new ButtonInlineMenuItem(createStringResource("pageTasks.button.startScheduler")) {
 			private static final long serialVersionUID = 1L;
 
 			@Override
-			public boolean isShowConfirmationDialog() {
-				return PageTasks.this.isNodeShowConfirmationDialog((ColumnMenuAction) getAction());
-			}
-
-			@Override
-			public IModel<String> getConfirmationMessageModel() {
-				String actionName = createStringResource("pageTasks.message.stopSchedulerAction").getString();
-				return PageTasks.this.getNodeConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
-			}
-
-		});
-
-		items.add(new InlineMenuItem(createStringResource("pageTasks.button.stopSchedulerAndTasks"), false,
-				new ColumnMenuAction<NodeDto>() {
-
-					@Override
-					public void onClick(AjaxRequestTarget target) {
-						stopSchedulersAndTasksPerformed(target, getRowModel() != null ? getRowModel().getObject() : null);
-					}
-				}) {
-
-			private static final long serialVersionUID = 1L;
-
-			@Override
-			public boolean isShowConfirmationDialog() {
-				return PageTasks.this.isNodeShowConfirmationDialog((ColumnMenuAction) getAction());
-			}
-
-			@Override
-			public IModel<String> getConfirmationMessageModel() {
-				String actionName = createStringResource("pageTasks.message.stopSchedulerTasksAction").getString();
-				return PageTasks.this.getNodeConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
-			}
-		});
-
-		items.add(new InlineMenuItem(createStringResource("pageTasks.button.startScheduler"),
-				new Model<>(false),
-				new Model<>(false),
-				false,
-				new ColumnMenuAction<NodeDto>() {
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<NodeDto>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
@@ -486,15 +421,12 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 							startSchedulersPerformed(target, rowDto);
 						}
 					}
-				}, InlineMenuItem.TASKS_INLINE_MENU_ITEM_ID.NODE_START.getMenuItemId(),
-				GuiStyleConstants.CLASS_START_MENU_ITEM,
-				DoubleButtonColumn.BUTTON_COLOR_CLASS.INFO.toString()) {
-
-			private static final long serialVersionUID = 1L;
+				};
+			}
 
 			@Override
-			public boolean isShowConfirmationDialog() {
-				return PageTasks.this.isNodeShowConfirmationDialog((ColumnMenuAction) getAction());
+			public String getButtonIconCssClass() {
+				return GuiStyleConstants.CLASS_START_MENU_ITEM;
 			}
 
 			@Override
@@ -503,9 +435,68 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 				return PageTasks.this.getNodeConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
 			}
 		});
-		items.add(new InlineMenuItem(createStringResource("pageTasks.button.deleteNode"), false,
-				new ColumnMenuAction<NodeDto>() {
 
+		items.add(new ButtonInlineMenuItem(createStringResource("pageTasks.button.stopScheduler")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<NodeDto>() {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public void onClick(AjaxRequestTarget target) {
+						if (getRowModel() == null) {
+							stopSchedulersPerformed(target);
+						} else {
+							NodeDto rowDto = getRowModel().getObject();
+							stopSchedulersPerformed(target, rowDto);
+						}
+					}
+				};
+			}
+
+			@Override
+			public String getButtonIconCssClass() {
+				return GuiStyleConstants.CLASS_STOP_MENU_ITEM;
+			}
+
+			@Override
+			public IModel<String> getConfirmationMessageModel() {
+				String actionName = createStringResource("pageTasks.message.stopSchedulerAction").getString();
+				return PageTasks.this.getNodeConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
+			}
+		});
+
+		items.add(new InlineMenuItem(createStringResource("pageTasks.button.stopSchedulerAndTasks")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<NodeDto>() {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public void onClick(AjaxRequestTarget target) {
+						stopSchedulersAndTasksPerformed(target, getRowModel() != null ? getRowModel().getObject() : null);
+					}
+				};
+			}
+
+			@Override
+			public IModel<String> getConfirmationMessageModel() {
+				String actionName = createStringResource("pageTasks.message.stopSchedulerTasksAction").getString();
+				return PageTasks.this.getNodeConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
+			}
+		});
+
+		items.add(new InlineMenuItem(createStringResource("pageTasks.button.deleteNode")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<NodeDto>() {
+					private static final long serialVersionUID = 1L;
 					@Override
 					public void onClick(AjaxRequestTarget target) {
 						if (getRowModel() == null) {
@@ -515,13 +506,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 							deleteNodesPerformed(target, rowDto);
 						}
 					}
-				}) {
-
-			private static final long serialVersionUID = 1L;
-
-			@Override
-			public boolean isShowConfirmationDialog() {
-				return PageTasks.this.isNodeShowConfirmationDialog((ColumnMenuAction) getAction());
+				};
 			}
 
 			@Override
@@ -541,7 +526,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 			private static final long serialVersionUID = 1L;
 
 			@Override
-			protected void onUpdateRow(AjaxRequestTarget target, DataTable table, IModel<TaskDto> rowModel) {
+			protected void onUpdateRow(AjaxRequestTarget target, DataTable table, IModel<TaskDto> rowModel, IModel<Boolean> selectedModel) {
 				TaskDtoProvider taskTableProvider = (TaskDtoProvider) table.getDataProvider();
 				List<TaskDto> objects = taskTableProvider.getAvailableData();
 				if (objects == null || objects.isEmpty()) {
@@ -553,7 +538,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 						taskDto.setSelected(selected);
 					}
 				});
-				super.onUpdateRow(target, table, rowModel);
+				super.onUpdateRow(target, table, rowModel, selectedModel);
 			}
 		};
 		columns.add(column);
@@ -629,10 +614,10 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 						Date date = getCurrentRuntime(rowModel);
 						TaskDto task = rowModel.getObject();
 						if (task.getRawExecutionStatus() == TaskExecutionStatus.CLOSED && date != null) {
-							((DateLabelComponent) item.get(componentId)).setBefore("closed at ");
+							((DateLabelComponent) item.get(componentId)).setBefore(createStringResource("pageTasks.task.closedAt").getString());
 						} else if (date != null) {
 							((DateLabelComponent) item.get(componentId))
-									.setBefore(DurationFormatUtils.formatDurationWords(date.getTime(), true, true));
+									.setBefore(WebComponentUtil.formatDurationWordsForLocal(date.getTime(), true, true, PageTasks.this));
 						}
 						return date;
 					}
@@ -648,9 +633,9 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 				if (date != null) {
 					if (task.getRawExecutionStatus() == TaskExecutionStatus.CLOSED) {
 						displayValue =
-								"closed at " + WebComponentUtil.getLocalizedDate(date, DateLabelComponent.LONG_MEDIUM_STYLE);
+								createStringResource("pageTasks.task.closedAt").getString() + WebComponentUtil.getLocalizedDate(date, DateLabelComponent.LONG_MEDIUM_STYLE);
 					} else {
-						displayValue = DurationFormatUtils.formatDurationWords(date.getTime(), true, true);
+						displayValue = WebComponentUtil.formatDurationWordsForLocal(date.getTime(), true, true, PageTasks.this);
 					}
 				}
 				return Model.of(displayValue);
@@ -713,18 +698,8 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 			}
 		});
 
-		IColumn<TaskDto, String> menuColumn = new InlineMenuButtonColumn<TaskDto>(createTasksInlineMenu(false, null), 2,
-				PageTasks.this) {
-			@Override
-			protected int getHeaderNumberOfButtons() {
-				return 2;
-			}
-
-			@Override
-			protected List<InlineMenuItem> getHeaderMenuItems() {
-				return createTasksInlineMenu(true, null);
-			}
-		};
+		IColumn<TaskDto, String> menuColumn = new InlineMenuButtonColumn<TaskDto>(createTasksInlineMenu(false, null),
+				PageTasks.this);
 		columns.add(menuColumn);
 
 		return columns;
@@ -755,11 +730,13 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 
 	private List<InlineMenuItem> createTasksInlineMenu(boolean isHeader, TaskDto dto) {
 		List<InlineMenuItem> items = new ArrayList<>();
-		items.add(new InlineMenuItem(createStringResource("pageTasks.button.suspendTask"),
-				new Model<>(false),
-				new Model<>(false),
-				false,
-				new ColumnMenuAction<TaskDto>() {
+		items.add(new ButtonInlineMenuItem(createStringResource("pageTasks.button.suspendTask")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<TaskDto>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
@@ -770,14 +747,12 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 							suspendTaskPerformed(target, rowDto);
 						}
 					}
-				}, InlineMenuItem.TASKS_INLINE_MENU_ITEM_ID.SUSPEND.getMenuItemId(),
-				GuiStyleConstants.CLASS_SUSPEND_MENU_ITEM,
-				DoubleButtonColumn.BUTTON_COLOR_CLASS.INFO.toString()) {
-			private static final long serialVersionUID = 1L;
+				};
+			}
 
 			@Override
-			public boolean isShowConfirmationDialog() {
-				return PageTasks.this.isTaskShowConfirmationDialog((ColumnMenuAction) getAction());
+			public String getButtonIconCssClass() {
+				return GuiStyleConstants.CLASS_SUSPEND_MENU_ITEM;
 			}
 
 			@Override
@@ -785,13 +760,14 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 				String actionName = createStringResource("pageTasks.message.suspendAction").getString();
 				return PageTasks.this.getTaskConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
 			}
-
 		});
-		items.add(new InlineMenuItem(createStringResource("pageTasks.button.resumeTask"),
-				new Model<>(false),
-				new Model<>(false),
-				false,
-				new ColumnMenuAction<TaskDto>() {
+		items.add(new ButtonInlineMenuItem(createStringResource("pageTasks.button.resumeTask")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<TaskDto>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
@@ -802,15 +778,12 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 							resumeTaskPerformed(target, rowDto);
 						}
 					}
-				}, InlineMenuItem.TASKS_INLINE_MENU_ITEM_ID.RESUME.getMenuItemId(),
-				GuiStyleConstants.CLASS_RESUME_MENU_ITEM,
-				DoubleButtonColumn.BUTTON_COLOR_CLASS.INFO.toString()) {
-
-			private static final long serialVersionUID = 1L;
+				};
+			}
 
 			@Override
-			public boolean isShowConfirmationDialog() {
-				return PageTasks.this.isTaskShowConfirmationDialog((ColumnMenuAction) getAction());
+			public String getButtonIconCssClass() {
+				return GuiStyleConstants.CLASS_RESUME_MENU_ITEM;
 			}
 
 			@Override
@@ -819,8 +792,13 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 				return PageTasks.this.getTaskConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
 			}
 		});
-		items.add(new InlineMenuItem(createStringResource("pageTasks.button.scheduleTask"), false,
-				new ColumnMenuAction<TaskDto>() {
+		items.add(new InlineMenuItem(createStringResource("pageTasks.button.scheduleTask")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<TaskDto>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
@@ -831,13 +809,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 							scheduleTaskPerformed(target, rowDto);
 						}
 					}
-				}) {
-
-			private static final long serialVersionUID = 1L;
-
-			@Override
-			public boolean isShowConfirmationDialog() {
-				return PageTasks.this.isTaskShowConfirmationDialog((ColumnMenuAction) getAction());
+				};
 			}
 
 			@Override
@@ -845,10 +817,14 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 				String actionName = createStringResource("pageTasks.message.runNowAction").getString();
 				return PageTasks.this.getTaskConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
 			}
-
 		});
-		items.add(new InlineMenuItem(createStringResource("pageTasks.button.deleteTask"), false,
-				new ColumnMenuAction<TaskDto>() {
+		items.add(new InlineMenuItem(createStringResource("pageTasks.button.deleteTask")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<TaskDto>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
@@ -859,13 +835,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 							deleteTaskConfirmedPerformed(target, rowDto);
 						}
 					}
-				}) {
-
-			private static final long serialVersionUID = 1L;
-
-			@Override
-			public boolean isShowConfirmationDialog() {
-				return PageTasks.this.isTaskShowConfirmationDialog((ColumnMenuAction) getAction());
+				};
 			}
 
 			@Override
@@ -873,13 +843,18 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 				String actionName = createStringResource("pageTasks.message.deleteAction").getString();
 				return PageTasks.this.getTaskConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
 			}
-
 		});
+
 		if (!isHeader && dto != null) {
 			if (dto.getTaskType().getWorkManagement() != null
 					&& dto.getTaskType().getWorkManagement().getTaskKind() == TaskKindType.COORDINATOR) {
-				items.add(new InlineMenuItem(createStringResource("pageTasks.button.reconcileWorkers"), false,
-						new ColumnMenuAction<TaskDto>() {
+				items.add(new InlineMenuItem(createStringResource("pageTasks.button.reconcileWorkers")) {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public InlineMenuItemAction initAction() {
+						return new ColumnMenuAction<TaskDto>() {
+							private static final long serialVersionUID = 1L;
 
 							@Override
 							public void onClick(AjaxRequestTarget target) {
@@ -890,13 +865,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 									reconcileWorkersConfirmedPerformed(target, rowDto);
 								}
 							}
-						}) {
-
-					private static final long serialVersionUID = 1L;
-
-					@Override
-					public boolean isShowConfirmationDialog() {
-						return PageTasks.this.isTaskShowConfirmationDialog((ColumnMenuAction) getAction());
+						};
 					}
 
 					@Override
@@ -905,8 +874,14 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 						return PageTasks.this.getTaskConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
 					}
 				});
-				items.add(new InlineMenuItem(createStringResource("pageTasks.button.suspendCoordinatorOnly"), false,
-						new ColumnMenuAction<TaskDto>() {
+
+				items.add(new InlineMenuItem(createStringResource("pageTasks.button.suspendCoordinatorOnly")) {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public InlineMenuItemAction initAction() {
+						return new ColumnMenuAction<TaskDto>() {
+							private static final long serialVersionUID = 1L;
 
 							@Override
 							public void onClick(AjaxRequestTarget target) {
@@ -917,13 +892,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 									suspendCoordinatorOnly(target, rowDto);
 								}
 							}
-						}) {
-
-					private static final long serialVersionUID = 1L;
-
-					@Override
-					public boolean isShowConfirmationDialog() {
-						return PageTasks.this.isTaskShowConfirmationDialog((ColumnMenuAction) getAction());
+						};
 					}
 
 					@Override
@@ -932,8 +901,13 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 						return PageTasks.this.getTaskConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
 					}
 				});
-				items.add(new InlineMenuItem(createStringResource("pageTasks.button.resumeCoordinatorOnly"), false,
-						new ColumnMenuAction<TaskDto>() {
+				items.add(new InlineMenuItem(createStringResource("pageTasks.button.resumeCoordinatorOnly")) {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public InlineMenuItemAction initAction() {
+						return new ColumnMenuAction<TaskDto>() {
+							private static final long serialVersionUID = 1L;
 
 							@Override
 							public void onClick(AjaxRequestTarget target) {
@@ -944,13 +918,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 									resumeCoordinatorOnly(target, rowDto);
 								}
 							}
-						}) {
-
-					private static final long serialVersionUID = 1L;
-
-					@Override
-					public boolean isShowConfirmationDialog() {
-						return PageTasks.this.isTaskShowConfirmationDialog((ColumnMenuAction) getAction());
+						};
 					}
 
 					@Override
@@ -959,8 +927,13 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 						return PageTasks.this.getTaskConfirmationMessageModel((ColumnMenuAction) getAction(), actionName);
 					}
 				});
-				items.add(new InlineMenuItem(createStringResource("pageTasks.button.deleteWorkersAndWorkState"), false,
-						new ColumnMenuAction<TaskDto>() {
+				items.add(new InlineMenuItem(createStringResource("pageTasks.button.deleteWorkersAndWorkState")) {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public InlineMenuItemAction initAction() {
+						return new ColumnMenuAction<TaskDto>() {
+							private static final long serialVersionUID = 1L;
 
 							@Override
 							public void onClick(AjaxRequestTarget target) {
@@ -971,13 +944,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 									deleteWorkersAndWorkState(target, rowDto);
 								}
 							}
-						}) {
-
-					private static final long serialVersionUID = 1L;
-
-					@Override
-					public boolean isShowConfirmationDialog() {
-						return PageTasks.this.isTaskShowConfirmationDialog((ColumnMenuAction) getAction());
+						};
 					}
 
 					@Override
@@ -989,20 +956,19 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 			}
 		}
 		if (isHeader) {
-			items.add(new InlineMenuItem(createStringResource("pageTasks.button.deleteAllClosedTasks"), false,
-					new ColumnMenuAction<TaskDto>() {
+			items.add(new InlineMenuItem(createStringResource("pageTasks.button.deleteAllClosedTasks")) {
+				private static final long serialVersionUID = 1L;
+
+				@Override
+				public InlineMenuItemAction initAction() {
+					return new ColumnMenuAction<TaskDto>() {
+						private static final long serialVersionUID = 1L;
 
 						@Override
 						public void onClick(AjaxRequestTarget target) {
 							deleteAllClosedTasksConfirmedPerformed(target);
 						}
-					}) {
-
-				private static final long serialVersionUID = 1L;
-
-				@Override
-				public boolean isShowConfirmationDialog() {
-					return true;
+					};
 				}
 
 				@Override
@@ -1154,7 +1120,6 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 			key = "pageTasks.inForNotRunningTasks";
 		}
 
-		//todo i18n
 		return PageBase.createStringResourceStatic(this, key, DurationFormatUtils.formatDurationWords(displayTime, true, true))
 				.getString();
 	}
@@ -1164,21 +1129,14 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 
 		if (task.getRawExecutionStatus() == TaskExecutionStatus.CLOSED) {
 
-			//todo i18n and proper date/time formatting
 			Long time = task.getCompletionTimestamp();
 			if (time == null) {
 				return null;
 			}
 			return new Date(time);
 
-		} else {
-			Long time = task.getCurrentRuntime();
-			if (time == null) {
-				return null;
-			}
-			//todo i18n
-			return null;
-		}
+		} 
+		return null;
 	}
 
 	private String getLastCheckInTime(IModel<NodeDto> nodeModel) {
@@ -1188,9 +1146,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 			return "";
 		}
 
-		//todo i18n
-		return DurationFormatUtils.formatDurationWords(System.currentTimeMillis() - time, true, true)
-				+ " ago";
+		return createStringResource("pageTasks.message.getLastCheckInTime", DurationFormatUtils.formatDurationWords(System.currentTimeMillis() - time, true, true)).getString();
 	}
 
 	private void initDiagnosticButtons() {
@@ -1286,15 +1242,13 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 			result.computeStatus();
 			if (result.isSuccess()) {
 				if (suspendedPlain && suspendedCoordinators) {
-					result.recordStatus(OperationResultStatus.SUCCESS,
-							"The task(s) have been successfully suspended.");    // todo i18n
+					result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("pageTasks.message.suspendTasksPerformed.success").getString());
 				} else {
-					result.recordWarning(
-							"Task(s) suspension has been successfully requested; please check for its completion using task list.");   // todo i18n
+					result.recordWarning( createStringResource("pageTasks.message.suspendTasksPerformed.warning").getString());
 				}
 			}
 		} catch (ObjectNotFoundException | SchemaException | SecurityViolationException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-			result.recordFatalError("Couldn't suspend the task(s)", e);
+			result.recordFatalError(createStringResource("pageTasks.message.suspendTasksPerformed.fatalError").getString(), e);
 		}
 		showResult(result);
 
@@ -1383,10 +1337,10 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             getTaskService().scheduleTasksNow(oids, opTask, result);
             result.computeStatus();
             if (result.isSuccess()) {
-                result.recordStatus(OperationResultStatus.SUCCESS, "The task(s) have been successfully scheduled.");    // todo i18n
+                result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("pageTasks.message.scheduleTasksPerformed.success").getString());
             }
         } catch (ObjectNotFoundException | SchemaException | SecurityViolationException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't schedule the task(s)", e);        // todo i18n
+            result.recordFatalError(createStringResource("pageTasks.message.scheduleTasksPerformed.fatalError").getString(), e);
         }
         showResult(result);
 
@@ -1421,18 +1375,13 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             result.computeStatus();
             if (result.isSuccess()) {
                 if (suspended) {
-                    // todo i18n
-                    result.recordStatus(OperationResultStatus.SUCCESS, "Selected node scheduler(s) have been " +
-                            "successfully stopped, including tasks that were running on them.");
+                    result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("pageTasks.message.stopSchedulersAndTasksPerformed.success").getString());
                 } else {
-                    // todo i18n
-                    result.recordWarning("Selected node scheduler(s) have been successfully paused; however, " +
-                            "some of the tasks they were executing are still running on them. Please check " +
-                            "their completion using task list.");
+                    result.recordWarning(createStringResource("pageTasks.message.stopSchedulersAndTasksPerformed.warning").getString());
                 }
             }
         } catch (SecurityViolationException | ObjectNotFoundException | SchemaException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't stop schedulers due", e);
+            result.recordFatalError(createStringResource("pageTasks.message.stopSchedulersAndTasksPerformed.fatalError").getString(), e);
         }
         showResult(result);
 
@@ -1461,10 +1410,10 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             getTaskService().startSchedulers(identifiers, opTask, result);
             result.computeStatus();
             if (result.isSuccess()) {
-                result.recordStatus(OperationResultStatus.SUCCESS, "Selected node scheduler(s) have been successfully started.");   // todo i18n
+                result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("pageTasks.message.startSchedulersPerformed.success").getString());
             }
         } catch (SecurityViolationException | ObjectNotFoundException | SchemaException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't start the scheduler(s)", e);
+            result.recordFatalError(createStringResource("pageTasks.message.startSchedulersPerformed.fatalError").getString(), e);
         }
 
         showResult(result);
@@ -1493,10 +1442,10 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             getTaskService().stopSchedulers(identifiers, opTask, result);
             result.computeStatus();
             if (result.isSuccess()) {
-                result.recordStatus(OperationResultStatus.SUCCESS, "Selected node scheduler(s) have been successfully stopped.");   // todo i18n
+                result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("pageTasks.message.stopSchedulersPerformed.success").getString());
             }
         } catch (SecurityViolationException | ObjectNotFoundException | SchemaException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't stop the scheduler(s)", e);   // todo i18n
+            result.recordFatalError(createStringResource("pageTasks.message.stopSchedulersPerformed.fatalError").getString(), e);
         }
         showResult(result);
 
@@ -1528,13 +1477,13 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             try {
                 getModelService().executeChanges(deltas, null, task, result);
             } catch (Exception e) {     // until java 7 we do it in this way
-                result.recordFatalError("Couldn't delete the node " + nodeDto.getNodeIdentifier(), e);
+                result.recordFatalError(createStringResource("pageTasks.message.deleteNodesPerformed.fatalError").getString() + nodeDto.getNodeIdentifier(), e);
             }
         }
 
         result.computeStatus();
         if (result.isSuccess()) {
-            result.recordStatus(OperationResultStatus.SUCCESS, "Selected node(s) have been successfully deleted."); // todo i18n
+            result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("pageTasks.message.deleteNodesPerformed.success").getString());
         }
         showResult(result);
 
@@ -1569,14 +1518,13 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             result.computeStatus();
             if (result.isSuccess()) {
                 if (stopped) {
-                    result.recordStatus(OperationResultStatus.SUCCESS, "Service threads on local node have been successfully deactivated.");    // todo i18n
+                    result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("pageTasks.message.deactivateServiceThreadsPerformed.success").getString());
                 } else {
-                    // todo i18n
-                    result.recordWarning("Deactivation of service threads on local node have been successfully requested; however, some of the tasks are still running. Please check their completion using task list.");
+                    result.recordWarning(createStringResource("pageTasks.message.deactivateServiceThreadsPerformed.warning").getString());
                 }
             }
         } catch (RuntimeException | SchemaException | SecurityViolationException | ExpressionEvaluationException | ObjectNotFoundException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't deactivate service threads on this node", e);
+            result.recordFatalError(createStringResource("pageTasks.message.deactivateServiceThreadsPerformed.fatalError").getString(), e);
         }
         showResult(result);
 
@@ -1592,10 +1540,10 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             getTaskService().reactivateServiceThreads(opTask, result);
             result.computeStatus();
             if (result.isSuccess()) {
-                result.recordStatus(OperationResultStatus.SUCCESS, "Service threads on local node have been successfully reactivated.");    // todo i18n
+                result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("pageTasks.message.reactivateServiceThreadsPerformed.success").getString());
             }
         } catch (RuntimeException | SchemaException | SecurityViolationException | ExpressionEvaluationException | ObjectNotFoundException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't reactivate service threads on local node", e);    // todo i18n
+            result.recordFatalError(createStringResource("pageTasks.message.reactivateServiceThreadsPerformed.fatalError").getString(), e);
         }
         showResult(result);
 
@@ -1756,10 +1704,10 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             getTaskService().suspendAndDeleteTasks(TaskDto.getOids(taskDtoList), WAIT_FOR_TASK_STOP, true, opTask, result);
             result.computeStatus();
             if (result.isSuccess()) {
-                result.recordStatus(OperationResultStatus.SUCCESS, "The task(s) have been successfully deleted."); // todo i18n
+                result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("pageTasks.message.deleteTaskConfirmedPerformed.success").getString());
             }
         } catch (ObjectNotFoundException | SchemaException | SecurityViolationException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't delete the task(s)", e);  // todo i18n
+            result.recordFatalError(createStringResource("pageTasks.message.deleteTaskConfirmedPerformed.fatalError").getString(), e);
         }
         showResult(result);
 
@@ -1780,7 +1728,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             	result.setMessage(result.getSubresults().get(0).getMessage());
             }
         } catch (ObjectAlreadyExistsException | ObjectNotFoundException | SchemaException | SecurityViolationException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't reconcile the workers", e);  // todo i18n
+            result.recordFatalError(createStringResource("pageTasks.message.reconcileWorkersConfirmedPerformed.fatalError").getString(), e);
         }
 	    showResult(result);
 
@@ -1799,7 +1747,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 	        // TODO check whether the suspension was complete
             result.computeStatus();
         } catch (ObjectNotFoundException | SchemaException | SecurityViolationException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't suspend the coordinator", e);  // todo i18n
+            result.recordFatalError(createStringResource("pageTasks.message.suspendCoordinatorOnly.fatalError").getString(), e);
         }
 	    showResult(result);
 
@@ -1815,7 +1763,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             getTaskService().resumeTasks(Collections.singleton(task.getOid()), opTask, result);
             result.computeStatus();
         } catch (ObjectNotFoundException | SchemaException | SecurityViolationException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't resume the coordinator", e);  // todo i18n
+            result.recordFatalError(createStringResource("pageTasks.message.resumeCoordinatorOnly.fatalError").getString(), e);
         }
 	    showResult(result);
 
@@ -1831,7 +1779,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             getTaskService().deleteWorkersAndWorkState(task.getOid(), WAIT_FOR_TASK_STOP, opTask, result);
             result.computeStatus();
         } catch (ObjectNotFoundException | SchemaException | SecurityViolationException | ExpressionEvaluationException | RuntimeException | CommunicationException | ConfigurationException e) {
-            result.recordFatalError("Couldn't delete workers and the work state of the coordinator", e);  // todo i18n
+            result.recordFatalError(createStringResource("pageTasks.message.deleteWorkersAndWorkState.fatalError").getString(), e);
         }
 	    showResult(result);
 
@@ -1956,13 +1904,9 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             CleanupPolicyType policy = new CleanupPolicyType();
             policy.setMaxAge(XmlTypeConverter.createDuration(0));
 
-            CleanupPoliciesType policies = new CleanupPoliciesType();
+            CleanupPoliciesType policies = new CleanupPoliciesType(getPrismContext());
             policies.setClosedTasks(policy);
-
-            PrismProperty<CleanupPoliciesType> policiesProperty = getPrismContext().getSchemaRegistry()
-                    .findPropertyDefinitionByElementName(SchemaConstants.MODEL_EXTENSION_CLEANUP_POLICIES).instantiate();
-            policiesProperty.setRealValue(policies);
-            task.setExtensionProperty(policiesProperty);
+            task.setExtensionContainerValue(SchemaConstants.MODEL_EXTENSION_CLEANUP_POLICIES, policies);
         } catch (SchemaException e) {
             LOGGER.error("Error dealing with schema (task {})", task, e);
             launchResult.recordFatalError("Error dealing with schema", e);
@@ -2009,7 +1953,7 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
             return;
         }
 
-        items.addAll(createNodesInlineMenu(false));
+        items.addAll(createNodesInlineMenu());
     }
 
     private IModel<String> getTaskConfirmationMessageModel(ColumnMenuAction action, String actionName){

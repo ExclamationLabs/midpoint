@@ -71,6 +71,7 @@ public class WfHook implements ChangeHook {
     @Autowired private BaseConfigurationHelper baseConfigurationHelper;
     @Autowired private HookRegistry hookRegistry;
     @Autowired private WorkflowManager workflowManager;
+    @Autowired private ClockworkMedic medic;
 
     private static final String DOT_CLASS = WfHook.class.getName() + ".";
     private static final String OPERATION_INVOKE = DOT_CLASS + "invoke";
@@ -161,7 +162,7 @@ public class WfHook implements ChangeHook {
         	@SuppressWarnings({"unchecked", "raw"})
             LensContext<?> lensContext = (LensContext<?>) context;
 			try {
-				ClockworkMedic.traceContext(LOGGER, "WORKFLOW (" + context.getState() + ")", "workflow processing", true, lensContext, false);
+				medic.traceContext(LOGGER, "WORKFLOW (" + context.getState() + ")", "workflow processing", true, lensContext, false);
 			} catch (SchemaException e) {
 				throw new IllegalStateException("SchemaException when tracing model context: " + e.getMessage(), e);
 			}
@@ -183,8 +184,8 @@ public class WfHook implements ChangeHook {
                         return hookOperationMode;
                     }
                 } catch (ObjectNotFoundException|SchemaException|RuntimeException|ExpressionEvaluationException | CommunicationException | ConfigurationException | SecurityViolationException e) {
-                    LoggingUtils.logUnexpectedException(LOGGER, "Exception while running change processor {}", e, changeProcessor.getClass().getName());
-                    result.recordFatalError("Exception while running change processor " + changeProcessor.getClass(), e);
+                    LoggingUtils.logUnexpectedException(LOGGER, "Exception while running change processor {}: {}", e, changeProcessor.getClass().getName(), e.getMessage());
+                    result.recordFatalError("Exception while running change processor " + changeProcessor.getClass().getSimpleName() + ": " + e.getMessage(), e);
                     return HookOperationMode.ERROR;
                 }
             }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
+import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.internals.InternalsConfig;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
@@ -36,7 +37,6 @@ import com.evolveum.midpoint.model.api.ModelExecuteOptions;
 import com.evolveum.midpoint.model.api.context.SynchronizationPolicyDecision;
 import com.evolveum.midpoint.model.api.util.ModelUtils;
 import com.evolveum.midpoint.model.common.SystemObjectCache;
-import com.evolveum.midpoint.model.impl.controller.ModelImplUtils;
 import com.evolveum.midpoint.model.impl.lens.ClockworkMedic;
 import com.evolveum.midpoint.model.impl.lens.LensContext;
 import com.evolveum.midpoint.model.impl.lens.LensElementContext;
@@ -46,6 +46,7 @@ import com.evolveum.midpoint.model.impl.lens.LensProjectionContext;
 import com.evolveum.midpoint.model.impl.lens.LensUtil;
 import com.evolveum.midpoint.model.impl.lens.SynchronizationIntent;
 import com.evolveum.midpoint.model.impl.security.SecurityHelper;
+import com.evolveum.midpoint.model.impl.util.ModelImplUtils;
 import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.PrismReference;
@@ -128,12 +129,11 @@ public class ContextLoader {
 	
 			if (consistencyChecks) context.checkConsistence();
 	
-			determineFocusContext((LensContext<? extends FocusType>)context, result);
+			determineFocusContext((LensContext<? extends FocusType>)context, task, result);
 	
 			LensFocusContext<F> focusContext = context.getFocusContext();
 	    	if (focusContext != null) {
-				loadObjectCurrent(context, result);
-	
+					    		
 				context.recomputeFocus();
 	
 				loadFromSystemConfig(context, task, result);
@@ -272,7 +272,7 @@ public class ContextLoader {
 		ResourceShadowDiscriminator rsd = projectionContext.getResourceShadowDiscriminator();
 		if (rsd != null) {
 			resourceOid = rsd.getResourceOid();
-			isThombstone = rsd.isThombstone();
+			isThombstone = rsd.isTombstone();
 			kind = rsd.getKind();
 			intent = rsd.getIntent();
 			order = rsd.getOrder();
@@ -315,56 +315,30 @@ public class ContextLoader {
 	}
 
 	/**
-	 * try to load focus context from the projections, e.g. by determining account owners
+	 * try to load focus context from oid, delta, projections (e.g. by determining account owners)
+	 * @throws ExpressionEvaluationException 
+	 * @throws SecurityViolationException 
+	 * @throws ConfigurationException 
+	 * @throws CommunicationException 
 	 */
-	public <F extends FocusType> void determineFocusContext(LensContext<F> context,
-			OperationResult result) throws ObjectNotFoundException, SchemaException {
-		if (context.getFocusContext() != null) {
-			// already done
-			return;
+	public <O extends ObjectType> void determineFocusContext(LensContext<O> context, Task task, OperationResult result) throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
+		LensFocusContext<O> focusContext = context.getFocusContext();
+		if (focusContext == null) {
+			focusContext = determineFocusContextFromProjections(context, result);
 		}
-		String focusOid = null;
-        PrismObject<F> focusObject = null;
-		LensProjectionContext projectionContextThatYeildedFocusOid = null;
-		for (LensProjectionContext projectionContext: context.getProjectionContexts()) {
-			String projectionOid = projectionContext.getOid();
-			if (projectionOid != null) {
-                PrismObject<F> shadowOwner = cacheRepositoryService.searchShadowOwner(projectionOid,
-							SelectorOptions.createCollection(GetOperationOptions.createAllowNotFound()),
-							result);
-				if (shadowOwner != null) {
-					if (focusOid == null || focusOid.equals(shadowOwner.getOid())) {
-						focusOid = shadowOwner.getOid();
-                        focusObject = shadowOwner;
-						projectionContextThatYeildedFocusOid = projectionContext;
-					} else {
-						throw new IllegalArgumentException("The context does not have explicit focus. Attempt to determine focus failed because two " +
-								"projections points to different foci: "+projectionContextThatYeildedFocusOid+"->"+focusOid+"; "+
-								projectionContext+"->"+shadowOwner);
-					}
-				}
-			}
-		}
-		if (focusOid != null) {
-			LensFocusContext<F> focusContext = context.getOrCreateFocusContext(focusObject.getCompileTimeClass());
-			PrismObject<F> object = cacheRepositoryService.getObject(focusContext.getObjectTypeClass(), focusOid, null, result);
-	        focusContext.setLoadedObject(object);
-		}
-	}
-
-	private <F extends ObjectType> void loadObjectCurrent(LensContext<F> context, OperationResult result) throws SchemaException, ObjectNotFoundException {
-		LensFocusContext<F> focusContext = context.getFocusContext();
+		
 		if (focusContext == null) {
 			// Nothing to load
 			return;
 		}
+		
 		// Make sure that we RELOAD the user object if the context is not fresh
 		// the user may have changed in the meantime
         if (focusContext.getObjectCurrent() != null && focusContext.isFresh()) {
             // already loaded
             return;
         }
-        ObjectDelta<F> objectDelta = focusContext.getDelta();
+        ObjectDelta<O> objectDelta = focusContext.getDelta();
         if (objectDelta != null && objectDelta.isAdd() && focusContext.getExecutedDeltas().isEmpty()) {
             //we're adding the focal object. No need to load it, it is in the delta
         	focusContext.setFresh(true);
@@ -376,21 +350,61 @@ public class ContextLoader {
             return;
         }
 
-        String userOid = focusContext.getOid();
-        if (StringUtils.isBlank(userOid)) {
+        String focusOid = focusContext.getOid();
+        if (StringUtils.isBlank(focusOid)) {
         	throw new IllegalArgumentException("No OID in primary focus delta");
         }
+        
+        PrismObject<O> object = null;
+        if (ObjectTypes.isClassManagedByProvisioning(focusContext.getObjectTypeClass())) {
+        	object = provisioningService.getObject(focusContext.getObjectTypeClass(), focusOid, SelectorOptions.createCollection(GetOperationOptions.createNoFetch()), task, result);
+        } else {
 
-        // Always load a complete object here, including the not-returned-by-default properties.
-        // This is temporary measure to make sure that the mappings will have all they need.
-        // See MID-2635
-        Collection<SelectorOptions<GetOperationOptions>> options =
-        		SelectorOptions.createCollection(GetOperationOptions.createRetrieve(RetrieveOption.INCLUDE));
-		PrismObject<F> object = cacheRepositoryService.getObject(focusContext.getObjectTypeClass(), userOid, options, result);
+	        // Always load a complete object here, including the not-returned-by-default properties.
+	        // This is temporary measure to make sure that the mappings will have all they need.
+	        // See MID-2635
+	        Collection<SelectorOptions<GetOperationOptions>> options =
+	        		SelectorOptions.createCollection(GetOperationOptions.createRetrieve(RetrieveOption.INCLUDE));
+			object = cacheRepositoryService.getObject(focusContext.getObjectTypeClass(), focusOid, options, result);
+        }
+        
         focusContext.setLoadedObject(object);
         focusContext.setFresh(true);
 		LOGGER.trace("Focal object loaded: {}", object);
     }
+
+	private <O extends ObjectType> LensFocusContext<O> determineFocusContextFromProjections(LensContext<O> context, OperationResult result) throws ObjectNotFoundException, SchemaException {
+		String focusOid = null;
+		LensProjectionContext projectionContextThatYeildedFocusOid = null;
+		PrismObject<O> focusOwner = null;
+		for (LensProjectionContext projectionContext: context.getProjectionContexts()) {
+			String projectionOid = projectionContext.getOid();
+			if (projectionOid != null) {
+                PrismObject<? extends FocusType> shadowOwner = cacheRepositoryService.searchShadowOwner(projectionOid,
+							SelectorOptions.createCollection(GetOperationOptions.createAllowNotFound()),
+							result);
+				if (shadowOwner != null) {
+					if (focusOid == null || focusOid.equals(shadowOwner.getOid())) {
+						focusOid = shadowOwner.getOid();
+						focusOwner = (PrismObject<O>) shadowOwner;
+						projectionContextThatYeildedFocusOid = projectionContext;
+					} else {
+						throw new IllegalArgumentException("The context does not have explicit focus. Attempt to determine focus failed because two " +
+								"projections points to different foci: "+projectionContextThatYeildedFocusOid+"->"+focusOid+"; "+
+								projectionContext+"->"+shadowOwner);
+					}
+				}
+			}
+		}
+		
+		if (focusOid != null) {
+			LensFocusContext<O> focusCtx = context.getOrCreateFocusContext(focusOwner.getCompileTimeClass());
+			focusCtx.setOid(focusOid);
+			return focusCtx;
+		}
+
+		return null;
+	}
 
 	private <O extends ObjectType> void setPrimaryDeltaOldValue(LensElementContext<O> ctx) throws SchemaException, ObjectNotFoundException {
 		if (ctx.getPrimaryDelta() != null && ctx.getObjectOld() != null && ctx.isModify()) {
@@ -401,7 +415,7 @@ public class ContextLoader {
 	}
 
 	private <F extends ObjectType> void loadFromSystemConfig(LensContext<F> context, Task task, OperationResult result)
-			throws ObjectNotFoundException, SchemaException, ConfigurationException, ExpressionEvaluationException, PolicyViolationException {
+			throws ObjectNotFoundException, SchemaException, ConfigurationException, ExpressionEvaluationException, PolicyViolationException, CommunicationException, SecurityViolationException {
 		PrismObject<SystemConfigurationType> systemConfiguration = systemObjectCache.getSystemConfiguration(result);
 		if (systemConfiguration == null) {
 			// This happens in some tests. And also during first startup.
@@ -532,9 +546,10 @@ public class ContextLoader {
 					shadow = provisioningService.getObject(ShadowType.class, oid, options, task, result);
 				} catch (ObjectNotFoundException e) {
 					// Broken accountRef. We need to mark it for deletion
-					LensProjectionContext accountContext = getOrCreateEmptyThombstoneProjectionContext(context, oid);
-					accountContext.setFresh(true);
-					accountContext.setExists(false);
+					LensProjectionContext projectionContext = getOrCreateEmptyThombstoneProjectionContext(context, oid);
+					projectionContext.setFresh(true);
+					projectionContext.setExists(false);
+					projectionContext.setShadowExistsInRepo(false);
 					OperationResult getObjectSubresult = result.getLastSubresult();
 					getObjectSubresult.setErrorsHandled();
 					continue;
@@ -543,18 +558,27 @@ public class ContextLoader {
 				// Make sure it has a proper definition. This may come from outside of the model.
 				provisioningService.applyDefinition(shadow, task, result);
 			}
-			LensProjectionContext accountContext = getOrCreateAccountContext(context, shadow, task, result);
-			accountContext.setFresh(true);
-			accountContext.setExists(shadow != null);
-			if (context.isDoReconciliationForAllProjections()) {
-				accountContext.setDoReconciliation(true);
+			LensProjectionContext projectionContext = getOrCreateAccountContext(context, shadow, task, result);
+			projectionContext.setFresh(true);
+			if (shadow == null) {
+				projectionContext.setExists(false);
+			} else {
+				projectionContext.setExists(ShadowUtil.isExists(shadow.asObjectable()));
+				if (ShadowUtil.isDead(shadow.asObjectable())) {
+					projectionContext.markTombstone();
+					LOGGER.trace("Loading dead shadow {} for projection", shadow, projectionContext.getHumanReadableName());
+					continue;
+				}
 			}
-			if (accountContext.isDoReconciliation()) {
+			if (context.isDoReconciliationForAllProjections()) {
+				projectionContext.setDoReconciliation(true);
+			}
+			if (projectionContext.isDoReconciliation()) {
 				// Do not load old account now. It will get loaded later in the
 				// reconciliation step.
 				continue;
 			}
-			accountContext.setLoadedObject(shadow);
+			projectionContext.setLoadedObject(shadow);
 		}
 	}
 
@@ -596,7 +620,7 @@ public class ContextLoader {
 		if (linkRefDelta.getValuesToAdd() != null) {
 			for (PrismReferenceValue refVal : linkRefDelta.getValuesToAdd()) {
 				String oid = refVal.getOid();
-				LensProjectionContext accountContext = null;
+				LensProjectionContext projectionContext = null;
 				PrismObject<ShadowType> shadow = null;
 				boolean isCombinedAdd = false;
 				if (oid == null) {
@@ -609,15 +633,15 @@ public class ContextLoader {
 					provisioningService.applyDefinition(shadow, task, result);
 					if (consistencyChecks) ShadowUtil.checkConsistence(shadow, "account from "+linkRefDelta);
 					// Check for conflicting change
-					accountContext = LensUtil.getProjectionContext(context, shadow, provisioningService, prismContext, task, result);
-					if (accountContext != null) {
+					projectionContext = LensUtil.getProjectionContext(context, shadow, provisioningService, prismContext, task, result);
+					if (projectionContext != null) {
 						// There is already existing context for the same discriminator. Tolerate this only if
 						// the deltas match. It is an error otherwise.
-						ObjectDelta<ShadowType> primaryDelta = accountContext.getPrimaryDelta();
+						ObjectDelta<ShadowType> primaryDelta = projectionContext.getPrimaryDelta();
 						if (primaryDelta == null) {
 							throw new SchemaException("Attempt to add "+shadow+" to a user that already contains "+
-                                    accountContext.getHumanReadableKind()+" of type '"+
-									accountContext.getResourceShadowDiscriminator().getIntent()+"' on "+accountContext.getResource());
+                                    projectionContext.getHumanReadableKind()+" of type '"+
+									projectionContext.getResourceShadowDiscriminator().getIntent()+"' on "+projectionContext.getResource());
 						}
 						if (!primaryDelta.isAdd()) {
 							throw new SchemaException("Conflicting changes in the context. " +
@@ -629,14 +653,14 @@ public class ContextLoader {
 						}
 					} else {
 						// Create account context from embedded object
-						accountContext = createProjectionContext(context, shadow, task, result);
+						projectionContext = createProjectionContext(context, shadow, task, result);
 					}
 					// This is a new account that is to be added. So it should
 					// go to account primary delta
 					ObjectDelta<ShadowType> accountPrimaryDelta = shadow.createAddDelta();
-					accountContext.setPrimaryDelta(accountPrimaryDelta);
-					accountContext.setFullShadow(true);
-					accountContext.setExists(false);
+					projectionContext.setPrimaryDelta(accountPrimaryDelta);
+					projectionContext.setFullShadow(true);
+					projectionContext.setExists(false);
 					isCombinedAdd = true;
 				} else {
 					// We have OID. This is either linking of existing account or
@@ -650,9 +674,9 @@ public class ContextLoader {
 						Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(rootOpts);
 						shadow = provisioningService.getObject(ShadowType.class, oid, options, task, result);
 						// Create account context from retrieved object
-						accountContext = getOrCreateAccountContext(context, shadow, task, result);
-						accountContext.setLoadedObject(shadow);
-						accountContext.setExists(true);
+						projectionContext = getOrCreateAccountContext(context, shadow, task, result);
+						projectionContext.setLoadedObject(shadow);
+						projectionContext.setExists(ShadowUtil.isExists(shadow.asObjectable()));
 					} catch (ObjectNotFoundException e) {
 						if (refVal.getObject() == null) {
 							// account does not exist, no composite account in
@@ -666,27 +690,28 @@ public class ContextLoader {
 								provisioningService.applyDefinition(shadow, task, result);
 							}
 							// Create account context from embedded object
-							accountContext = createProjectionContext(context, shadow, task, result);
+							projectionContext = createProjectionContext(context, shadow, task, result);
 							ObjectDelta<ShadowType> accountPrimaryDelta = shadow.createAddDelta();
-							accountContext.setPrimaryDelta(accountPrimaryDelta);
-							accountContext.setFullShadow(true);
-							accountContext.setExists(false);
+							projectionContext.setPrimaryDelta(accountPrimaryDelta);
+							projectionContext.setFullShadow(true);
+							projectionContext.setExists(false);
+							projectionContext.setShadowExistsInRepo(false);
 							isCombinedAdd = true;
 						}
 					}
 				}
 				if (context.isDoReconciliationForAllProjections() && !isCombinedAdd) {
-					accountContext.setDoReconciliation(true);
+					projectionContext.setDoReconciliation(true);
 				}
-				accountContext.setFresh(true);
+				projectionContext.setFresh(true);
 			}
 		}
 
 		if (linkRefDelta.getValuesToDelete() != null) {
 			for (PrismReferenceValue refVal : linkRefDelta.getValuesToDelete()) {
 				String oid = refVal.getOid();
-				LensProjectionContext accountContext = null;
-				PrismObject<ShadowType> account = null;
+				LensProjectionContext projectionContext = null;
+				PrismObject<ShadowType> shadow = null;
 				if (oid == null) {
 					throw new SchemaException("Cannot delete account ref without an oid in " + focus);
 				} else {
@@ -694,19 +719,20 @@ public class ContextLoader {
 						// Using NO_FETCH so we avoid reading in a full account. This is more efficient as we don't need full account here.
 						// We need to fetch from provisioning and not repository so the correct definition will be set.
 						Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(GetOperationOptions.createNoFetch());
-						account = provisioningService.getObject(ShadowType.class, oid, options, task, result);
+						shadow = provisioningService.getObject(ShadowType.class, oid, options, task, result);
 						// Create account context from retrieved object
-						accountContext = getOrCreateAccountContext(context, account, task, result);
-						accountContext.setLoadedObject(account);
-						accountContext.setExists(true);
+						projectionContext = getOrCreateAccountContext(context, shadow, task, result);
+						projectionContext.setLoadedObject(shadow);
+						projectionContext.setExists(ShadowUtil.isExists(shadow.asObjectable()));
 					} catch (ObjectNotFoundException e) {
 						try{
 						// Broken accountRef. We need to try again with raw options, because the error should be thrown because of non-existent resource
 						Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(GetOperationOptions.createRaw());
-						account = provisioningService.getObject(ShadowType.class, oid, options, task, result);
-						accountContext = getOrCreateEmptyThombstoneProjectionContext(context, oid);
-						accountContext.setFresh(true);
-						accountContext.setExists(false);
+						shadow = provisioningService.getObject(ShadowType.class, oid, options, task, result);
+						projectionContext = getOrCreateEmptyThombstoneProjectionContext(context, oid);
+						projectionContext.setFresh(true);
+						projectionContext.setExists(false);
+						projectionContext.setShadowExistsInRepo(false);
 						OperationResult getObjectSubresult = result.getLastSubresult();
 						getObjectSubresult.setErrorsHandled();
 						} catch (ObjectNotFoundException ex){
@@ -719,15 +745,15 @@ public class ContextLoader {
 
 					}
 				}
-				if (accountContext != null) {
+				if (projectionContext != null) {
 					if (refVal.getObject() == null) {
-						accountContext.setSynchronizationIntent(SynchronizationIntent.UNLINK);
+						projectionContext.setSynchronizationIntent(SynchronizationIntent.UNLINK);
 					} else {
-						accountContext.setSynchronizationIntent(SynchronizationIntent.DELETE);
-						ObjectDelta<ShadowType> accountPrimaryDelta = account.createDeleteDelta();
-						accountContext.setPrimaryDelta(accountPrimaryDelta);
+						projectionContext.setSynchronizationIntent(SynchronizationIntent.DELETE);
+						ObjectDelta<ShadowType> accountPrimaryDelta = shadow.createDeleteDelta();
+						projectionContext.setPrimaryDelta(accountPrimaryDelta);
 					}
-					accountContext.setFresh(true);
+					projectionContext.setFresh(true);
 				}
 
 			}
@@ -769,7 +795,7 @@ public class ContextLoader {
 				if (syncDelta.getChangeType() == ChangeType.ADD) {
 					shadow = syncDelta.getObjectToAdd().clone();
 					projCtx.setLoadedObject(shadow);
-					projCtx.setExists(true);
+					projCtx.setExists(ShadowUtil.isExists(shadow.asObjectable()));
 
 				} else {
 
@@ -791,6 +817,7 @@ public class ContextLoader {
 						LOGGER.trace("Loading shadow {} from sync delta failed: not found", oid);
 						projCtx.setExists(false);
 						projCtx.setObjectCurrent(null);
+						projCtx.setShadowExistsInRepo(false);
 					}
 
 					// We will not set old account if the delta is delete. The
@@ -798,12 +825,11 @@ public class ContextLoader {
 					// (but the OID and resource will be set from the repo
 					// shadow)
 					if (syncDelta.getChangeType() == ChangeType.DELETE) {
-						projCtx.setExists(false);
-						projCtx.getResourceShadowDiscriminator().setThombstone(true);
+						projCtx.markTombstone();
 					} else if (shadow != null) {
 						syncDelta.applyTo(shadow);
 						projCtx.setLoadedObject(shadow);
-						projCtx.setExists(true);
+						projCtx.setExists(ShadowUtil.isExists(shadow.asObjectable()));
 					}
 				}
 
@@ -876,22 +902,31 @@ public class ContextLoader {
 							LOGGER.trace("Projection {} already exists in context\nExisting:\n{}\nNew:\n{}", rsd,
 									existingShadow.debugDump(1), newShadow.debugDump(1));
 						}
-						throw new PolicyViolationException("Projection "+rsd+" already exists in context (existing "+existingShadow+", new "+projection);
+						if (!ShadowUtil.isDead(newShadow.asObjectable())) {
+							throw new PolicyViolationException("Projection "+rsd+" already exists in context (existing "+existingShadow+", new "+projection);
+						}
+						// Dead shadow. This is somehow expected, fix it and we can go on
+						rsd.setTombstone(true);
+						projectionContext = LensUtil.getOrCreateProjectionContext(context, rsd);
+						projectionContext.setExists(ShadowUtil.isExists(newShadow.asObjectable()));
+						projectionContext.setFullShadow(false);
 					} catch (ObjectNotFoundException e) {
-						// This is somehow expected, fix it and we can go on
+						// This is somehow expected, fix it and we can go on						
 						result.muteLastSubresultError();
 						// We have to create new context in this case, but it has to have thumbstone set
-						rsd.setThombstone(true);
+						rsd.setTombstone(true);
 						projectionContext = LensUtil.getOrCreateProjectionContext(context, rsd);
 						// We have to mark it as dead right now, otherwise the uniqueness check may fail
 						markShadowDead(projection.getOid(), result);
+						projectionContext.setShadowExistsInRepo(false);
 					}
 				} catch (ObjectNotFoundException e) {
 					// This is somehow expected, fix it and we can go on
 					result.muteLastSubresultError();
 					String shadowOid = projectionContext.getOid();
-					projectionContext.getResourceShadowDiscriminator().setThombstone(true);
+					projectionContext.getResourceShadowDiscriminator().setTombstone(true);
 					projectionContext = LensUtil.getOrCreateProjectionContext(context, rsd);
+					projectionContext.setShadowExistsInRepo(false);
 					// We have to mark it as dead right now, otherwise the uniqueness check may fail
 					markShadowDead(shadowOid, result);
 				}
@@ -899,7 +934,7 @@ public class ContextLoader {
 		}
 		return projectionContext;
 	}
-
+	
 	private void markShadowDead(String oid, OperationResult result) {
 		if (oid == null) {
 			// nothing to mark
@@ -964,7 +999,7 @@ public class ContextLoader {
 		if (projContext.getResourceShadowDiscriminator() == null) {
 			projContext.setResourceShadowDiscriminator(new ResourceShadowDiscriminator(null, null, null, true));
 		} else {
-			projContext.getResourceShadowDiscriminator().setThombstone(true);
+			projContext.markTombstone();
 		}
 
 		projContext.setFullShadow(false);
@@ -981,8 +1016,6 @@ public class ContextLoader {
 			LensProjectionContext projContext, Task task, OperationResult result)
 			throws ObjectNotFoundException, CommunicationException, SchemaException, ConfigurationException,
 			SecurityViolationException, ExpressionEvaluationException {
-
-		String projectionHumanReadableName = projContext.getHumanReadableName();
 
 		if (projContext.getSynchronizationPolicyDecision() == SynchronizationPolicyDecision.BROKEN) {
 			return;
@@ -1003,7 +1036,7 @@ public class ContextLoader {
 		}
 
 		// Load current object
-		boolean thombstone = false;
+		boolean tombstone = false;
 		PrismObject<ShadowType> projectionObject = projContext.getObjectCurrent();
 		if (projContext.getObjectCurrent() == null || needToReload(context, projContext)) {
 			if (projContext.isAdd()) {
@@ -1016,12 +1049,12 @@ public class ContextLoader {
 					projContext.setExists(false);
 					if (projContext.getResourceShadowDiscriminator() == null || projContext.getResourceShadowDiscriminator().getResourceOid() == null) {
 						throw new SystemException(
-								"Projection "+projectionHumanReadableName+" with null OID, no representation and no resource OID in account sync context "+projContext);
+								"Projection "+projContext.getHumanReadableName()+" with null OID, no representation and no resource OID in account sync context "+projContext);
 					}
 				} else {
-					projContext.setExists(true);
 					GetOperationOptions rootOptions = GetOperationOptions.createPointInTimeType(PointInTimeType.FUTURE);
 					if (projContext.isDoReconciliation()) {
+						rootOptions.setForceRefresh(true);
 						if (SchemaConstants.CHANGE_CHANNEL_DISCOVERY_URI.equals(context.getChannel())) {
 							// Avoid discovery loops
 							rootOptions.setDoNotDiscovery(true);
@@ -1032,7 +1065,7 @@ public class ContextLoader {
 					rootOptions.setAllowNotFound(true);
 					Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(rootOptions);
 					if (LOGGER.isTraceEnabled()) {
-						LOGGER.trace("Loading shadow {} for projection {}, options={}", projectionObjectOid, projectionHumanReadableName, options);
+						LOGGER.trace("Loading shadow {} for projection {}, options={}", projectionObjectOid, projContext.getHumanReadableName(), options);
 					}
 
 					try {
@@ -1041,7 +1074,7 @@ public class ContextLoader {
 						if (LOGGER.isTraceEnabled()) {
 							if (!GetOperationOptions.isNoFetch(rootOptions) && !GetOperationOptions.isRaw(rootOptions)) {
 								if (LOGGER.isTraceEnabled()) {
-									LOGGER.trace("Full shadow loaded for {}:\n{}", projectionHumanReadableName, objectOld.debugDump(1));
+									LOGGER.trace("Full shadow loaded for {}:\n{}", projContext.getHumanReadableName(), objectOld.debugDump(1));
 								}
 							}
 						}
@@ -1051,31 +1084,41 @@ public class ContextLoader {
 							if (resourceOid != null && !resourceOid.equals(objectOld.asObjectable().getResourceRef().getOid())) {
 								throw new IllegalStateException("Loaded shadow with wrong resourceRef. Loading shadow "+projectionObjectOid+", got "+
 										objectOld.getOid()+", expected resourceRef "+resourceOid+", but was "+objectOld.asObjectable().getResourceRef().getOid()+
-										" for context "+projectionHumanReadableName);
+										" for context "+projContext.getHumanReadableName());
 							}
 						}
 						projContext.setLoadedObject(objectOld);
-                        ShadowType oldShadow = objectOld.asObjectable();
 						if (projContext.isDoReconciliation()) {
-	                        projContext.determineFullShadowFlag(oldShadow.getFetchResult());
+	                        projContext.determineFullShadowFlag(objectOld);
 						} else {
 							projContext.setFullShadow(false);
 						}
 						projectionObject = objectOld;
+						if (ShadowUtil.isExists(objectOld.asObjectable())) {
+							projContext.setExists(true);
+						} else {
+							projContext.setExists(false);
+							if (ShadowUtil.isDead(objectOld.asObjectable())) {
+								projContext.markTombstone();
+							}
+							LOGGER.debug("Foud only dead {} for projection context {}.", objectOld, projContext.getHumanReadableName());
+							tombstone = true;
+						}
 
 					} catch (ObjectNotFoundException ex) {
-						// This does not mean BROKEN. The projection was there, but it gone now. What we really want here
-						// is a thombstone projection.
-						thombstone = true;
-						projContext.setFullShadow(false);
-						LOGGER.warn("Could not find object with oid {}. The projection context {} is marked as thombstone.", projectionObjectOid, projectionHumanReadableName);
-
+						LOGGER.debug("Could not find object with oid {} for projection context {}.", projectionObjectOid, projContext.getHumanReadableName());
+						// This does not mean BROKEN. The projection was there, but it gone now.
+						// Consistency mechanism might have kicked in and fixed the shadow.
+						// What we really want here is a thombstone projection or a refreshed projection.
+						result.muteLastSubresultError();
+						projContext.setShadowExistsInRepo(false);
+						refreshContextAfterShadowNotFound(context, projContext, options, task, result);
 
 					} catch (CommunicationException | SchemaException | ConfigurationException | SecurityViolationException
 			    			| RuntimeException | Error e) {
 
 						LOGGER.warn("Problem while getting object with oid {}. Projection context {} is marked as broken: {}: {}",
-								projectionObjectOid, projectionHumanReadableName, e.getClass().getSimpleName(), e.getMessage());
+								projectionObjectOid, projContext.getHumanReadableName(), e.getClass().getSimpleName(), e.getMessage());
 						projContext.setSynchronizationPolicyDecision(SynchronizationPolicyDecision.BROKEN);
 
 						ResourceType resourceType = projContext.getResource();
@@ -1096,7 +1139,7 @@ public class ContextLoader {
 									throw e;
 								}
 							} else {
-								if (ExceptionUtil.isSelected(errorSelector, e, true)) {
+								if (CriticalityType.FATAL.equals(ExceptionUtil.getCriticality(errorSelector, e, CriticalityType.FATAL))) {
 									throw e;
 								} else {
 									return;
@@ -1104,14 +1147,14 @@ public class ContextLoader {
 							}
 						}
 					}
-
+					
 				}
 				projContext.setFresh(true);
 			}
 		} else {
 			projectionObject = projContext.getObjectCurrent();
 			if (projectionObjectOid != null) {
-				projContext.setExists(true);
+				projContext.setExists(ShadowUtil.isExists(projectionObject.asObjectable()));
 			}
 		}
 
@@ -1125,8 +1168,8 @@ public class ContextLoader {
 				resourceOid = ShadowUtil.getResourceOid(shadowType);
 			} else if (projContext.getResourceShadowDiscriminator() != null) {
 				resourceOid = projContext.getResourceShadowDiscriminator().getResourceOid();
-			} else if (!thombstone) {
-				throw new IllegalStateException("No shadow, no discriminator and not thombstone? That won't do. Projection "+projectionHumanReadableName);
+			} else if (!tombstone) {
+				throw new IllegalStateException("No shadow, no discriminator and not thombstone? That won't do. Projection "+projContext.getHumanReadableName());
 			}
 		} else {
 			resourceOid = resourceType.getOid();
@@ -1139,15 +1182,15 @@ public class ContextLoader {
 				ShadowType accountShadowType = projectionObject.asObjectable();
 				String intent = ShadowUtil.getIntent(accountShadowType);
 				ShadowKindType kind = ShadowUtil.getKind(accountShadowType);
-				discr = new ResourceShadowDiscriminator(resourceOid, kind, intent, thombstone);
+				discr = new ResourceShadowDiscriminator(resourceOid, kind, intent, tombstone);
 			} else {
-				discr = new ResourceShadowDiscriminator(null, null, null, thombstone);
+				discr = new ResourceShadowDiscriminator(null, null, null, tombstone);
 			}
 			projContext.setResourceShadowDiscriminator(discr);
 		} else {
-			if (thombstone) {
-				// We do not want to reset thombstone flag if it was set before
-				discr.setThombstone(thombstone);
+			if (tombstone) {
+				// We do not want to reset tombstone flag if it was set before
+				projContext.markTombstone();
 			}
 		}
 
@@ -1235,7 +1278,7 @@ public class ContextLoader {
 			// nothing to load yet
 			return;
 		}
-		if (projCtx.isThombstone()) {
+		if (projCtx.isTombstone()) {
 			// loading is futile
 			return;
 		}
@@ -1250,6 +1293,9 @@ public class ContextLoader {
 
 		GetOperationOptions getOptions = GetOperationOptions.createAllowNotFound();
 		getOptions.setPointInTimeType(PointInTimeType.FUTURE);
+		if (projCtx.isDoReconciliation()) {
+			getOptions.setForceRefresh(true);
+		}
 		if (SchemaConstants.CHANGE_CHANNEL_DISCOVERY_URI.equals(context.getChannel())) {
 			LOGGER.trace("Loading full resource object {} from provisioning - with doNotDiscover to avoid loops; reason: {}", projCtx, reason);
 			// Avoid discovery loops
@@ -1257,86 +1303,25 @@ public class ContextLoader {
 		} else {
 			LOGGER.trace("Loading full resource object {} from provisioning (discovery enabled), reason: {}, channel: {}", projCtx, reason, context.getChannel());
 		}
+		Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(getOptions);
+		applyAttributesToGet(projCtx, options);
 		try {
-			Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(getOptions);
-			applyAttributesToGet(projCtx, options);
-			PrismObject<ShadowType> objectCurrent = provisioningService.getObject(ShadowType.class,
-					projCtx.getOid(), options, task, result);
+			PrismObject<ShadowType> objectCurrent = provisioningService.getObject(ShadowType.class, projCtx.getOid(), options, task, result);
 			Validate.notNull(objectCurrent.getOid());
 			// TODO: use setLoadedObject() instead?
 			projCtx.setObjectCurrent(objectCurrent);
-			ShadowType oldShadow = objectCurrent.asObjectable();
-			projCtx.determineFullShadowFlag(oldShadow.getFetchResult());
-			// The getObject may return different OID than we have requested in case that compensation happened
-			// TODO: this probably need to be fixed in the consistency mechanism
-			// TODO: the following line is a temporary fix
-			projCtx.setOid(objectCurrent.getOid());
+			projCtx.determineFullShadowFlag(objectCurrent);
+			if (!ShadowUtil.isExists(objectCurrent.asObjectable())) {
+				LOGGER.debug("Load of full resource object {} ended with non-existent shadow (options={})", projCtx, getOptions);
+				projCtx.setExists(false);
+				refreshContextAfterShadowNotFound(context, projCtx, options, task, result);
+			}
 
 		} catch (ObjectNotFoundException ex) {
 			LOGGER.debug("Load of full resource object {} ended with ObjectNotFoundException (options={})", projCtx, getOptions);
-			if (projCtx.isDelete()){
-				//this is OK, shadow was deleted, but we will continue in processing with old shadow..and set it as full so prevent from other full loading
-				projCtx.setFullShadow(true);
-			} else {
-
-				boolean compensated = false;
-				if (!GetOperationOptions.isDoNotDiscovery(getOptions)) {
-					// The account might have been re-created by the discovery.
-					// Reload focus, try to find out if there is a new matching link (and the old is gone)
-					LensFocusContext<F> focusContext = context.getFocusContext();
-					if (focusContext != null) {
-						Class<F> focusClass = focusContext.getObjectTypeClass();
-						if (FocusType.class.isAssignableFrom(focusClass)) {
-							LOGGER.trace("Reloading focus to check for new links");
-							PrismObject<F> focusCurrent = cacheRepositoryService.getObject(focusContext.getObjectTypeClass(), focusContext.getOid(), null, result);
-							FocusType focusType = (FocusType) focusCurrent.asObjectable();
-							for (ObjectReferenceType linkRef: focusType.getLinkRef()) {
-								if (linkRef.getOid().equals(projCtx.getOid())) {
-									// The deleted shadow is still in the linkRef. This should not happen, but it obviously happens sometimes.
-									// Maybe some strange race condition? Anyway, we want a robust behavior and this linkeRef should NOT be there.
-									// So simple remove it.
-									LOGGER.warn("The OID "+projCtx.getOid()+" of deleted shadow still exists in the linkRef after discovery ("+focusCurrent+"), removing it");
-									ReferenceDelta unlinkDelta = ReferenceDelta.createModificationDelete(
-							        		FocusType.F_LINK_REF, focusContext.getObjectDefinition(), linkRef.asReferenceValue().clone());
-									focusContext.swallowToSecondaryDelta(unlinkDelta);
-									continue;
-								}
-								boolean found = false;
-								for (LensProjectionContext pCtx: context.getProjectionContexts()) {
-									if (linkRef.getOid().equals(pCtx.getOid())) {
-										found = true;
-										break;
-									}
-								}
-								if (!found) {
-									// This link is new, it is not in the existing lens context
-									PrismObject<ShadowType> newLinkRepoShadow = cacheRepositoryService.getObject(ShadowType.class, linkRef.getOid(), null, result);
-									if (ShadowUtil.matches(newLinkRepoShadow, projCtx.getResourceShadowDiscriminator())) {
-										LOGGER.trace("Found new matching link: {}, updating projection context", newLinkRepoShadow);
-										LOGGER.trace("Applying definition from provisioning first.");		// MID-3317
-										provisioningService.applyDefinition(newLinkRepoShadow, task, result);
-										projCtx.setObjectCurrent(newLinkRepoShadow);
-										projCtx.setOid(newLinkRepoShadow.getOid());
-										projCtx.recompute();
-										compensated = true;
-										break;
-									} else {
-										LOGGER.trace("Found new link: {}, but skipping it because it does not match the projection context", newLinkRepoShadow);
-									}
-								}
-							}
-						}
-					}
-
-				}
-
-				if (!compensated) {
-					LOGGER.trace("ObjectNotFound error is not compensated, setting context to thombstone");
-					projCtx.getResourceShadowDiscriminator().setThombstone(true);
-					projCtx.setExists(false);
-					projCtx.setFullShadow(false);
-				}
-			}
+			result.muteLastSubresultError();
+			projCtx.setShadowExistsInRepo(false);
+			refreshContextAfterShadowNotFound(context, projCtx, options, task, result);
 		}
 
 		projCtx.recompute();
@@ -1344,6 +1329,70 @@ public class ContextLoader {
 
 		if (LOGGER.isTraceEnabled()) {
 			LOGGER.trace("Loaded full resource object:\n{}", projCtx.debugDump(1));
+		}
+	}
+	
+	public <F extends ObjectType> void refreshContextAfterShadowNotFound(LensContext<F> context, LensProjectionContext projCtx, Collection<SelectorOptions<GetOperationOptions>> options, Task task, OperationResult result) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, ExpressionEvaluationException {
+		if (projCtx.isDelete()){
+			//this is OK, shadow was deleted, but we will continue in processing with old shadow..and set it as full so prevent from other full loading
+			projCtx.setFullShadow(true);
+			return;
+		}
+
+		boolean compensated = false;
+		if (!GetOperationOptions.isDoNotDiscovery(SelectorOptions.findRootOptions(options))) {
+			// The account might have been re-created by the discovery.
+			// Reload focus, try to find out if there is a new matching link (and the old is gone)
+			LensFocusContext<F> focusContext = context.getFocusContext();
+			if (focusContext != null) {
+				Class<F> focusClass = focusContext.getObjectTypeClass();
+				if (FocusType.class.isAssignableFrom(focusClass)) {
+					LOGGER.trace("Reloading focus to check for new links");
+					PrismObject<F> focusCurrent = cacheRepositoryService.getObject(focusContext.getObjectTypeClass(), focusContext.getOid(), null, result);
+					FocusType focusType = (FocusType) focusCurrent.asObjectable();
+					for (ObjectReferenceType linkRef: focusType.getLinkRef()) {
+						if (linkRef.getOid().equals(projCtx.getOid())) {
+							// The deleted shadow is still in the linkRef. This should not happen, but it obviously happens sometimes.
+							// Maybe some strange race condition? Anyway, we want a robust behavior and this linkeRef should NOT be there.
+							// So simple remove it.
+							LOGGER.warn("The OID "+projCtx.getOid()+" of deleted shadow still exists in the linkRef after discovery ("+focusCurrent+"), removing it");
+							ReferenceDelta unlinkDelta = ReferenceDelta.createModificationDelete(
+					        		FocusType.F_LINK_REF, focusContext.getObjectDefinition(), linkRef.asReferenceValue().clone());
+							focusContext.swallowToSecondaryDelta(unlinkDelta);
+							continue;
+						}
+						boolean found = false;
+						for (LensProjectionContext pCtx: context.getProjectionContexts()) {
+							if (linkRef.getOid().equals(pCtx.getOid())) {
+								found = true;
+								break;
+							}
+						}
+						if (!found) {
+							// This link is new, it is not in the existing lens context
+							PrismObject<ShadowType> newLinkRepoShadow = cacheRepositoryService.getObject(ShadowType.class, linkRef.getOid(), null, result);
+							if (ShadowUtil.matches(newLinkRepoShadow, projCtx.getResourceShadowDiscriminator())) {
+								LOGGER.trace("Found new matching link: {}, updating projection context", newLinkRepoShadow);
+								LOGGER.trace("Applying definition from provisioning first.");		// MID-3317
+								provisioningService.applyDefinition(newLinkRepoShadow, task, result);
+								projCtx.setObjectCurrent(newLinkRepoShadow);
+								projCtx.setOid(newLinkRepoShadow.getOid());
+								projCtx.recompute();
+								compensated = true;
+								break;
+							} else {
+								LOGGER.trace("Found new link: {}, but skipping it because it does not match the projection context", newLinkRepoShadow);
+							}
+						}
+					}
+				}
+			}
+
+		}
+
+		if (!compensated) {
+			LOGGER.trace("ObjectNotFound error is not compensated, setting context to tombstone");
+			projCtx.markTombstone();
 		}
 	}
 
@@ -1356,7 +1405,7 @@ public class ContextLoader {
 
 	public <F extends ObjectType> void reloadSecurityPolicyIfNeeded(LensContext<F> context,
 			Task task, OperationResult result) throws ExpressionEvaluationException, ObjectNotFoundException,
-					SchemaException, PolicyViolationException {
+					SchemaException, PolicyViolationException, CommunicationException, ConfigurationException, SecurityViolationException {
 		LensFocusContext<F> focusContext = context.getFocusContext();
 		if (focusContext == null) {
 			return;
@@ -1373,14 +1422,14 @@ public class ContextLoader {
 	
 	public <F extends ObjectType> void loadSecurityPolicy(LensContext<F> context,
 			Task task, OperationResult result) throws ExpressionEvaluationException, ObjectNotFoundException,
-					SchemaException, PolicyViolationException {
+					SchemaException, PolicyViolationException, CommunicationException, ConfigurationException, SecurityViolationException {
 		loadSecurityPolicy(context, false, task, result);
 	}
 	
 	@SuppressWarnings("unchecked")
 	private <F extends ObjectType> void loadSecurityPolicy(LensContext<F> context, boolean forceReload,
 			Task task, OperationResult result) throws ExpressionEvaluationException, ObjectNotFoundException,
-					SchemaException, PolicyViolationException {
+					SchemaException, PolicyViolationException, CommunicationException, ConfigurationException, SecurityViolationException {
 		LensFocusContext<F> focusContext = context.getFocusContext();
 		if (focusContext == null) {
 			return;
@@ -1389,20 +1438,34 @@ public class ContextLoader {
 			LOGGER.trace("Skipping load of security policy because focus is not user");
 			return;
 		}
-		SecurityPolicyType securityPolicy = focusContext.getSecurityPolicy();
-		if (forceReload || securityPolicy == null) {
-			securityPolicy = securityHelper.locateSecurityPolicy((PrismObject<UserType>)focusContext.getObjectAny(),
+		SecurityPolicyType globalSecurityPolicy = context.getGlobalSecurityPolicy();
+		if (globalSecurityPolicy == null) {
+			globalSecurityPolicy = securityHelper.locateGlobalSecurityPolicy((PrismObject<UserType>)focusContext.getObjectAny(),
 					context.getSystemConfiguration(), task, result);
-			if (securityPolicy == null) {
+			if (globalSecurityPolicy == null) {
 				// store empty policy to avoid repeated lookups
-				securityPolicy = new SecurityPolicyType();
+				globalSecurityPolicy = new SecurityPolicyType();
 			}
-			focusContext.setSecurityPolicy(securityPolicy);
+			context.setGlobalSecurityPolicy(globalSecurityPolicy);
+		}
+		SecurityPolicyType focusSecurityPolicy = focusContext.getSecurityPolicy();
+		if (forceReload || focusSecurityPolicy == null) {
+			focusSecurityPolicy = securityHelper.locateFocusSecurityPolicy((PrismObject<UserType>)focusContext.getObjectAny(),
+					context.getSystemConfiguration(), task, result);
+			if (focusSecurityPolicy == null) {
+				// Not very clean. In fact we should store focus security policy separate from global
+				// policy to avoid confusion. But need to do this to fix MID-4793 and backport the fix.
+				// Therefore avoiding big changes. TODO: fix properly later
+				focusSecurityPolicy = globalSecurityPolicy;
+			}
+			focusContext.setSecurityPolicy(focusSecurityPolicy);
 		}
 		if (LOGGER.isTraceEnabled()) {
-			LOGGER.trace("Security policy:\n{}", securityPolicy==null?null:securityPolicy.asPrismObject().debugDump(1));
+			LOGGER.trace("Security policy:\n  Global:\n{}\n  Focus:\n{}", 
+					globalSecurityPolicy==null?null:globalSecurityPolicy.asPrismObject().debugDump(2),
+					focusSecurityPolicy==null?null:focusSecurityPolicy.asPrismObject().debugDump(2));
 		} else {
-			LOGGER.debug("Security policy: {}", securityPolicy);
+			LOGGER.debug("Security policy: global: {}, focus: {}", globalSecurityPolicy, focusSecurityPolicy);
 		}
 	}
 }

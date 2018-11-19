@@ -24,7 +24,7 @@
     <parent>
         <artifactId>parent</artifactId>
         <groupId>com.evolveum.midpoint</groupId>
-        <version>3.8</version>
+        <version>3.9</version>
         <relativePath>../build-system/pom.xml</relativePath>
     </parent>
     <scm>
@@ -34,7 +34,6 @@
     </scm>
     <modules>
         <module>sanity</module>
-        <module>consistency-mechanism</module>
         <!-- DO NOT include longtest and story by default, this runs too long for
         ordinary build -->
 <!--         <module>rest</module> -->
@@ -59,6 +58,12 @@
 			<id>guitest</id>
 			<modules>
 				<module>selenidetest</module>
+			</modules>
+		</profile>
+		<profile>
+			<id>schrodinger</id>
+			<modules>
+				<module>schrodingertest</module>
 			</modules>
 		</profile>
 		<profile>

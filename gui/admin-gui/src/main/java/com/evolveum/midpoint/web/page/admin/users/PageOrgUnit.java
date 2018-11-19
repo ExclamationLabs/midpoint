@@ -15,9 +15,15 @@
  */
 package com.evolveum.midpoint.web.page.admin.users;
 
+import java.util.List;
+
+import javax.xml.namespace.QName;
+
+import org.apache.wicket.ajax.AjaxRequestTarget;
 import org.apache.wicket.model.Model;
 import org.apache.wicket.request.mapper.parameter.PageParameters;
 
+import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.security.api.AuthorizationConstants;
 import com.evolveum.midpoint.util.logging.Trace;
@@ -29,10 +35,13 @@ import com.evolveum.midpoint.web.component.objectdetails.AbstractObjectMainPanel
 import com.evolveum.midpoint.web.component.objectdetails.AbstractRoleMainPanel;
 import com.evolveum.midpoint.web.component.progress.ProgressReportingAwarePage;
 import com.evolveum.midpoint.web.page.admin.PageAdminAbstractRole;
-import com.evolveum.midpoint.web.page.admin.users.component.AbstractRoleMemberPanel;
+import com.evolveum.midpoint.web.page.admin.roles.AbstractRoleMemberPanel;
 import com.evolveum.midpoint.web.page.admin.users.component.OrgMemberPanel;
 import com.evolveum.midpoint.web.page.admin.users.component.OrgSummaryPanel;
+import com.evolveum.midpoint.web.security.GuiAuthorizationConstants;
+import com.evolveum.midpoint.web.session.UserProfileStorage.TableId;
 import com.evolveum.midpoint.web.util.OnePageParameterEncoder;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.AreaCategoryType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgType;
 
 /**
@@ -91,10 +100,18 @@ public class PageOrgUnit extends PageAdminAbstractRole<OrgType> implements Progr
 		return new AbstractRoleMainPanel<OrgType>(id, getObjectModel(),
 				getProjectionModel(), this) {
 
+			private static final long serialVersionUID = 1L;
+
 			@Override
-			public AbstractRoleMemberPanel<OrgType> createMemberPanel(String panelId) {
-				return new OrgMemberPanel(panelId, Model.of(getObject().asObjectable()));
+			protected boolean isFocusHistoryPage(){
+				return PageOrgUnit.this.isFocusHistoryPage();
 			}
+
+			@Override
+			protected void viewObjectHistoricalDataPerformed(AjaxRequestTarget target, PrismObject<OrgType> object, String date){
+				PageOrgUnit.this.navigateToNext(new PageOrgUnitHistory(object, date));
+			}
+
 		};
 	}
 

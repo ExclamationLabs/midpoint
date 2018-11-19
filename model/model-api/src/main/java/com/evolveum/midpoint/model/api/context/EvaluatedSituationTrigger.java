@@ -16,6 +16,7 @@
 
 package com.evolveum.midpoint.model.api.context;
 
+import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.schema.util.PolicyRuleTypeUtil;
 import com.evolveum.midpoint.util.DebugUtil;
 import com.evolveum.midpoint.util.LocalizableMessage;
@@ -39,7 +40,7 @@ public class EvaluatedSituationTrigger extends EvaluatedPolicyRuleTrigger<Policy
 
 	public EvaluatedSituationTrigger(@NotNull PolicySituationPolicyConstraintType constraint,
 			LocalizableMessage message, LocalizableMessage shortMessage, @NotNull Collection<EvaluatedPolicyRule> sourceRules) {
-		super(PolicyConstraintKindType.SITUATION, constraint, message, shortMessage);
+		super(PolicyConstraintKindType.SITUATION, constraint, message, shortMessage, false);
 		this.sourceRules = sourceRules;
 	}
 
@@ -103,11 +104,12 @@ public class EvaluatedSituationTrigger extends EvaluatedPolicyRuleTrigger<Policy
 	}
 
 	@Override
-	public EvaluatedSituationTriggerType toEvaluatedPolicyRuleTriggerType(PolicyRuleExternalizationOptions options) {
+	public EvaluatedSituationTriggerType toEvaluatedPolicyRuleTriggerType(PolicyRuleExternalizationOptions options,
+			PrismContext prismContext) {
 		EvaluatedSituationTriggerType rv = new EvaluatedSituationTriggerType();
 		fillCommonContent(rv);
 		if (!options.isRespectFinalFlag() || !isFinal()) {
-			sourceRules.forEach(r -> r.addToEvaluatedPolicyRuleTypes(rv.getSourceRule(), options));
+			sourceRules.forEach(r -> r.addToEvaluatedPolicyRuleTypes(rv.getSourceRule(), options, null, prismContext));
 		}
 		return rv;
 	}

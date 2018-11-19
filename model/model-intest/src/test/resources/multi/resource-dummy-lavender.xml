@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2010-2017 Evolveum
+  ~ Copyright (c) 2010-2018 Evolveum
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -127,10 +127,7 @@
 				    </source>
 					<expression>
 						<script>
-							<language>http://www.w3.org/TR/xpath/</language>
-							<code>
-								concat($name, $iterationToken)
-							</code>
+							<code>name + iterationToken</code>
 						</script>
 					</expression>
 				</outbound>
@@ -178,14 +175,14 @@
 						<path>fullName</path>
 					</source>
 					<source>
-						<path>employeeType</path>
+						<path>subtype</path>
 					</source>
 					<source>
 						<path>locality</path>
 					</source>
 					<expression>
 						<script>
-							<code>fullName + ' must be the best '+employeeType+' the '+locality+' has ever seen'</code>
+							<code>fullName + ' must be the best '+subtype+' the '+locality+' has ever seen'</code>
 						</script>
 					</expression>
 				</outbound>
@@ -198,11 +195,11 @@
 						<path>fullName</path>
 					</source>
 					<source>
-						<path>employeeType</path>
+						<path>subtype</path>
 					</source>
 					<expression>
 						<script>
-							<code>employeeType + ' ' + fullName + ' drinks only rum!'</code>
+							<code>subtype + ' ' + fullName + ' drinks only rum!'</code>
 						</script>
 					</expression>
 				</outbound>

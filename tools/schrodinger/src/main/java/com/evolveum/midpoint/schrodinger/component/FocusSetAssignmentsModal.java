@@ -3,7 +3,6 @@ package com.evolveum.midpoint.schrodinger.component;
 import com.codeborne.selenide.Condition;
 import com.codeborne.selenide.SelenideElement;
 import com.evolveum.midpoint.schrodinger.MidPoint;
-import com.evolveum.midpoint.schrodinger.component.common.DropDown;
 import com.evolveum.midpoint.schrodinger.component.common.ModalBox;
 import com.evolveum.midpoint.schrodinger.util.Schrodinger;
 import org.openqa.selenium.By;
@@ -19,22 +18,31 @@ public class FocusSetAssignmentsModal<T> extends ModalBox<T> {
     }
 
     public FocusSetAssignmentsModal<T> selectType(String option) {
-        $(By.name("mainPopup:content:popupBody:type:input"))
-                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT).selectOption(option);
+        SelenideElement tabElement = $(Schrodinger.byElementValue("a", "class", "tab-label", option))
+                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT_2_S);
+
+        String classActive = tabElement.attr("class");
+
+        tabElement.click();
+        if (!classActive.contains("active")) {
+            $(Schrodinger.byElementValue("a", "class", "tab-label", option))
+                    .waitUntil(Condition.attribute("class", classActive + " active"), MidPoint.TIMEOUT_DEFAULT_2_S).exists();
+        }
+
 
         return this;
     }
 
     public FocusSetAssignmentsModal<T> selectKind(String option) {
         $(By.name("mainPopup:content:popupBody:kindContainer:kind:input"))
-                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT).selectOption(option);
+                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT_2_S).selectOption(option);
 
         return this;
     }
 
     public FocusSetAssignmentsModal<T> selectIntent(String option) {
         $(By.name("mainPopup:content:popupBody:intentContainer:intent:input"))
-                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT).selectOption(option);
+                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT_2_S).selectOption(option);
 
         return this;
     }
@@ -48,7 +56,7 @@ public class FocusSetAssignmentsModal<T> extends ModalBox<T> {
     public T clickAdd() {
 
         $(Schrodinger.byDataResourceKey("userBrowserDialog.button.addButton"))
-                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT).click();
+                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT_2_S).click();
 
         return this.getParent();
     }

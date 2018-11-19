@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,15 @@ import com.evolveum.midpoint.schema.RelationalValueSearchQuery;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.task.api.TaskManager;
 import com.evolveum.midpoint.util.exception.*;
+import com.evolveum.midpoint.web.component.prism.ContainerStatus;
+import com.evolveum.midpoint.web.component.prism.ContainerValueWrapper;
+import com.evolveum.midpoint.web.component.prism.ContainerWrapper;
+import com.evolveum.midpoint.web.component.prism.ContainerWrapperFactory;
+import com.evolveum.midpoint.web.component.prism.ItemWrapper;
+import com.evolveum.midpoint.web.component.prism.ObjectWrapper;
+import com.evolveum.midpoint.web.component.prism.ObjectWrapperFactory;
+import com.evolveum.midpoint.web.component.prism.ValueStatus;
+import com.evolveum.midpoint.web.page.error.PageError;
 import com.evolveum.midpoint.web.page.login.PageLogin;
 import com.evolveum.midpoint.web.security.MidPointApplication;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
@@ -36,6 +45,7 @@ import org.apache.commons.lang.LocaleUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.Validate;
 
+import com.evolveum.midpoint.common.LocalizationService;
 import com.evolveum.midpoint.gui.api.page.PageBase;
 import com.evolveum.midpoint.model.api.ModelExecuteOptions;
 import com.evolveum.midpoint.prism.delta.ChangeType;
@@ -57,6 +67,7 @@ import com.evolveum.midpoint.web.security.SecurityUtils;
 import org.apache.wicket.RestartResponseException;
 import org.apache.wicket.Session;
 import org.apache.wicket.ThreadContext;
+import org.apache.wicket.model.IModel;
 import org.jetbrains.annotations.Nullable;
 
 import static com.evolveum.midpoint.schema.GetOperationOptions.createNoFetchCollection;
@@ -80,6 +91,7 @@ public class WebModelServiceUtils {
     private static final String OPERATION_COUNT_OBJECT = DOT_CLASS + "countObjects";
 	private static final String OPERATION_ASSUME_POWER_OF_ATTORNEY = DOT_CLASS + "assumePowerOfAttorney";
 	private static final String OPERATION_DROP_POWER_OF_ATTORNEY = DOT_CLASS + "dropPowerOfAttorney";
+	private static final String OPERATION_GET_SYSTEM_CONFIG = DOT_CLASS + "getSystemConfiguration";
 
 	public static String resolveReferenceName(ObjectReferenceType ref, PageBase page) {
 		Task task = page.createSimpleTask(WebModelServiceUtils.class.getName() + ".resolveReferenceName");
@@ -147,7 +159,7 @@ public class WebModelServiceUtils {
 
                 for(PrismObject<O> object: objects){
                 	referenceMap.put(object.getOid(), WebComponentUtil.getName(object));
-                    references.add(ObjectTypeUtil.createObjectRef(object));
+                    references.add(ObjectTypeUtil.createObjectRef(object, page.getPrismContext()));
 
                 }
                 return references;
@@ -626,6 +638,10 @@ public class WebModelServiceUtils {
     }
 
     public static Task createSimpleTask(String operation, PrismObject<UserType> owner, TaskManager manager) {
+        return createSimpleTask(operation, null, owner, manager);
+    }
+    
+    public static Task createSimpleTask(String operation, String channel, PrismObject<UserType> owner, TaskManager manager) {
         Task task = manager.createTaskInstance(operation);
 
         if (owner == null) {
@@ -638,7 +654,11 @@ public class WebModelServiceUtils {
         }
 
         task.setOwner(owner);
-        task.setChannel(SchemaConstants.CHANNEL_GUI_USER_URI);
+        if (channel == null) {
+        	task.setChannel(SchemaConstants.CHANNEL_GUI_USER_URI);
+        } else {
+        	task.setChannel(channel);
+        }
 
         return task;
     }
@@ -661,8 +681,8 @@ public class WebModelServiceUtils {
 								ObjectPaging.createPaging(LookupTableRowType.F_LABEL, OrderDirection.ASCENDING))));
 	}
 
-	public static ActivationStatusType getEffectiveStatus(String lifecycleStatus, ActivationType activationType, PageBase pageBase){
-        return pageBase.getModelInteractionService().getEffectiveStatus(lifecycleStatus, activationType);
+	public static ActivationStatusType getAssignmentEffectiveStatus(String lifecycleStatus, ActivationType activationType, PageBase pageBase){
+        return pageBase.getModelInteractionService().getAssignmentEffectiveStatus(lifecycleStatus, activationType);
     }
 
 	public static void assumePowerOfAttorney(PrismObject<UserType> donor,
@@ -761,5 +781,93 @@ public class WebModelServiceUtils {
 			LoggingUtils.logUnexpectedException(LOGGER, "Cannot load certification configuration", t);
 			return null;
 		}
+	}
+	
+	public static String translateMessage(OperationResult result, ModelServiceLocator page) {
+		LocalizationService service = page.getLocalizationService();
+		Locale locale = page.getLocale();
+
+		return service.translate(result.getUserFriendlyMessage(), locale);
+	}
+	
+	public static boolean isPostAuthenticationEnabled(TaskManager taskManager, ModelInteractionService modelInteractionService) {
+		MidPointPrincipal midpointPrincipal = SecurityUtils.getPrincipalUser();
+    	if (midpointPrincipal != null) {
+    		UserType user = midpointPrincipal.getUser();
+    		String OPERATION_LOAD_FLOW_POLICY = WebModelServiceUtils.class.getName() + ".loadFlowPolicy";
+    		Task task = taskManager.createTaskInstance(OPERATION_LOAD_FLOW_POLICY);
+    		OperationResult parentResult = new OperationResult(OPERATION_LOAD_FLOW_POLICY);
+    		RegistrationsPolicyType registrationPolicyType;
+			try {
+				registrationPolicyType = modelInteractionService.getFlowPolicy(user.asPrismObject(), task, parentResult);
+				if (registrationPolicyType == null) {
+					return false;
+				}
+				SelfRegistrationPolicyType postAuthenticationPolicy = registrationPolicyType.getPostAuthentication();
+				if (postAuthenticationPolicy == null) {
+					return false;
+				}
+	    		String requiredLifecycleState = postAuthenticationPolicy.getRequiredLifecycleState();
+	    		if (StringUtils.isNotBlank(requiredLifecycleState) && requiredLifecycleState.equals(user.getLifecycleState())) {
+	    			return true; 
+	    		}
+			} catch (CommonException e) {
+				LoggingUtils.logException(LOGGER, "Cannot determine post authentication policies", e);
+			}
+    	}
+    	return false;
+	}
+	
+	public static ObjectWrapper<SystemConfigurationType> loadSystemConfigurationAsObjectWrapper(PageBase pageBase) {
+		Task task = pageBase.createSimpleTask(OPERATION_GET_SYSTEM_CONFIG);
+		OperationResult result = new OperationResult(OPERATION_GET_SYSTEM_CONFIG);
+
+		Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(
+			GetOperationOptions.createResolve(), SystemConfigurationType.F_DEFAULT_USER_TEMPLATE,
+			SystemConfigurationType.F_GLOBAL_PASSWORD_POLICY);
+
+		ObjectWrapper<SystemConfigurationType> wrapper = null;
+		try {
+			PrismObject<SystemConfigurationType> systemConfig = loadObject(
+				SystemConfigurationType.class, SystemObjectsType.SYSTEM_CONFIGURATION.value(), options,
+				pageBase, task, result);
+		
+			ObjectWrapperFactory owf = new ObjectWrapperFactory(pageBase);
+		
+			wrapper = owf.createObjectWrapper("adminPage.systemConfiguration", null, systemConfig, ContainerStatus.MODIFYING, task);
+		
+			result.recordSuccess();
+		} catch (Exception ex) {
+			LoggingUtils.logUnexpectedException(LOGGER, "Couldn't load system configuration", ex);
+			result.recordFatalError("Couldn't load system configuration.", ex);
+		}
+
+		if (!WebComponentUtil.isSuccessOrHandledError(result) || wrapper == null) {
+			pageBase.showResult(result, false);
+			throw pageBase.getRestartResponseException(PageError.class);
+		}
+
+		return wrapper;
+	}
+	
+	public static <C extends Containerable> boolean isContainerValueWrapperEmpty(ContainerValueWrapper<C> value) {
+		for(ItemWrapper itemWrapper: value.getItems()) {
+				if(!itemWrapper.isEmpty()) {
+					return false;
+				} 
+		}
+		return true;
+	}
+	
+	public static <C extends Containerable> ContainerValueWrapper<C> createNewItemContainerValueWrapper(PageBase pageBase,
+			IModel<ContainerWrapper<C>> model) {
+    	ContainerWrapperFactory factory = new ContainerWrapperFactory(pageBase);
+		Task task = pageBase.createSimpleTask("Creating new object policy");
+		PrismContainerValue<C> newItem = model.getObject().getItem().createNewValue();
+		ContainerValueWrapper<C> valueWrapper = factory.createContainerValueWrapper(model.getObject(), newItem,
+				model.getObject().getObjectStatus(), ValueStatus.ADDED, model.getObject().getPath(), task);
+		valueWrapper.setShowEmpty(true, true);
+		model.getObject().getValues().add(valueWrapper);
+		return valueWrapper;
 	}
 }

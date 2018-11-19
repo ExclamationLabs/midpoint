@@ -151,7 +151,8 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         } else {
             // not authorized to see all => sees only allocated to him (not quite what is expected, but sufficient for the time being)
             query = QueryUtils.filterForAssignees(q, SecurityUtils.getPrincipalUser(),
-                    OtherPrivilegesLimitationType.F_APPROVAL_WORK_ITEMS).build();
+                    OtherPrivilegesLimitationType.F_APPROVAL_WORK_ITEMS, getRelationRegistry())
+                    .and().item(CaseWorkItemType.F_CLOSE_TIMESTAMP).isNull().build();
         }
 
         // State Filter
@@ -209,8 +210,10 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
                 ObjectType resource = resources.get(0);
                 if (resource != null) {
                     query.addFilter(
+                            // TODO MID-3581
                         QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
-                                .item(PrismConstants.T_PARENT, CaseType.F_OBJECT_REF).ref(ObjectTypeUtil.createObjectRef(resource).asReferenceValue()).buildFilter()
+                                .item(PrismConstants.T_PARENT, CaseType.F_OBJECT_REF).ref(ObjectTypeUtil.createObjectRef(resource,
+		                        getPrismContext()).asReferenceValue()).buildFilter()
                     );
                 }
             }
@@ -233,9 +236,10 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
             if (assignees != null && assignees.size() > 0) {
                 ObjectType assignee = assignees.get(0);
                 if (assignee != null) {
+                    // TODO MID-3581
                     query.addFilter(
                         QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
-                                .item(CaseWorkItemType.F_ASSIGNEE_REF).ref(ObjectTypeUtil.createObjectRef(assignee).asReferenceValue()).buildFilter()
+                                .item(CaseWorkItemType.F_ASSIGNEE_REF).ref(ObjectTypeUtil.createObjectRef(assignee, getPrismContext()).asReferenceValue()).buildFilter()
                     );
                 }
             }
@@ -511,7 +515,7 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
 
     private Function<ObjectType, ObjectReferenceType> objectReferenceTransformer =
             (Function<ObjectType, ObjectReferenceType> & Serializable) (ObjectType o) ->
-                    ObjectTypeUtil.createObjectRef(o);
+                    ObjectTypeUtil.createObjectRef(o, getPrismContext());
 
     private static class ButtonBar extends Fragment {
 

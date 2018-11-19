@@ -36,7 +36,7 @@ import com.evolveum.midpoint.repo.sql.helpers.mapper.Mapper;
 import com.evolveum.midpoint.repo.sql.helpers.modify.*;
 import com.evolveum.midpoint.repo.sql.util.EntityState;
 import com.evolveum.midpoint.repo.sql.util.PrismIdentifierGenerator;
-import com.evolveum.midpoint.repo.sql.util.RUtil;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.schema.util.FullTextSearchConfigurationUtil;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.util.DebugUtil;
@@ -72,16 +72,12 @@ public class ObjectDeltaUpdater {
 
     private static final Trace LOGGER = TraceManager.getTrace(ObjectDeltaUpdater.class);
 
-    @Autowired
-    private PrismContext prismContext;
-    @Autowired
-    private RepositoryService repositoryService;
-    @Autowired
-    private EntityRegistry entityRegistry;
-    @Autowired
-    private PrismEntityMapper prismEntityMapper;
-    @Autowired
-    private ExtItemDictionary extItemDictionary;
+    @Autowired private PrismContext prismContext;
+    @Autowired private RepositoryService repositoryService;
+    @Autowired private EntityRegistry entityRegistry;
+    @Autowired private RelationRegistry relationRegistry;
+    @Autowired private PrismEntityMapper prismEntityMapper;
+    @Autowired private ExtItemDictionary extItemDictionary;
 
     /**
      * modify
@@ -120,6 +116,8 @@ public class ObjectDeltaUpdater {
         RObject<T> object = session.byId(objectClass).getReference(oid);
 
         ManagedType mainEntityType = entityRegistry.getJaxbMapping(type);
+
+        boolean modifiesShadowPendingOperation = false;
 
         for (ItemDelta delta : processedModifications) {
             ItemPath path = delta.getPath();
@@ -176,6 +174,10 @@ public class ObjectDeltaUpdater {
                     continue;
                 }
 
+                if (isShadowPendingOperation(object, delta)) {
+                    modifiesShadowPendingOperation = true;
+                }
+
                 Attribute attribute = findAttribute(attributeStep, nameLocalPart, path, segments, nameSegment);
                 if (attribute == null) {
                     // there's no table/column that needs update
@@ -198,7 +200,12 @@ public class ObjectDeltaUpdater {
             }
         }
 
+        // the following will apply deltas to prismObject
         handleObjectCommonAttributes(type, processedModifications, prismObject, object, idGenerator);
+
+        if (modifiesShadowPendingOperation) {
+            handleShadowPendingOperation(object, prismObject);
+        }
 
         LOGGER.trace("Entity changes applied");
 
@@ -223,7 +230,7 @@ public class ObjectDeltaUpdater {
         }
 
         MapperContext context = new MapperContext();
-        context.setRepositoryContext(new RepositoryContext(repositoryService, prismContext, extItemDictionary));
+        context.setRepositoryContext(new RepositoryContext(repositoryService, prismContext, relationRegistry, extItemDictionary));
         context.setDelta(delta);
         context.setOwner(bean);
 
@@ -266,7 +273,7 @@ public class ObjectDeltaUpdater {
         }
 
         MapperContext context = new MapperContext();
-        context.setRepositoryContext(new RepositoryContext(repositoryService, prismContext, extItemDictionary));
+        context.setRepositoryContext(new RepositoryContext(repositoryService, prismContext, relationRegistry, extItemDictionary));
         context.setDelta(delta);
         context.setOwner(bean);
 
@@ -299,7 +306,7 @@ public class ObjectDeltaUpdater {
         }
 
         MapperContext context = new MapperContext();
-        context.setRepositoryContext(new RepositoryContext(repositoryService, prismContext, extItemDictionary));
+        context.setRepositoryContext(new RepositoryContext(repositoryService, prismContext, relationRegistry, extItemDictionary));
         context.setDelta(delta);
         context.setOwner(bean);
 
@@ -311,6 +318,26 @@ public class ObjectDeltaUpdater {
             Mapper mapper = prismEntityMapper.getMapper(OperationResultType.class, OperationResult.class);
             mapper.map(null, context);
         }
+    }
+
+
+    private boolean isShadowPendingOperation(RObject<?> object, ItemDelta delta) {
+        return object instanceof RShadow && new ItemPath(ShadowType.F_PENDING_OPERATION).equals(delta.getPath());
+    }
+
+    private <T extends ObjectType> void handleShadowPendingOperation(RObject<T> bean, PrismObject<T> prismObject) throws SchemaException {
+        if (!(bean instanceof RShadow)) {
+            throw new SystemException("Bean is not instance of " + RShadow.class + ", shouldn't happen");
+        }
+        RShadow shadow = (RShadow) bean;
+
+        T objectable = prismObject.asObjectable();
+        if (!(objectable instanceof ShadowType)) {
+            throw new SystemException("PrismObject is not instance of " + ShadowType.class + ", shouldn't happen");
+        }
+        ShadowType shadowType = (ShadowType) objectable;
+
+        shadow.setPendingOperationCount(shadowType.getPendingOperation().size());
     }
 
     private <T extends ObjectType> void handleObjectCommonAttributes(Class<T> type, Collection<? extends ItemDelta> modifications,
@@ -330,7 +357,7 @@ public class ObjectDeltaUpdater {
         idGenerator.generate(prismObject);
 
         // normalize all relations
-        ObjectTypeUtil.normalizeAllRelations(prismObject);
+        ObjectTypeUtil.normalizeAllRelations(prismObject, relationRegistry);
 
         // full object column will be updated later
     }
@@ -358,21 +385,27 @@ public class ObjectDeltaUpdater {
     }
 
     private <T extends ObjectType> void handleObjectTextInfoChanges(Class<T> type, Collection<? extends ItemDelta> modifications,
-                                                                    PrismObject prismObject, RObject object) {
+            PrismObject prismObject, RObject<T> object) {
         // update object text info if necessary
         if (!isObjectTextInfoRecomputationNeeded(type, modifications)) {
             return;
         }
 
-        Set<RObjectTextInfo> infos = RObjectTextInfo.createItemsSet((ObjectType) prismObject.asObjectable(), object,
-                new RepositoryContext(repositoryService, prismContext, extItemDictionary));
+        Set<RObjectTextInfo> newInfos = RObjectTextInfo.createItemsSet((ObjectType) prismObject.asObjectable(), object,
+                new RepositoryContext(repositoryService, prismContext, relationRegistry, extItemDictionary));
 
-        if (infos == null || infos.isEmpty()) {
+        if (newInfos == null || newInfos.isEmpty()) {
             object.getTextInfoItems().clear();
         } else {
-            // todo improve this replace
-            object.getTextInfoItems().clear();
-            object.getTextInfoItems().addAll(infos);
+            Set<String> existingTexts = object.getTextInfoItems().stream().map(info -> info.getText()).collect(Collectors.toSet());
+            Set<String> newTexts = newInfos.stream().map(info -> info.getText()).collect(Collectors.toSet());
+
+            object.getTextInfoItems().removeIf(existingInfo -> !newTexts.contains(existingInfo.getText()));
+            for (RObjectTextInfo newInfo : newInfos) {
+                if (!existingTexts.contains(newInfo.getText())) {
+                    object.getTextInfoItems().add(newInfo);
+                }
+            }
         }
     }
 
@@ -425,7 +458,7 @@ public class ObjectDeltaUpdater {
         try {
             Collection<PrismEntityPair<RAnyValue>> extValues = new ArrayList<>();
             for (PrismValue value : values) {
-                RAnyValue extValue = converter.convertToRValue(value, object == null);
+                RAnyValue extValue = converter.convertToRValue(value, object == null, objectOwnerType);
                 if (extValue == null) {
                     continue;
                 }
@@ -883,7 +916,9 @@ public class ObjectDeltaUpdater {
         Collection<PrismEntityPair> results = new ArrayList();
         for (PrismValue value : values) {
             MapperContext context = new MapperContext();
-            context.setRepositoryContext(new RepositoryContext(repositoryService, prismContext, extItemDictionary));
+            context.setRepositoryContext(new RepositoryContext(repositoryService, prismContext, relationRegistry,
+                    extItemDictionary
+            ));
             context.setDelta(delta);
             context.setOwner(bean);
 

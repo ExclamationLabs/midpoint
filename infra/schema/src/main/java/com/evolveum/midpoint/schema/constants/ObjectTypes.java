@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2014 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -104,6 +104,9 @@ public enum ObjectTypes {
     
     FUNCTION_LIBRARY(FunctionLibraryType.COMPLEX_TYPE, SchemaConstantsGenerated.C_FUNCTION_LIBRARY, FunctionLibraryType.class, ObjectManager.MODEL,
             "functionLibraries"),
+    
+    OBJECT_COLLECTION(ObjectCollectionType.COMPLEX_TYPE, SchemaConstantsGenerated.C_OBJECT_COLLECTION, ObjectCollectionType.class, ObjectManager.MODEL,
+            "objectCollections"),
 
     // this should be at end, because otherwise it presents itself as entry for all subtypes of ObjectType
     OBJECT(SchemaConstants.C_OBJECT_TYPE, SchemaConstants.C_OBJECT, ObjectType.class, ObjectManager.MODEL, "objects");
@@ -328,7 +331,7 @@ public enum ObjectTypes {
         return null;
     }
 
-    public static Class getClassFromRestType(String restType) {
+    public static Class<? extends ObjectType> getClassFromRestType(String restType) {
         Validate.notNull(restType, "Rest type must not be null.");
 
         for (ObjectTypes type : ObjectTypes.values()) {
@@ -360,21 +363,5 @@ public enum ObjectTypes {
 
         return list;
     }
-
-    // TODO move somewhere else?
-    public static String getDisplayNameForTypeName(@Nullable QName name, @Nullable Locale locale) {
-    	if (name == null) {
-    		return null;
-		}
-		ResourceBundle bundle = ResourceBundle.getBundle(
-				SchemaConstants.SCHEMA_LOCALIZATION_PROPERTIES_RESOURCE_BASE_PATH,
-				locale != null ? locale : Locale.getDefault());
-		String key = SchemaConstants.OBJECT_TYPE_KEY_PREFIX + name.getLocalPart();
-		if (bundle.containsKey(key)) {
-			return bundle.getString(key);
-		} else {
-			return null;
-		}
-	}
 }
 

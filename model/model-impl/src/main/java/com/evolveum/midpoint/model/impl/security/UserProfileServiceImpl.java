@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,11 @@ package com.evolveum.midpoint.model.impl.security;
 import com.evolveum.midpoint.common.ActivationComputer;
 import com.evolveum.midpoint.common.Clock;
 import com.evolveum.midpoint.repo.cache.RepositoryCache;
-import com.evolveum.midpoint.repo.common.expression.ItemDeltaItem;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.model.api.context.EvaluatedAssignment;
 import com.evolveum.midpoint.model.api.context.EvaluatedAssignmentTarget;
 import com.evolveum.midpoint.model.api.util.DeputyUtils;
+import com.evolveum.midpoint.model.api.util.ModelUtils;
 import com.evolveum.midpoint.model.common.SystemObjectCache;
 import com.evolveum.midpoint.model.common.mapping.MappingFactory;
 import com.evolveum.midpoint.model.impl.UserComputer;
@@ -41,13 +41,16 @@ import com.evolveum.midpoint.prism.delta.PlusMinusZero;
 import com.evolveum.midpoint.prism.polystring.PolyString;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.repo.api.RepositoryService;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.schema.SearchResultList;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.AdminGuiConfigTypeUtil;
+import com.evolveum.midpoint.schema.util.FocusTypeUtil;
 import com.evolveum.midpoint.schema.util.ObjectQueryUtil;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.security.api.Authorization;
 import com.evolveum.midpoint.security.api.AuthorizationTransformer;
 import com.evolveum.midpoint.security.api.DelegatorWithOtherPrivilegesLimitations;
@@ -84,23 +87,28 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import javax.naming.NamingException;
+import javax.naming.directory.Attribute;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
  * @author lazyman
  * @author semancik
  */
 @Service(value = "userDetailsService")
-public class UserProfileServiceImpl implements UserProfileService, UserDetailsService, UserDetailsContextMapper, MessageSourceAware {
-
+public class UserProfileServiceImpl implements UserProfileService, UserDetailsService, UserDetailsContextMapper, MessageSourceAware {    
+    
     private static final Trace LOGGER = TraceManager.getTrace(UserProfileServiceImpl.class);
 
     @Autowired
 	@Qualifier("cacheRepositoryService")
     private RepositoryService repositoryService;
 
-	@Autowired private ObjectResolver objectResolver;
+	@Autowired @Qualifier("modelObjectResolver") private ObjectResolver objectResolver;
 	@Autowired private SystemObjectCache systemObjectCache;
+	@Autowired private RelationRegistry relationRegistry;
 	@Autowired private MappingFactory mappingFactory;
 	@Autowired private MappingEvaluator mappingEvaluator;
 	@Autowired private SecurityHelper securityHelper;
@@ -110,6 +118,9 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 	@Autowired private PrismContext prismContext;
 	@Autowired private TaskManager taskManager;
 
+        //optional application.yml property for LDAP authentication, marks LDAP attribute name that correlates with midPoint UserType name
+        @Value("${auth.ldap.search.naming-attr:#{null}}") private String ldapNamingAttr;
+        
 	private MessageSourceAccessor messages;
 
 	@Override
@@ -118,7 +129,7 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 	}
 
 	@Override
-    public MidPointPrincipal getPrincipal(String username) throws ObjectNotFoundException, SchemaException {
+    public MidPointPrincipal getPrincipal(String username) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
     	OperationResult result = new OperationResult(OPERATION_GET_PRINCIPAL);
     	PrismObject<UserType> user;
         try {
@@ -137,22 +148,29 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 
         return getPrincipal(user, null, result);
     }
+	
+	@Override
+	public MidPointPrincipal getPrincipalByOid(String oid) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
+		OperationResult result = new OperationResult(OPERATION_GET_PRINCIPAL);
+		return getPrincipal(getUserByOid(oid, result).asPrismObject());
+	}
 
     @Override
-    public MidPointPrincipal getPrincipal(PrismObject<UserType> user) throws SchemaException {
+    public MidPointPrincipal getPrincipal(PrismObject<UserType> user) throws SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
     	OperationResult result = new OperationResult(OPERATION_GET_PRINCIPAL);
     	return getPrincipal(user, null, result);
     }
     
     @Override
-    public MidPointPrincipal getPrincipal(PrismObject<UserType> user, AuthorizationTransformer authorizationTransformer, OperationResult result) throws SchemaException {
+    public MidPointPrincipal getPrincipal(PrismObject<UserType> user, AuthorizationTransformer authorizationTransformer, OperationResult result) throws SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
         if (user == null) {
             return null;
         }
 
         PrismObject<SystemConfigurationType> systemConfiguration = getSystemConfiguration(result);
-
-    	userComputer.recompute(user);
+        LifecycleStateModelType lifecycleModel = getLifecycleModel(user, systemConfiguration);
+    	
+		userComputer.recompute(user, lifecycleModel);
         MidPointPrincipal principal = new MidPointPrincipal(user.asObjectable());
         initializePrincipalFromAssignments(principal, systemConfiguration, authorizationTransformer);
         return principal;
@@ -168,6 +186,17 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 			LOGGER.warn("No system configuration: {}", e.getMessage(), e);
 		} 
         return systemConfiguration;
+    }
+    
+    private LifecycleStateModelType getLifecycleModel(PrismObject<UserType> user, PrismObject<SystemConfigurationType> systemConfiguration) {
+    	if (systemConfiguration == null) {
+    		return null;
+    	}
+		try {
+			return ModelUtils.determineLifecycleModel(user, systemConfiguration.asObjectable());
+		} catch (ConfigurationException e) {
+			throw new SystemException(e.getMessage(), e);
+		}
     }
 
     @Override
@@ -193,7 +222,7 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
         return list.get(0);
     }
 
-	private void initializePrincipalFromAssignments(MidPointPrincipal principal, PrismObject<SystemConfigurationType> systemConfiguration, AuthorizationTransformer authorizationTransformer) throws SchemaException {
+	private void initializePrincipalFromAssignments(MidPointPrincipal principal, PrismObject<SystemConfigurationType> systemConfiguration, AuthorizationTransformer authorizationTransformer) throws SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 		UserType userType = principal.getUser();
 
 		Collection<Authorization> authorizations = principal.getAuthorities();
@@ -203,9 +232,9 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
         OperationResult result = task.getResult();
 
         principal.setApplicableSecurityPolicy(securityHelper.locateSecurityPolicy(userType.asPrismObject(), systemConfiguration, task, result));
-
+        
 		if (!userType.getAssignment().isEmpty()) {
-			LensContext<UserType> lensContext = new LensContextPlaceholder<>(userType.asPrismObject(), prismContext);
+			LensContext<UserType> lensContext = createAuthenticationLensContext(userType.asPrismObject(), systemConfiguration);
 			AssignmentEvaluator.Builder<UserType> builder =
 					new AssignmentEvaluator.Builder<UserType>()
 							.repository(repositoryService)
@@ -213,6 +242,7 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 							.channel(null)
 							.objectResolver(objectResolver)
 							.systemObjectCache(systemObjectCache)
+							.relationRegistry(relationRegistry)
 							.prismContext(prismContext)
 							.mappingFactory(mappingFactory)
 							.mappingEvaluator(mappingEvaluator)
@@ -229,9 +259,23 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 
 			AssignmentEvaluator<UserType> assignmentEvaluator = builder.build();
 
+			Collection<AssignmentType> collectedAssignments = new HashSet<>();
+			collectedAssignments.addAll(userType.getAssignment());
+			
+			try {
+				Collection<AssignmentType> forcedAssignments = LensUtil.getForcedAssignments(lensContext.getFocusContext().getLifecycleModel(), 
+						userType.getLifecycleState(), objectResolver, prismContext, task, result);
+				if (forcedAssignments != null) {
+					collectedAssignments.addAll(forcedAssignments);
+				}
+			} catch (ObjectNotFoundException | CommunicationException | ConfigurationException | SecurityViolationException
+					| ExpressionEvaluationException e1) {
+				LOGGER.error("Forced assignments defined for lifecycle {} won't be evaluated", userType.getLifecycleState(), e1);
+			}
+			
 			try {
 				RepositoryCache.enter();
-				for (AssignmentType assignmentType: userType.getAssignment()) {
+				for (AssignmentType assignmentType: collectedAssignments) {
 					try {
 						ItemDeltaItem<PrismContainerValue<AssignmentType>,PrismContainerDefinition<AssignmentType>> assignmentIdi = new ItemDeltaItem<>();
 						assignmentIdi.setItemOld(LensUtil.createAssignmentSingleValueContainerClone(assignmentType));
@@ -243,7 +287,7 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 						}
 						for (EvaluatedAssignmentTarget target : assignment.getRoles().getNonNegativeValues()) {
 							if (target.isValid() && target.getTarget() != null && target.getTarget().asObjectable() instanceof UserType
-									&& DeputyUtils.isDelegationPath(target.getAssignmentPath())) {
+									&& DeputyUtils.isDelegationPath(target.getAssignmentPath(), relationRegistry)) {
 								List<OtherPrivilegesLimitationType> limitations = DeputyUtils.extractLimitations(target.getAssignmentPath());
 								principal.addDelegatorWithOtherPrivilegesLimitations(new DelegatorWithOtherPrivilegesLimitations(
 										(UserType) target.getTarget().asObjectable(), limitations));
@@ -265,6 +309,29 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
         principal.setAdminGuiConfiguration(AdminGuiConfigTypeUtil.compileAdminGuiConfiguration(adminGuiConfigurations, systemConfiguration));
 	}
 
+	private LensContext<UserType> createAuthenticationLensContext(PrismObject<UserType> user, PrismObject<SystemConfigurationType> systemConfiguration) throws SchemaException {
+		LensContext<UserType> lensContext = new LensContextPlaceholder<>(user, prismContext);
+		if (systemConfiguration != null) {
+			ObjectPolicyConfigurationType policyConfigurationType = determineObjectPolicyConfiguration(user, systemConfiguration);
+			lensContext.getFocusContext().setObjectPolicyConfigurationType(policyConfigurationType);
+		}
+		return lensContext;
+	}
+
+	private ObjectPolicyConfigurationType determineObjectPolicyConfiguration(PrismObject<UserType> user, PrismObject<SystemConfigurationType> systemConfiguration) throws SchemaException {
+		ObjectPolicyConfigurationType policyConfigurationType;
+		try {
+			policyConfigurationType = ModelUtils.determineObjectPolicyConfiguration(user, systemConfiguration.asObjectable());
+		} catch (ConfigurationException e) {
+			throw new SchemaException(e.getMessage(), e);
+		}
+		if (LOGGER.isTraceEnabled()) {
+			LOGGER.trace("Selected policy configuration from subtypes {}:\n{}", 
+					FocusTypeUtil.determineSubTypes(user), policyConfigurationType==null?null:policyConfigurationType.asPrismContainerValue().debugDump(1));
+		}
+		
+		return policyConfigurationType;
+	}
 	private void addAuthorizations(Collection<Authorization> targetCollection, Collection<Authorization> sourceCollection, AuthorizationTransformer authorizationTransformer) {
 		if (sourceCollection == null) {
 			return;
@@ -356,7 +423,9 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 			return null;
 		}
 		if (owner.canRepresent(UserType.class)) {
-			userComputer.recompute((PrismObject<UserType>)owner);
+			PrismObject<SystemConfigurationType> systemConfiguration = getSystemConfiguration(result);
+	        LifecycleStateModelType lifecycleModel = getLifecycleModel((PrismObject<UserType>)owner, systemConfiguration);
+			userComputer.recompute((PrismObject<UserType>)owner, lifecycleModel);
 		}
 		return owner;
 	}
@@ -367,7 +436,7 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 			return getPrincipal(username);
 		} catch (ObjectNotFoundException e) {
 			throw new UsernameNotFoundException(e.getMessage(), e);
-		} catch (SchemaException e) {
+		} catch (SchemaException | CommunicationException | ConfigurationException | SecurityViolationException | ExpressionEvaluationException e) {
 			throw new SystemException(e.getMessage(), e);
 		}
 	}
@@ -375,11 +444,17 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 	@Override
 	public UserDetails mapUserFromContext(DirContextOperations ctx, String username,
 			Collection<? extends GrantedAuthority> authorities) {
-		try {
-			return getPrincipal(username);
+                        
+                String userNameEffective = username;                            		
+                try {                    
+                        if (ctx != null && ldapNamingAttr != null) {
+                            userNameEffective = resolveLdapName(ctx, username);
+                        }                       
+			return getPrincipal(userNameEffective);
+                        
 		} catch (ObjectNotFoundException e) {
 			throw new UsernameNotFoundException("UserProfileServiceImpl.unknownUser", e);
-		} catch (SchemaException e) {
+		} catch (SchemaException | CommunicationException | ConfigurationException | SecurityViolationException | ExpressionEvaluationException | NamingException e) {
 			throw new SystemException(e.getMessage(), e);
 		}
 	}
@@ -390,5 +465,20 @@ public class UserProfileServiceImpl implements UserProfileService, UserDetailsSe
 
 	}
 
+        private String resolveLdapName(DirContextOperations ctx, String username) throws NamingException, ObjectNotFoundException {
+            Attribute ldapResponse = ctx.getAttributes().get(ldapNamingAttr);
+            if (ldapResponse != null) {
+                if (ldapResponse.size() == 1) {
+                    Object namingAttrValue = ldapResponse.get(0);
 
+                    if (namingAttrValue != null) {
+                        return namingAttrValue.toString().toLowerCase();
+                    }
+                }
+                else {
+                    throw new ObjectNotFoundException("Bad response"); // naming attribute contains multiple values
+                }
+            }
+            return username; // fallback to typed-in username in case ldap value is missing
+        }
 }

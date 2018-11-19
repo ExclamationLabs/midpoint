@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ import com.evolveum.icf.dummy.resource.ScriptHistoryEntry;
 import com.evolveum.midpoint.common.refinery.RefinedResourceSchema;
 import com.evolveum.midpoint.common.refinery.RefinedResourceSchemaImpl;
 import com.evolveum.midpoint.prism.*;
+import com.evolveum.midpoint.prism.crypto.EncryptionException;
+import com.evolveum.midpoint.prism.crypto.Protector;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.prism.match.MatchingRule;
 import com.evolveum.midpoint.prism.path.ItemPath;
@@ -61,6 +63,7 @@ import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import com.evolveum.prism.xml.ns._public.types_3.PolyStringType;
+import com.evolveum.prism.xml.ns._public.types_3.ProtectedStringType;
 
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
@@ -95,6 +98,7 @@ public class IntegrationTestTools {
 	public static final String CONST_BLABLA = "Bla bla bla";
 
 	public static final String DUMMY_CONNECTOR_TYPE = "com.evolveum.icf.dummy.connector.DummyConnector";
+	public static final String DUMMY_CONNECTOR_LEGACY_UPDATE_TYPE = "com.evolveum.icf.dummy.connector.DummyConnectorLegacyUpdate";
 	public static final String DBTABLE_CONNECTOR_TYPE = "org.identityconnectors.databasetable.DatabaseTableConnector";
 	public static final String CONNECTOR_LDAP_TYPE = "com.evolveum.polygon.connector.ldap.LdapConnector";
 	public static final String LDAP_CONNECTOR_TYPE = "com.evolveum.polygon.connector.ldap.LdapConnector";
@@ -381,9 +385,13 @@ public class IntegrationTestTools {
     }
 
 	public static void waitFor(String message, Checker checker, long timeoutInterval, long sleepInterval) throws CommonException {
+		long startTime = System.currentTimeMillis();
+		waitFor(message, checker, startTime, timeoutInterval, sleepInterval);
+	}
+	
+	public static void waitFor(String message, Checker checker, long startTime, long timeoutInterval, long sleepInterval) throws CommonException {
 		System.out.println(message);
 		LOGGER.debug(LOG_MESSAGE_PREFIX + message);
-		long startTime = System.currentTimeMillis();
 		while (System.currentTimeMillis() < startTime + timeoutInterval) {
 			boolean done = checker.check();
 			if (done) {
@@ -1048,4 +1056,36 @@ public class IntegrationTestTools {
 		System.out.println("Log cleared.");
 	}
 
+	public static void assertProtectedString(String message, String expectedClearValue, ProtectedStringType actualValue, CredentialsStorageTypeType storageType, Protector protector) throws EncryptionException, SchemaException {
+		switch (storageType) {
+
+			case NONE:
+				assertNull(message+": unexpected value: "+actualValue, actualValue);
+				break;
+
+			case ENCRYPTION:
+				assertNotNull(message+": no value", actualValue);
+				assertTrue(message+": unencrypted value: "+actualValue, actualValue.isEncrypted());
+				String actualClearPassword = protector.decryptString(actualValue);
+				assertEquals(message+": wrong value", expectedClearValue, actualClearPassword);
+				assertFalse(message+": unexpected hashed value: "+actualValue, actualValue.isHashed());
+				assertNull(message+": unexpected clear value: "+actualValue, actualValue.getClearValue());
+				break;
+
+			case HASHING:
+				assertNotNull(message+": no value", actualValue);
+				assertTrue(message+": value not hashed: "+actualValue, actualValue.isHashed());
+				ProtectedStringType expectedPs = new ProtectedStringType();
+				expectedPs.setClearValue(expectedClearValue);
+				assertTrue(message+": hash does not match, expected "+expectedClearValue+", but was "+actualValue,
+						protector.compare(actualValue, expectedPs));
+				assertFalse(message+": unexpected encrypted value: "+actualValue, actualValue.isEncrypted());
+				assertNull(message+": unexpected clear value: "+actualValue, actualValue.getClearValue());
+				break;
+
+			default:
+				throw new IllegalArgumentException("Unknown storage "+storageType);
+		}
+
+	}
 }

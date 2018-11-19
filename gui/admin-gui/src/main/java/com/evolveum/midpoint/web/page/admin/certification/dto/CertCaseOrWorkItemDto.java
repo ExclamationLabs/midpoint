@@ -17,6 +17,7 @@
 package com.evolveum.midpoint.web.page.admin.certification.dto;
 
 import com.evolveum.midpoint.gui.api.page.PageBase;
+import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.prism.xml.XmlTypeConverter;
 import com.evolveum.midpoint.schema.util.CertCampaignTypeUtil;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
@@ -31,6 +32,8 @@ import org.jetbrains.annotations.NotNull;
 import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.namespace.QName;
 import java.util.*;
+
+import static com.evolveum.midpoint.schema.util.CertCampaignTypeUtil.norm;
 
 /**
  * A common superclass for CertCaseDto + CertWorkItemDto.
@@ -49,17 +52,20 @@ public class CertCaseOrWorkItemDto extends Selectable {
     public static final String F_REVIEW_REQUESTED = "reviewRequested";
     public static final String F_DEADLINE_AS_STRING = "deadlineAsString";
     public static final String F_CONFLICTING_TARGETS = "conflictingTargets";
+    public static final String F_ITERATION = "iteration";
 
     private AccessCertificationCaseType certCase;
     private String objectName;
     private String targetName;
     private String deadlineAsString;
+    private QName defaultRelation;
 
     CertCaseOrWorkItemDto(@NotNull AccessCertificationCaseType _case, PageBase page) {
         this.certCase = _case;
         this.objectName = getName(_case.getObjectRef());
         this.targetName = getName(_case.getTargetRef());
         this.deadlineAsString = computeDeadlineAsString(page);
+        this.defaultRelation = page.getPrismContext().getDefaultRelation();
     }
 
     // ugly hack (for now) - we extract the name from serialization metadata
@@ -91,6 +97,10 @@ public class CertCaseOrWorkItemDto extends Selectable {
         }
     }
 
+    public Integer getIteration() {
+    	return norm(certCase.getIteration());
+    }
+
     public String getTargetName() {
         return targetName;
     }
@@ -100,7 +110,7 @@ public class CertCaseOrWorkItemDto extends Selectable {
     }
 
     public ObjectReferenceType getCampaignRef() {
-        return ObjectTypeUtil.createObjectRef(getCampaign());
+        return ObjectTypeUtil.createObjectRef(getCampaign(), defaultRelation);
 	}
 
     public Long getCaseId() {
@@ -180,11 +190,10 @@ public class CertCaseOrWorkItemDto extends Selectable {
                 delta = (delta / precision) * precision;
             }
 
-            //todo i18n
             if (delta > 0) {
-            	return PageBase.createStringResourceStatic(page, "PageCert.in", DurationFormatUtils.formatDurationWords(delta, true, true)).getString();
+            	return PageBase.createStringResourceStatic(page, "PageCert.in", WebComponentUtil.formatDurationWordsForLocal(delta, true, true, page)).getString();
             } else if (delta < 0) {
-            	return PageBase.createStringResourceStatic(page, "PageCert.ago", DurationFormatUtils.formatDurationWords(-delta, true, true)).getString();
+            	return PageBase.createStringResourceStatic(page, "PageCert.ago", WebComponentUtil.formatDurationWordsForLocal(-delta, true, true, page)).getString();
             } else {
                 return page.getString("PageCert.now");
             }

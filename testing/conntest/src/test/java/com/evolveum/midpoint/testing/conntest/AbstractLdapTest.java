@@ -148,6 +148,9 @@ public abstract class AbstractLdapTest extends AbstractModelIntegrationTest {
 
 	protected static final File ROLE_SUPERUSER_FILE = new File(COMMON_DIR, "role-superuser.xml");
 	protected static final String ROLE_SUPERUSER_OID = "00000000-0000-0000-0000-000000000004";
+	
+	protected static final File ROLE_END_USER_FILE = new File(COMMON_DIR, "role-end-user.xml");
+	protected static final String ROLE_END_USER_OID = "00000000-0000-0000-0000-000000000008";
 
 	protected static final File USER_BARBOSSA_FILE = new File(COMMON_DIR, "user-barbossa.xml");
 	protected static final String USER_BARBOSSA_OID = "c0c010c0-d34d-b33f-f00d-111111111112";
@@ -155,6 +158,9 @@ public abstract class AbstractLdapTest extends AbstractModelIntegrationTest {
 	protected static final String USER_BARBOSSA_FULL_NAME = "Hector Barbossa";
 	protected static final String USER_BARBOSSA_PASSWORD = "deadjack.tellnotales123";
 	protected static final String USER_BARBOSSA_PASSWORD_2 = "hereThereBeMonsters";
+	protected static final String USER_BARBOSSA_PASSWORD_AD_1 = "There.Be.Monsters.111";
+	protected static final String USER_BARBOSSA_PASSWORD_AD_2 = "There.Be.Monsters.222";
+	protected static final String USER_BARBOSSA_PASSWORD_AD_3 = "There.Be.Monsters.333";
 
 	// Barbossa after rename
 	protected static final String USER_CPTBARBOSSA_USERNAME = "cptbarbossa";
@@ -170,6 +176,7 @@ public abstract class AbstractLdapTest extends AbstractModelIntegrationTest {
 	protected static final String USER_LECHUCK_FULL_NAME = "LeChuck";
 
 	protected static final String LDAP_INETORGPERSON_OBJECTCLASS = "inetOrgPerson";
+	protected static final String LDAP_ATTRIBUTE_ROOM_NUMBER = "roomNumber";
 
 	protected static final QName ASSOCIATION_GROUP_NAME = new QName(MidPointConstants.NS_RI, "group");
 
@@ -384,7 +391,7 @@ public abstract class AbstractLdapTest extends AbstractModelIntegrationTest {
 	@Test
 	public void test010Connection() throws Exception {
 		final String TEST_NAME = "test010Connection";
-		TestUtil.displayTestTitle(TEST_NAME);
+		displayTestTitle(TEST_NAME);
 
 		Task task = createTask(TEST_NAME);
 
@@ -404,7 +411,7 @@ public abstract class AbstractLdapTest extends AbstractModelIntegrationTest {
 	@Test
     public void test020Schema() throws Exception {
 		final String TEST_NAME = "test020Schema";
-        TestUtil.displayTestTitle(this, TEST_NAME);
+        displayTestTitle(TEST_NAME);
 
         ResourceSchema resourceSchema = RefinedResourceSchema.getResourceSchema(resource, prismContext);
         display("Resource schema", resourceSchema);
@@ -429,18 +436,22 @@ public abstract class AbstractLdapTest extends AbstractModelIntegrationTest {
 
         ResourceAttributeDefinition<Long> createTimestampDef = accountObjectClassDefinition.findAttributeDefinition("createTimestamp");
         PrismAsserts.assertDefinition(createTimestampDef, new QName(MidPointConstants.NS_RI, "createTimestamp"),
-        		DOMUtil.XSD_LONG, 0, 1);
+        		getTimestampXsdType(), 0, 1);
         assertTrue("createTimestampDef read", createTimestampDef.canRead());
         assertFalse("createTimestampDef read", createTimestampDef.canModify());
         assertFalse("createTimestampDef read", createTimestampDef.canAdd());
 
         assertStableSystem();
 	}
+	
+	protected QName getTimestampXsdType() {
+		return DOMUtil.XSD_DATETIME;
+	}
 
 	@Test
     public void test030Capabilities() throws Exception {
 		final String TEST_NAME = "test030Capabilities";
-        TestUtil.displayTestTitle(this, TEST_NAME);
+        displayTestTitle(TEST_NAME);
 
         CapabilitiesType capabilities = resourceType.getCapabilities();
         display("Resource capabilities", capabilities);
@@ -525,7 +536,7 @@ public abstract class AbstractLdapTest extends AbstractModelIntegrationTest {
 		rememberCounter(InternalCounters.CONNECTOR_SIMULATED_PAGING_SEARCH_COUNT);
 
 		// WHEN
-        TestUtil.displayWhen(TEST_NAME);
+        displayWhen(TEST_NAME);
         display("Searching shadows, options="+options+", query", query);
 		SearchResultMetadata searchResultMetadata = modelService.searchObjectsIterative(ShadowType.class, query, handler, options, task, result);
 
@@ -790,8 +801,13 @@ public abstract class AbstractLdapTest extends AbstractModelIntegrationTest {
 	}
 
 	protected Entry addLdapAccount(String uid, String cn, String givenName, String sn) throws LdapException, IOException, CursorException {
-		LdapNetworkConnection connection = ldapConnect();
 		Entry entry = createAccountEntry(uid, cn, givenName, sn);
+		addLdapEntry(entry);
+		return entry;
+	}
+	
+	protected void addLdapEntry(Entry entry) throws LdapException, IOException {
+		LdapNetworkConnection connection = ldapConnect();
 		try {
 			connection.add(entry);
 			display("Added LDAP account:\n"+entry);
@@ -801,7 +817,6 @@ public abstract class AbstractLdapTest extends AbstractModelIntegrationTest {
 			throw e;
 		}
 		ldapDisconnect(connection);
-		return entry;
 	}
 
 	protected Entry createAccountEntry(String uid, String cn, String givenName, String sn) throws LdapException {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import com.evolveum.midpoint.schema.ObjectDeltaOperation;
 import com.evolveum.midpoint.util.DebugDumpable;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.Serializable;
 import java.util.Collection;
@@ -40,6 +41,8 @@ public interface ModelElementContext<O extends ObjectType> extends Serializable,
 
 	PrismObject<O> getObjectNew();
 
+	PrismObject<O> getObjectCurrent();
+	
 	void setObjectNew(PrismObject<O> objectNew);
 
 	ObjectDelta<O> getPrimaryDelta();
@@ -60,6 +63,7 @@ public interface ModelElementContext<O extends ObjectType> extends Serializable,
 	 * Returns all policy rules that apply to this object - even those that were not triggered.
 	 * The policy rules are compiled from all the applicable sources (target, meta-roles, etc.)
 	 */
+    @NotNull
 	Collection<EvaluatedPolicyRule> getPolicyRules();
 
 	boolean isOfType(Class<?> aClass);

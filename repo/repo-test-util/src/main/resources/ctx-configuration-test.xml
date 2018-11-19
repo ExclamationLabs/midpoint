@@ -24,6 +24,8 @@
      http://www.springframework.org/schema/context/spring-context-3.0.xsd"
 	default-lazy-init="false" default-autowire="byName">
 	
+	<bean id="repoSimpleObjectResolver" class="com.evolveum.midpoint.test.RepoSimpleObjectResolver" />
+	
 	<bean name="midpointConfiguration" class="com.evolveum.midpoint.init.StartupConfiguration" init-method="init">
 		<constructor-arg value="./target/midpoint-home" />
 		<constructor-arg value="test-config.xml" />
@@ -64,6 +66,8 @@
 	<!--  Scan for components:
 		 	- protector (KeyStoreConfigurator)
 	 -->
+	<context:component-scan base-package="com.evolveum.midpoint.schema" />
 	<context:component-scan base-package="com.evolveum.midpoint.init" />
+	<context:component-scan base-package="com.evolveum.midpoint.test.util" />		<!-- HACK -->
 	<context:annotation-config />
 </beans>

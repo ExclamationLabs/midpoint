@@ -15,6 +15,7 @@
  */
 package com.evolveum.midpoint.model.intest;
 
+import static org.testng.AssertJUnit.assertFalse;
 import static org.testng.AssertJUnit.assertTrue;
 import static org.testng.AssertJUnit.assertNotNull;
 import static org.testng.AssertJUnit.assertEquals;
@@ -36,17 +37,23 @@ import org.w3c.dom.Document;
 
 import com.evolveum.midpoint.prism.Objectable;
 import com.evolveum.midpoint.prism.PrismObject;
+import com.evolveum.midpoint.prism.PrismReference;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.prism.util.PrismAsserts;
 import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.RepositoryDiag;
 import com.evolveum.midpoint.schema.SelectorOptions;
+import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
+import com.evolveum.midpoint.schema.util.ShadowUtil;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.test.DummyResourceContoller;
 import com.evolveum.midpoint.test.util.TestUtil;
 import com.evolveum.midpoint.util.DOMUtil;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ResourceType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.RelationDefinitionType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.RoleType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
 
 /**
@@ -62,6 +69,9 @@ public class TestMisc extends AbstractInitializedModelIntegrationTest {
 	protected static final File ROLE_IMPORT_FILTERS_FILE = new File(TEST_DIR, "role-import-filters.xml");
 	protected static final String ROLE_IMPORT_FILTERS_OID = "aad19b9a-d511-11e7-8bf7-cfecde275e59";
 	
+	protected static final File ROLE_SHIP_FILE = new File(TEST_DIR, "role-ship.xml");
+	protected static final String ROLE_SHIP_OID = "bbd19b9a-d511-11e7-8bf7-cfecde275e59";
+	
 	protected static final File RESOURCE_SCRIPTY_FILE = new File(TEST_DIR, "resource-dummy-scripty.xml");
 	protected static final String RESOURCE_SCRIPTY_OID = "399f5308-0447-11e8-91e9-a7f9c4100ffb";
 	protected static final String RESOURCE_DUMMY_SCRIPTY_NAME = "scripty";
@@ -73,6 +83,7 @@ public class TestMisc extends AbstractInitializedModelIntegrationTest {
 	private static final String USER_CLEAN_FAMILY_NAME = "Clean";
 
 	private String userCleanOid;
+	private Integer lastDummyConnectorNumber;
 
 	@Override
 	public void initSystem(Task initTask, OperationResult initResult)
@@ -81,6 +92,8 @@ public class TestMisc extends AbstractInitializedModelIntegrationTest {
 		
 		initDummyResourcePirate(RESOURCE_DUMMY_SCRIPTY_NAME,
 				RESOURCE_SCRIPTY_FILE, RESOURCE_SCRIPTY_OID, initTask, initResult);
+		
+		importObjectFromFile(ROLE_SHIP_FILE);
 	}
 
 	@Test
@@ -268,6 +281,29 @@ public class TestMisc extends AbstractInitializedModelIntegrationTest {
 	}
 	
 	/**
+     * MID-4660, MID-4491, MID-3581
+     */
+    @Test
+    public void test320DefaultRelations() throws Exception {
+		final String TEST_NAME="test320DefaultRelations";
+        displayTestTitle(TEST_NAME);
+        
+        Task task = createTask(TEST_NAME);
+        OperationResult result = task.getResult();
+        
+        // WHEN
+        displayWhen(TEST_NAME);
+        List<RelationDefinitionType> relations = modelInteractionService.getRelationDefinitions();
+        
+        // THEN
+ 		displayThen(TEST_NAME);
+ 		display("Relations", relations);
+        assertRelationDef(relations, SchemaConstants.ORG_MANAGER, "RelationTypes.manager");
+        assertRelationDef(relations, SchemaConstants.ORG_OWNER, "RelationTypes.owner");
+        assertEquals("Unexpected number of relation definitions", 7, relations.size());
+    }
+	
+	/**
 	 * MID-3879
 	 */
 	@Test
@@ -310,7 +346,7 @@ public class TestMisc extends AbstractInitializedModelIntegrationTest {
 
         // WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_JACK_OID, RESOURCE_SCRIPTY_OID, null, task, result);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_SCRIPTY_OID, null, task, result);
 
         // THEN
         displayThen(TEST_NAME);
@@ -324,6 +360,210 @@ public class TestMisc extends AbstractInitializedModelIntegrationTest {
         assertDummyAccountAttribute(RESOURCE_DUMMY_SCRIPTY_NAME, ACCOUNT_JACK_DUMMY_USERNAME,
         		DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_TITLE_NAME,
         		"Mr. POLY JACK SPARROW");
+	}
+	
+	/**
+	 * MID-3044
+	 */
+	@Test
+    public void test502GetAccountJackResourceScripty() throws Exception {
+		final String TEST_NAME = "test502GetAccountJackResourceScripty";
+        displayTestTitle(TEST_NAME);
+
+        // GIVEN
+        Task task = createTask(TEST_NAME);
+        OperationResult result = task.getResult();
+        
+        PrismObject<UserType> userBefore = getUser(USER_JACK_OID);
+        display("User before", userBefore);
+        assertAssignments(userBefore, 1);
+        String accountOid = getSingleLinkOid(userBefore);
+
+        // WHEN
+        displayWhen(TEST_NAME);
+        PrismObject<ShadowType> accountShadow = modelService.getObject(ShadowType.class, accountOid, null, task, result);
+
+        // THEN
+        displayThen(TEST_NAME);
+		assertSuccess(result);
+
+		assertAttribute(getDummyResourceObject(RESOURCE_DUMMY_SCRIPTY_NAME), accountShadow.asObjectable(), 
+				getDummyResourceController(RESOURCE_DUMMY_SCRIPTY_NAME).getAttributeQName(DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_SHIP_NAME), 
+				"Dummy Resource: Scripty");
+		lastDummyConnectorNumber = ShadowUtil.getAttributeValue(accountShadow, 
+				getDummyResourceController(RESOURCE_DUMMY_SCRIPTY_NAME).getAttributeQName(DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_WEALTH_NAME));
+	}
+	
+	/**
+	 * Check that the same connector instance is used. The connector should be pooled and cached.
+	 * MID-3104
+	 */
+	@Test
+    public void test504GetAccountJackResourceScriptyAgain() throws Exception {
+		final String TEST_NAME = "test504GetAccountJackResourceScriptyAgain";
+        displayTestTitle(TEST_NAME);
+
+        // GIVEN
+        Task task = createTask(TEST_NAME);
+        OperationResult result = task.getResult();
+        
+        PrismObject<UserType> userBefore = getUser(USER_JACK_OID);
+        display("User before", userBefore);
+        assertAssignments(userBefore, 1);
+        String accountOid = getSingleLinkOid(userBefore);
+
+        // WHEN
+        displayWhen(TEST_NAME);
+        PrismObject<ShadowType> accountShadow = modelService.getObject(ShadowType.class, accountOid, null, task, result);
+
+        // THEN
+        displayThen(TEST_NAME);
+		assertSuccess(result);
+
+		assertAttribute(getDummyResourceObject(RESOURCE_DUMMY_SCRIPTY_NAME), accountShadow.asObjectable(), 
+				getDummyResourceController(RESOURCE_DUMMY_SCRIPTY_NAME).getAttributeQName(DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_SHIP_NAME), 
+				"Dummy Resource: Scripty");
+		Integer dummyConnectorNumber = ShadowUtil.getAttributeValue(accountShadow, 
+				getDummyResourceController(RESOURCE_DUMMY_SCRIPTY_NAME).getAttributeQName(DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_WEALTH_NAME));
+		assertEquals("Connector number has changed", lastDummyConnectorNumber, dummyConnectorNumber);
+	}
+	
+	/**
+	 * Modify resource (but make sure that connector configuration is the same).
+	 * Make just small an unimportant change in the connector. That should increase the version
+	 * number which should purge all the caches. Therefore a new connector instance should be used
+	 * (new connector instance number).
+	 * The problem with MID-3104 was, that midPoint caches got purged. But as the configuration
+	 * of old and new connector was the same, then ConnId assumed that it is still the same
+	 * connector and reused the pooled instances.
+	 * MID-3104
+	 */
+	@Test
+    public void test506ModifyResourceGetAccountJackResourceScripty() throws Exception {
+		final String TEST_NAME = "test506ModifyResourceGetAccountJackResourceScripty";
+        displayTestTitle(TEST_NAME);
+
+        // GIVEN
+        Task task = createTask(TEST_NAME);
+        OperationResult result = task.getResult();
+        
+        PrismObject<UserType> userBefore = getUser(USER_JACK_OID);
+        display("User before", userBefore);
+        assertAssignments(userBefore, 1);
+        String accountOid = getSingleLinkOid(userBefore);
+        PrismObject<ResourceType> resourceBefore = getObject(ResourceType.class, RESOURCE_SCRIPTY_OID);
+        display("Resouce version before", resourceBefore.getVersion());
+
+        // WHEN
+        displayWhen(TEST_NAME);
+        modifyObjectReplaceProperty(ResourceType.class, RESOURCE_SCRIPTY_OID, 
+        		ResourceType.F_DESCRIPTION, null, task, result, "Whatever");
+
+        // THEN
+        displayThen(TEST_NAME);
+		assertSuccess(result);
+		
+		PrismObject<ResourceType> resourceAfter = getObject(ResourceType.class, RESOURCE_SCRIPTY_OID);
+        display("Resouce version after", resourceAfter.getVersion());
+        assertFalse("Resource version is still the same: "+resourceAfter.getVersion(), resourceBefore.getVersion().equals(resourceAfter.getVersion()));
+		
+        PrismObject<ShadowType> accountShadow = modelService.getObject(ShadowType.class, accountOid, null, task, result);
+
+		Integer dummyConnectorNumber = ShadowUtil.getAttributeValue(accountShadow, 
+				getDummyResourceController(RESOURCE_DUMMY_SCRIPTY_NAME).getAttributeQName(DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_WEALTH_NAME));
+		assertFalse("Connector number is still the same: "+dummyConnectorNumber, lastDummyConnectorNumber == dummyConnectorNumber);
+	}
+	
+
+	
+	/**
+	 * MID-4504
+	 * midpoint.getLinkedShadow fails recomputing without throwing exception during shadow delete
+	 * 
+	 * the ship attribute in the role "Ship" has mapping with calling midpoint.getLinkedShadow() on the reosurce which doesn't exist
+	 */
+	@Test
+	public void test600jackAssignRoleShip() throws Exception {
+		final String TEST_NAME = "test600jackAssignRoleShip";
+        displayTestTitle(TEST_NAME);
+
+        // GIVEN
+        Task task = createTask(TEST_NAME);
+        OperationResult result = task.getResult();
+       
+
+        // WHEN
+        displayWhen(TEST_NAME);
+        assignRole(USER_JACK_OID, ROLE_SHIP_OID);
+        
+        //THEN
+        displayThen(TEST_NAME);
+        PrismObject<UserType> userAfter = getUser(USER_JACK_OID);
+        display("User before", userAfter);
+        assertAssignments(userAfter, 2);
+        assertLinks(userAfter, 1);
+        
+        PrismReference linkRef = userAfter.findReference(UserType.F_LINK_REF);
+	    assertTrue(!linkRef.isEmpty());
+	            
+//	    PrismObject<ShadowType> shadowModel = getShadowModel(linkRef.getOid());
+	      
+	    assertDummyAccountAttribute(RESOURCE_DUMMY_SCRIPTY_NAME, USER_JACK_USERNAME, "ship", "ship");
+        
+	}
+	
+	@Test
+	public void test601jackUnassignResourceAccount() throws Exception {
+		final String TEST_NAME = "test601jackUnassignResourceAccount";
+        displayTestTitle(TEST_NAME);
+
+        // GIVEN
+        Task task = createTask(TEST_NAME);
+        OperationResult result = task.getResult();
+        PrismObject<UserType> userBefore = getUser(USER_JACK_OID);
+        display("User before", userBefore);
+        assertAssignments(userBefore, 2);
+        
+        // WHEN
+        displayWhen(TEST_NAME);
+        unassignAccountFromUser(USER_JACK_OID, RESOURCE_SCRIPTY_OID, null);
+        
+        //THEN
+        displayThen(TEST_NAME);
+        PrismObject<UserType> userAfter = getUser(USER_JACK_OID);
+        display("User after", userAfter);
+        assertAssignments(userAfter, 1);
+        assertLinks(userAfter, 1);
+	}
+	
+	
+	/**
+	 * MID-4504
+	 * midpoint.getLinkedShadow fails recomputing without throwing exception during shadow delete
+	 * 
+	 * first assign role ship, the ship attribute in the role has mapping with calling midpoint.getLinkedShadow()
+	 */
+	@Test
+	public void test602jackUnssigndRoleShip() throws Exception {
+		final String TEST_NAME = "test602jackUnssigndRoleShip";
+        displayTestTitle(TEST_NAME);
+
+        // GIVEN
+        Task task = createTask(TEST_NAME);
+        OperationResult result = task.getResult();
+       
+
+        // WHEN
+        displayWhen(TEST_NAME);
+        unassignRole(USER_JACK_OID, ROLE_SHIP_OID);
+        
+        //THEN
+        displayThen(TEST_NAME);
+        PrismObject<UserType> userAfter = getUser(USER_JACK_OID);
+        display("User before", userAfter);
+        assertAssignments(userAfter, 0);
+        assertLinks(userAfter, 0);
+        
 	}
 
 }

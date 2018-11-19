@@ -83,10 +83,10 @@ public class PrismContainerDefinitionImpl<C extends Containerable> extends ItemD
         this.complexTypeDefinition = complexTypeDefinition;
         if (complexTypeDefinition == null) {
             isRuntimeSchema = true;
-            super.setDynamic(true);
+            super.setDynamic(true);             // todo is this really ok?
         } else {
             isRuntimeSchema = complexTypeDefinition.isXsdAnyMarker();
-            super.setDynamic(isRuntimeSchema);
+            super.setDynamic(isRuntimeSchema);  // todo is this really ok?
         }
 		this.compileTimeClass = compileTimeClass;
     }
@@ -482,6 +482,11 @@ public class PrismContainerDefinitionImpl<C extends Containerable> extends ItemD
 			// TODO: maybe look at the subitems?
 			return true;
 		}
+	}
+	
+	@Override
+	public boolean canRepresent(QName specTypeQName) {
+		return complexTypeDefinition.canRepresent(specTypeQName);
 	}
 
 	@Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,14 +26,20 @@ import java.util.Set;
 import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.common.LocalizationService;
+import com.evolveum.midpoint.model.api.ModelAuthorizationAction;
 import com.evolveum.midpoint.prism.Containerable;
 import com.evolveum.midpoint.prism.PrismContainerValue;
+import com.evolveum.midpoint.security.enforcer.api.AuthorizationParameters;
+import com.evolveum.midpoint.security.enforcer.api.SecurityEnforcer;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowType;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import com.evolveum.midpoint.audit.api.AuditEventRecord;
 import com.evolveum.midpoint.audit.api.AuditService;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
 import com.evolveum.midpoint.repo.common.expression.ExpressionUtil;
 import com.evolveum.midpoint.repo.common.expression.ExpressionVariables;
@@ -54,7 +60,6 @@ import com.evolveum.midpoint.report.api.ReportService;
 import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.SelectorOptions;
 import com.evolveum.midpoint.schema.result.OperationResult;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.task.api.TaskManager;
 import com.evolveum.midpoint.util.exception.CommunicationException;
@@ -78,12 +83,13 @@ public class ReportServiceImpl implements ReportService {
 	@Autowired private TaskManager taskManager;
 	@Autowired private PrismContext prismContext;
 	@Autowired private ExpressionFactory expressionFactory;
-	@Autowired private ObjectResolver objectResolver;
+	@Autowired @Qualifier("modelObjectResolver") private ObjectResolver objectResolver;
 	@Autowired private AuditService auditService;
 	@Autowired private FunctionLibrary logFunctionLibrary;
 	@Autowired private FunctionLibrary basicFunctionLibrary;
 	@Autowired private FunctionLibrary midpointFunctionLibrary;
 	@Autowired private LocalizationService localizationService;
+	@Autowired private SecurityEnforcer securityEnforcer;
 
 	@Override
 	public ObjectQuery parseQuery(String query, Map<QName, Object> parameters) throws SchemaException,
@@ -155,7 +161,11 @@ public class ReportServiceImpl implements ReportService {
 		// options.add(new
 		// SelectorOptions(GetOperationOptions.createResolveNames()));
 		GetOperationOptions getOptions = GetOperationOptions.createResolveNames();
-		getOptions.setRaw(Boolean.TRUE);
+		if (ShadowType.class.isAssignableFrom(clazz) && securityEnforcer.isAuthorized(ModelAuthorizationAction.RAW_OPERATION.getUrl(), null, AuthorizationParameters.EMPTY, null, task, parentResult)) {
+			getOptions.setRaw(Boolean.TRUE);        // shadows in non-raw mode require specifying resource OID and kind (at least) - todo research this further
+		} else {
+			getOptions.setNoFetch(Boolean.TRUE);
+		}
 		options = SelectorOptions.createCollection(getOptions);
 		List<PrismObject<? extends ObjectType>> results;
 		try {
@@ -171,7 +181,7 @@ public class ReportServiceImpl implements ReportService {
 
 	public Collection<PrismContainerValue<? extends Containerable>> evaluateScript(String script,
 			Map<QName, Object> parameters) throws SchemaException, ExpressionEvaluationException,
-			ObjectNotFoundException {
+			ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException {
 		List<PrismContainerValue<? extends Containerable>> results = new ArrayList<>();
 
 		ExpressionVariables variables = new ExpressionVariables();
@@ -228,7 +238,7 @@ public class ReportServiceImpl implements ReportService {
 	}
 
 	public Collection<AuditEventRecord> evaluateAuditScript(String script, Map<QName, Object> parameters)
-			throws SchemaException, ExpressionEvaluationException, ObjectNotFoundException {
+			throws SchemaException, ExpressionEvaluationException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException {
 		Collection<AuditEventRecord> results = new ArrayList<>();
 
 		ExpressionVariables variables = new ExpressionVariables();

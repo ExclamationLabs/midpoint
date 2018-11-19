@@ -22,6 +22,10 @@ import java.util.List;
 
 import javax.xml.namespace.QName;
 
+import com.evolveum.midpoint.gui.api.component.PendingOperationPanel;
+import com.evolveum.midpoint.web.component.menu.cog.ButtonInlineMenuItem;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
+
 import org.apache.commons.lang.StringUtils;
 import org.apache.wicket.ajax.AjaxRequestTarget;
 import org.apache.wicket.extensions.markup.html.repeater.data.grid.ICellPopulator;
@@ -36,6 +40,7 @@ import org.apache.wicket.markup.repeater.RepeatingView;
 import org.apache.wicket.model.AbstractReadOnlyModel;
 import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.Model;
+import org.apache.wicket.model.PropertyModel;
 import org.apache.wicket.model.StringResourceModel;
 import org.apache.wicket.model.util.ListModel;
 import org.apache.wicket.request.mapper.parameter.PageParameters;
@@ -94,7 +99,6 @@ import com.evolveum.midpoint.web.component.data.SelectableBeanObjectDataProvider
 import com.evolveum.midpoint.web.component.data.column.ColumnMenuAction;
 import com.evolveum.midpoint.web.component.data.column.ColumnTypeDto;
 import com.evolveum.midpoint.web.component.data.column.ColumnUtils;
-import com.evolveum.midpoint.web.component.data.column.InlineMenuHeaderColumn;
 import com.evolveum.midpoint.web.component.data.column.LinkColumn;
 import com.evolveum.midpoint.web.component.data.column.ObjectLinkColumn;
 import com.evolveum.midpoint.web.component.dialog.ConfirmationPanel;
@@ -103,22 +107,12 @@ import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItemAction;
 import com.evolveum.midpoint.web.component.search.Search;
 import com.evolveum.midpoint.web.component.util.SelectableBean;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
-import com.evolveum.midpoint.web.page.admin.configuration.component.HeaderMenuAction;
 import com.evolveum.midpoint.web.page.admin.resources.ResourceContentTabPanel.Operation;
 import com.evolveum.midpoint.web.page.admin.resources.content.PageAccount;
 import com.evolveum.midpoint.web.page.admin.server.PageTaskAdd;
 import com.evolveum.midpoint.web.session.SessionStorage;
 import com.evolveum.midpoint.web.session.UserProfileStorage.TableId;
 import com.evolveum.midpoint.web.util.OnePageParameterEncoder;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ActivationStatusType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.FocusType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.OperationResultType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ResourceType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowKindType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.TaskType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
 
 /**
  * Implementation classes : ResourceContentResourcePanel,
@@ -256,7 +250,7 @@ public abstract class ResourceContentPanel extends Panel {
         initShadowStatistics(totals);
 
 		MainObjectListPanel<ShadowType> shadowListPanel = new MainObjectListPanel<ShadowType>(ID_TABLE,
-				ShadowType.class, getTableId(), null, pageBase) {
+				ShadowType.class, getTableId(), createSearchOptions(), pageBase) {
 			private static final long serialVersionUID = 1L;
 
 			@Override
@@ -267,16 +261,6 @@ public abstract class ResourceContentPanel extends Panel {
 			@Override
 			protected List<IColumn<SelectableBean<ShadowType>, String>> createColumns() {
 				return ResourceContentPanel.this.initColumns();
-			}
-
-			@Override
-			protected PrismObject<ShadowType> getNewObjectListObject(){
-				return (new ShadowType()).asPrismObject();
-			}
-
-			@Override
-			protected IColumn<SelectableBean<ShadowType>, String> createActionsColumn(){
-				return new InlineMenuHeaderColumn(createHeaderMenuItems());
 			}
 
 			@Override
@@ -296,7 +280,7 @@ public abstract class ResourceContentPanel extends Panel {
 				provider = (SelectableBeanObjectDataProvider<ShadowType>) super.initProvider();
 				provider.setEmptyListOnNullQuery(true);
 				provider.setSort(null);
-				createSearchOptions(provider);
+				provider.setUseObjectCounting(isUseObjectCounting());
 				return provider;
 			}
 
@@ -399,26 +383,38 @@ public abstract class ResourceContentPanel extends Panel {
 		List<InlineMenuItem> items = new ArrayList<>();
 
 		InlineMenuItem item = new InlineMenuItem(
-				getPageBase().createStringResource("ResourceContentResourcePanel.showExisting"),
-				new InlineMenuItemAction() {
+				getPageBase().createStringResource("ResourceContentResourcePanel.showExisting")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new InlineMenuItemAction() {
 					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
 						runTask(tasks, target);
 					}
-				});
+				};
+			}
+		};
 		items.add(item);
 
-		item = new InlineMenuItem(getPageBase().createStringResource("ResourceContentResourcePanel.newTask"),
-				new InlineMenuItemAction() {
+		item = new InlineMenuItem(getPageBase().createStringResource("ResourceContentResourcePanel.newTask")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new InlineMenuItemAction() {
 					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
 						newTaskPerformed(category, target);
 					}
-				});
+				};
+			}
+		};
 		items.add(item);
 
 		DropdownButtonPanel button = new DropdownButtonPanel(id,
@@ -448,7 +444,7 @@ public abstract class ResourceContentPanel extends Panel {
 		}
 
 		PrismObject<ResourceType> resource = getResourceModel().getObject();
-		taskType.setObjectRef(ObjectTypeUtil.createObjectRef(resource));
+		taskType.setObjectRef(ObjectTypeUtil.createObjectRef(resource, getPageBase().getPrismContext()));
 
 		taskType.setCategory(category);
 		setResponsePage(new PageTaskAdd(taskType));
@@ -472,7 +468,7 @@ public abstract class ResourceContentPanel extends Panel {
 			
 			if (taskKind == null) {
 				PrismProperty<QName> taskObjectClass = task
-						.findProperty(new ItemPath(TaskType.F_EXTENSION, SchemaConstants.OBJECTCLASS_PROPERTY_NAME));
+						.findProperty(new ItemPath(TaskType.F_EXTENSION, SchemaConstants.MODEL_EXTENSION_OBJECTCLASS));
 				
 				if (taskObjectClass == null) {
 					LOGGER.warn("Bad task definition. Task {} doesn't contain definition either of objectClass or kind/intent", task.getOid());
@@ -561,7 +557,7 @@ public abstract class ResourceContentPanel extends Panel {
 
 	protected abstract Search createSearch();
 
-	private void createSearchOptions(SelectableBeanObjectDataProvider<ShadowType> provider) {
+	private Collection<SelectorOptions<GetOperationOptions>> createSearchOptions() {
 
 		Collection<SelectorOptions<GetOperationOptions>> opts = SelectorOptions.createCollection(
 				ShadowType.F_ASSOCIATION, GetOperationOptions.createRetrieve(RetrieveOption.EXCLUDE));
@@ -569,10 +565,7 @@ public abstract class ResourceContentPanel extends Panel {
 		if (addAdditionalOptions() != null) {
 			opts.add(addAdditionalOptions());
 		}
-
-		provider.setUseObjectCounting(isUseObjectCounting());
-		provider.setOptions(opts);
-
+		return opts;
 	}
 
 	private StringResourceModel createStringResource(String key) {
@@ -686,6 +679,18 @@ public abstract class ResourceContentPanel extends Panel {
 
 			}
 		});
+
+		columns.add(new AbstractColumn<SelectableBean<ShadowType>, String>(
+				createStringResource("PageAccounts.accounts.pendingOperations")) {
+
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public void populateItem(Item<ICellPopulator<SelectableBean<ShadowType>>> cellItem,
+									 String componentId, IModel<SelectableBean<ShadowType>> rowModel) {
+				cellItem.add(new PendingOperationPanel(componentId, new PropertyModel<List<PendingOperationType>>(rowModel, SelectableBean.F_VALUE + "." + ShadowType.F_PENDING_OPERATION.getLocalPart())));
+			}
+		});
 		return columns;
 	}
 
@@ -787,127 +792,131 @@ public abstract class ResourceContentPanel extends Panel {
 		return null;
 	}
 
-	private List<InlineMenuItem> createHeaderMenuItems() {
-		List<InlineMenuItem> items = new ArrayList<>();
-
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.enableAccounts"), true,
-				new HeaderMenuAction(this) {
-					private static final long serialVersionUID = 1L;
-
-					@Override
-					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						updateResourceObjectStatusPerformed(null, target, true);
-					}
-				}));
-
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.disableAccounts"), true,
-				new HeaderMenuAction(this) {
-					private static final long serialVersionUID = 1L;
-
-					@Override
-					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						updateResourceObjectStatusPerformed(null, target, false);
-					}
-				}));
-
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.deleteAccounts"), true,
-				new HeaderMenuAction(this) {
-					private static final long serialVersionUID = 1L;
-
-					@Override
-					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						deleteResourceObjectPerformed(null, target);
-					}
-				}));
-
-		items.add(new InlineMenuItem());
-
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.importAccounts"), true,
-				new HeaderMenuAction(this) {
-
-					private static final long serialVersionUID = 1L;
-
-					@Override
-					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						importResourceObject(null, target);
-					}
-				}));
-
-		items.add(new InlineMenuItem());
-
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.removeOwners"), true,
-				new HeaderMenuAction(this) {
-					private static final long serialVersionUID = 1L;
-
-					@Override
-					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						changeOwner(null, target, null, Operation.REMOVE);
-					}
-				}));
-
-		return items;
-	}
-
 	@SuppressWarnings("serial")
 	private List<InlineMenuItem> createRowMenuItems() {
 		List<InlineMenuItem> items = new ArrayList<>();
 
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.enableAccount"), true,
-				new ColumnMenuAction<SelectableBean<ShadowType>>() {
+		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.enableAccount"), true) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ShadowType>>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						SelectableBean<ShadowType> shadow = getRowModel().getObject();
-						updateResourceObjectStatusPerformed(shadow.getValue(), target, true);
+						if (getRowModel() == null){
+							updateResourceObjectStatusPerformed(null, target, true);
+						} else {
+							SelectableBean<ShadowType> shadow = getRowModel().getObject();
+							updateResourceObjectStatusPerformed(shadow.getValue(), target, true);
+						}
 					}
-				}));
+				};
+			}
+		});
 
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.disableAccount"), true,
-				new ColumnMenuAction<SelectableBean<ShadowType>>() {
+		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.disableAccount"), true) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ShadowType>>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						SelectableBean<ShadowType> shadow = getRowModel().getObject();
-						updateResourceObjectStatusPerformed(shadow.getValue(), target, false);
+						if (getRowModel() == null){
+							updateResourceObjectStatusPerformed(null, target, false);
+						} else {
+							SelectableBean<ShadowType> shadow = getRowModel().getObject();
+							updateResourceObjectStatusPerformed(shadow.getValue(), target, false);
+						}
 					}
-				}));
+				};
+			}
+		});
 
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.deleteAccount"), true,
-				new ColumnMenuAction<SelectableBean<ShadowType>>() {
+		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.deleteAccount"), true) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ShadowType>>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						SelectableBean<ShadowType> shadow = getRowModel().getObject();
-						deleteResourceObjectPerformed(shadow.getValue(), target);
+						if (getRowModel() == null){
+							deleteResourceObjectPerformed(null, target);
+						} else {
+							SelectableBean<ShadowType> shadow = getRowModel().getObject();
+							deleteResourceObjectPerformed(shadow.getValue(), target);
+						}
 					}
-				}));
+				};
+			}
+		});
 
-		items.add(new InlineMenuItem());
+//		items.add(new InlineMenuItem());
 
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.importAccount"), true,
-				new ColumnMenuAction<SelectableBean<ShadowType>>() {
+		items.add(new ButtonInlineMenuItem(createStringResource("pageContentAccounts.menu.importAccount"), true) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ShadowType>>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						SelectableBean<ShadowType> shadow = getRowModel().getObject();
-						importResourceObject(shadow.getValue(), target);
+						if (getRowModel() == null){
+							importResourceObject(null, target);
+						} else {
+							SelectableBean<ShadowType> shadow = getRowModel().getObject();
+							importResourceObject(shadow.getValue(), target);
+						}
 					}
-				}));
+				};
+			}
 
-		items.add(new InlineMenuItem());
+			@Override
+			public String getButtonIconCssClass(){
+				return GuiStyleConstants.CLASS_IMPORT_MENU_ITEM;
+			}
+		});
 
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.removeOwner"), true,
-				new ColumnMenuAction<SelectableBean<ShadowType>>() {
+//		items.add(new InlineMenuItem());
+
+		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.removeOwner"), true) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ShadowType>>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
-						SelectableBean<ShadowType> shadow = getRowModel().getObject();
-						changeOwner(shadow.getValue(), target, null, Operation.REMOVE);
+						if (getRowModel() == null){
+							changeOwner(null, target, null, Operation.REMOVE);
+						} else {
+							SelectableBean<ShadowType> shadow = getRowModel().getObject();
+							changeOwner(shadow.getValue(), target, null, Operation.REMOVE);
+						}
 					}
-				}));
+				};
+			}
+		});
 
-		items.add(new InlineMenuItem(createStringResource("pageContentAccounts.menu.changeOwner"), true,
-				new ColumnMenuAction<SelectableBean<ShadowType>>() {
+		items.add(new ButtonInlineMenuItem(createStringResource("pageContentAccounts.menu.changeOwner"), true) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ShadowType>>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onSubmit(AjaxRequestTarget target, Form<?> form) {
@@ -926,7 +935,20 @@ public abstract class ResourceContentPanel extends Panel {
 						pageBase.showMainPopup(browser, target);
 
 					}
-				}));
+				};
+			}
+
+			@Override
+			public String getButtonIconCssClass(){
+				return GuiStyleConstants.CLASS_RECONCILE_MENU_ITEM;
+			}
+
+			@Override
+			public boolean isHeaderMenuItem(){
+				return false;
+			}
+
+		});
 
 		return items;
 	}
@@ -983,7 +1005,6 @@ public abstract class ResourceContentPanel extends Panel {
 						"pageContentAccounts.message.deleteConfirmationSingle")) {
 			@Override
 			public void yesPerformed(AjaxRequestTarget target) {
-				((PageBase) getPage()).hideMainPopup(target);
 				deleteAccountConfirmedPerformed(target, result, selectedShadow);
 			}
 		};
@@ -1096,6 +1117,8 @@ public abstract class ResourceContentPanel extends Panel {
 	private void changeOwner(ShadowType selected, AjaxRequestTarget target, FocusType ownerToChange,
 			Operation operation) {
 
+		pageBase.hideMainPopup(target);
+
 		List<ShadowType> selectedShadow = getSelectedShadowsList(selected);
 
 		Collection<? extends ItemDelta> modifications = new ArrayList<>();
@@ -1110,7 +1133,7 @@ public abstract class ResourceContentPanel extends Panel {
 					if (owner != null) {
 						delta = ReferenceDelta.createModificationDelete(FocusType.F_LINK_REF,
 								getFocusDefinition(),
-								ObjectTypeUtil.createObjectRef(shadow).asReferenceValue());
+								ObjectTypeUtil.createObjectRef(shadow, getPageBase().getPrismContext()).asReferenceValue());
 
 						((Collection) modifications).add(delta);
 						changeOwnerInternal(owner.getOid(), modifications, target);
@@ -1126,7 +1149,7 @@ public abstract class ResourceContentPanel extends Panel {
 				FocusType owner = loadShadowOwner(shadow.getOid());
 				if (owner != null) {
 					delta = ReferenceDelta.createModificationDelete(FocusType.F_LINK_REF,
-							getFocusDefinition(), ObjectTypeUtil.createObjectRef(shadow).asReferenceValue());
+							getFocusDefinition(), ObjectTypeUtil.createObjectRef(shadow, getPageBase().getPrismContext()).asReferenceValue());
 
 					((Collection) modifications).add(delta);
 					changeOwnerInternal(owner.getOid(), modifications, target);
@@ -1134,7 +1157,7 @@ public abstract class ResourceContentPanel extends Panel {
 				modifications = new ArrayList<>();
 
 				delta = ReferenceDelta.createModificationAdd(FocusType.F_LINK_REF, getFocusDefinition(),
-						ObjectTypeUtil.createObjectRef(shadow).asReferenceValue());
+						ObjectTypeUtil.createObjectRef(shadow, getPageBase().getPrismContext()).asReferenceValue());
 				((Collection) modifications).add(delta);
 				changeOwnerInternal(ownerToChange.getOid(), modifications, target);
 
@@ -1199,5 +1222,4 @@ public abstract class ResourceContentPanel extends Panel {
 	protected abstract SelectorOptions<GetOperationOptions> addAdditionalOptions();
 
 	protected abstract boolean isUseObjectCounting();
-
 }

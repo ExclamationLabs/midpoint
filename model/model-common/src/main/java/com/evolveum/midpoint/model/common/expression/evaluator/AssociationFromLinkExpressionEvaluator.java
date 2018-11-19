@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017 Evolveum
+ * Copyright (c) 2014-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,10 +28,12 @@ import com.evolveum.midpoint.prism.PrismContainer;
 import com.evolveum.midpoint.prism.PrismContainerDefinition;
 import com.evolveum.midpoint.prism.PrismContainerValue;
 import com.evolveum.midpoint.prism.PrismContext;
+import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.delta.PrismValueDeltaSetTriple;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
 import com.evolveum.midpoint.prism.query.builder.S_AtomicFilterExit;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.repo.common.expression.ExpressionEvaluationContext;
 import com.evolveum.midpoint.repo.common.expression.ExpressionEvaluator;
 import com.evolveum.midpoint.prism.delta.ItemDelta;
@@ -39,7 +41,10 @@ import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.ResultHandler;
 import com.evolveum.midpoint.schema.SelectorOptions;
 import com.evolveum.midpoint.schema.constants.ExpressionConstants;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
+import com.evolveum.midpoint.schema.processor.ResourceAttribute;
+import com.evolveum.midpoint.schema.processor.ResourceAttributeContainer;
+import com.evolveum.midpoint.schema.util.FocusTypeUtil;
+import com.evolveum.midpoint.schema.util.ShadowUtil;
 import com.evolveum.midpoint.util.exception.*;
 import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
@@ -49,6 +54,7 @@ import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowAssociationType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowDiscriminatorType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowIdentifiersType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowKindType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowType;
 import org.apache.commons.collections4.CollectionUtils;
@@ -83,7 +89,7 @@ public class AssociationFromLinkExpressionEvaluator
 	 */
 	@Override
 	public PrismValueDeltaSetTriple<PrismContainerValue<ShadowAssociationType>> evaluate(ExpressionEvaluationContext context) throws SchemaException,
-			ExpressionEvaluationException, ObjectNotFoundException {
+			ExpressionEvaluationException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException {
 
 		String desc = context.getContextDescription();
 		
@@ -114,7 +120,7 @@ public class AssociationFromLinkExpressionEvaluator
 				throw new ExpressionEvaluationException("Empty assignment path variable in "+desc+"; the expression may be used in a wrong place. It is only supposed to work in a role.");
 			}
 
-			LOGGER.info("ASSPATH {}:\n{}", evaluatorType.getDescription(), assignmentPath.debugDumpLazily(1));
+			LOGGER.trace("ASSPATH {}:\n{}", evaluatorType.getDescription(), assignmentPath.debugDumpLazily(1));
 			
 			AssignmentPathSegment segment;
 			try {
@@ -126,10 +132,8 @@ public class AssociationFromLinkExpressionEvaluator
 			thisRole = (AbstractRoleType) segment.getSource();
 		}
 		
-		LOGGER.info("thisRole {}: {}", evaluatorType.getDescription(), thisRole);
-		
-		
-		
+		LOGGER.trace("thisRole {}: {}", evaluatorType.getDescription(), thisRole);
+
 		LOGGER.trace("Evaluating association from link on: {}", thisRole);
 
 		RefinedObjectClassDefinition rAssocTargetDef = (RefinedObjectClassDefinition) context.getVariables().get(ExpressionConstants.VAR_ASSOCIATION_TARGET_OBJECT_CLASS_DEFINITION);
@@ -182,7 +186,7 @@ public class AssociationFromLinkExpressionEvaluator
 			PrismContainerValue<ShadowAssociationType> newValue = output.createNewValue();
 			ShadowAssociationType shadowAssociationType = newValue.asContainerable();
 			shadowAssociationType.setName(assocName);
-			shadowAssociationType.setShadowRef(new ObjectReferenceType().oid(object.getOid()).type(ShadowType.COMPLEX_TYPE));
+			toAssociation(object, shadowAssociationType);
 			return true;
 		};
 		try {
@@ -190,6 +194,28 @@ public class AssociationFromLinkExpressionEvaluator
 		} catch (CommonException e) {
 			throw new SystemException("Couldn't search for relevant shadows: " + e.getMessage(), e);
 		}
+	}
+
+	private void toAssociation(PrismObject<ShadowType> shadow, ShadowAssociationType shadowAssociationType) {
+		shadowAssociationType.setShadowRef(new ObjectReferenceType().oid(shadow.getOid()).type(ShadowType.COMPLEX_TYPE));
+		// We also need to add identifiers here. Otherwise the delta won't match the shadow association.
+		// And therefore new values won't be computed correctly (MID-4948)
+		// This is not a clean systemic solution. But there was no time for a better solution before 3.9 release.
+		try {
+			ResourceAttributeContainer shadowAttributesContainer = ShadowUtil.getAttributesContainer(shadow);
+			ResourceAttributeContainer identifiersContainer = new ResourceAttributeContainer(
+                    ShadowAssociationType.F_IDENTIFIERS, shadowAttributesContainer.getDefinition(), prismContext);
+			shadowAssociationType.asPrismContainerValue().add(identifiersContainer);
+			Collection<ResourceAttribute<?>> shadowIdentifiers = ShadowUtil.getAllIdentifiers(shadow);
+			for (ResourceAttribute<?> shadowIdentifier : shadowIdentifiers) {
+				identifiersContainer.add(shadowIdentifier.clone());
+			}
+			
+		} catch (SchemaException e) {
+			// Should not happen
+			throw new SystemException(e.getMessage(), e);
+		}
+		
 	}
 
 	private void gatherCandidateShadowsFromAbstractRole(AbstractRoleType thisRole, List<String> candidateShadowsOidList) {
@@ -201,7 +227,7 @@ public class AssociationFromLinkExpressionEvaluator
 	private void gatherCandidateShadowsFromAbstractRoleRecurse(OrgType thisOrg,
 			List< String > candidateShadowsOidList,
 			 Collection<SelectorOptions<GetOperationOptions>> options,
-			String desc, ExpressionEvaluationContext params) throws SchemaException, ObjectNotFoundException {
+			String desc, ExpressionEvaluationContext params) throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 
 
 		
@@ -216,7 +242,7 @@ public class AssociationFromLinkExpressionEvaluator
 
 	private boolean matchesForRecursion(OrgType thisOrg) {
 		for (String recurseUpOrgType: evaluatorType.getRecurseUpOrgType()) {
-			if (thisOrg.getOrgType().contains(recurseUpOrgType)) {
+			if (FocusTypeUtil.determineSubTypes(thisOrg).contains(recurseUpOrgType)) {
 				return true;
 			}
 		}

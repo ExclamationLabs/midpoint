@@ -46,6 +46,7 @@ import com.evolveum.midpoint.util.exception.ConfigurationException;
 import com.evolveum.midpoint.util.exception.ExpressionEvaluationException;
 import com.evolveum.midpoint.util.exception.ObjectAlreadyExistsException;
 import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
+import com.evolveum.midpoint.util.exception.PolicyViolationException;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.exception.SecurityViolationException;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ConnectorHostType;
@@ -169,7 +170,7 @@ public interface ProvisioningService {
 	<T extends ObjectType> String addObject(PrismObject<T> object, OperationProvisioningScriptsType scripts, ProvisioningOperationOptions options,
 			Task task, OperationResult parentResult)
 			throws ObjectAlreadyExistsException, SchemaException, CommunicationException, ObjectNotFoundException,
-			ConfigurationException, SecurityViolationException, ExpressionEvaluationException;
+			ConfigurationException, SecurityViolationException, PolicyViolationException, ExpressionEvaluationException;
 
 	/**
 	 * Collect external changes on a resource and call the business logic with
@@ -307,10 +308,14 @@ public interface ProvisioningService {
 	 */
 	<T extends ObjectType> String modifyObject(Class<T> type, String oid, Collection<? extends ItemDelta> modifications,
 			OperationProvisioningScriptsType scripts, ProvisioningOperationOptions options, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException,
-			CommunicationException, ConfigurationException, SecurityViolationException, ObjectAlreadyExistsException, ExpressionEvaluationException;
+			CommunicationException, ConfigurationException, SecurityViolationException, PolicyViolationException, ObjectAlreadyExistsException, ExpressionEvaluationException;
 
 	/**
 	 * <p>Deletes object with specified OID.</p>
+	 * <p>
+	 *   Delete operation always deletes the resource object - or at least tries to. But this operation may
+	 *   or may not delete  the repository shadow. The shadow may remain in a dead (thombstone) state.
+	 *   In that case the delete operation returns such shadow to indicate that repository shadow was not deleted.
 	 * <p>
 	 * Must fail if object with specified OID
 	 * does not exists. Should be atomic.
@@ -322,6 +327,8 @@ public interface ProvisioningService {
 	 *            scripts that should be executed before of after operation
 	 * @param parentResult
 	 *            parent OperationResult (in/out)
+	 *            
+	 * @return Dead repository shadow - if it exists after delete. Otherwise returns null.
 	 *
 	 * @throws ObjectNotFoundException
 	 *             specified object does not exist
@@ -333,8 +340,8 @@ public interface ProvisioningService {
 	 * @throws GenericConnectorException
 	 *             unknown connector framework error
 	 */
-	<T extends ObjectType> void deleteObject(Class<T> type, String oid, ProvisioningOperationOptions option, OperationProvisioningScriptsType scripts, Task task, OperationResult parentResult)
-			throws ObjectNotFoundException, CommunicationException, SchemaException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException;
+	<T extends ObjectType> PrismObject<T> deleteObject(Class<T> type, String oid, ProvisioningOperationOptions option, OperationProvisioningScriptsType scripts, Task task, OperationResult parentResult)
+			throws ObjectNotFoundException, CommunicationException, SchemaException, ConfigurationException, SecurityViolationException, PolicyViolationException, ExpressionEvaluationException;
 
 	/**
 	 * Executes a single provisioning script.

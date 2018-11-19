@@ -15,19 +15,37 @@
  */
 package com.evolveum.midpoint.model.impl.lens;
 
+import static com.evolveum.midpoint.model.api.ProgressInformation.ActivityType.CLOCKWORK;
+import static com.evolveum.midpoint.model.api.ProgressInformation.ActivityType.WAITING;
+import static com.evolveum.midpoint.model.api.ProgressInformation.StateType.ENTERING;
+import static com.evolveum.midpoint.model.api.ProgressInformation.StateType.EXITING;
+import static org.apache.commons.collections4.CollectionUtils.emptyIfNull;
+import static org.apache.commons.lang3.ObjectUtils.defaultIfNull;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
+
+import javax.xml.datatype.XMLGregorianCalendar;
+import javax.xml.namespace.QName;
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.Validate;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
+
 import com.evolveum.midpoint.audit.api.AuditEventRecord;
 import com.evolveum.midpoint.audit.api.AuditEventStage;
 import com.evolveum.midpoint.audit.api.AuditEventType;
 import com.evolveum.midpoint.audit.api.AuditService;
 import com.evolveum.midpoint.common.Clock;
-import com.evolveum.midpoint.model.api.ProgressInformation;
-import com.evolveum.midpoint.model.impl.migrator.Migrator;
-import com.evolveum.midpoint.repo.api.ConflictWatcher;
-import com.evolveum.midpoint.repo.api.PreconditionViolationException;
-import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
-import com.evolveum.midpoint.repo.common.expression.ExpressionVariables;
-import com.evolveum.midpoint.model.api.ModelAuthorizationAction;
 import com.evolveum.midpoint.model.api.ModelExecuteOptions;
+import com.evolveum.midpoint.model.api.ProgressInformation;
 import com.evolveum.midpoint.model.api.context.ModelState;
 import com.evolveum.midpoint.model.api.hooks.ChangeHook;
 import com.evolveum.midpoint.model.api.hooks.HookOperationMode;
@@ -36,15 +54,22 @@ import com.evolveum.midpoint.model.common.SystemObjectCache;
 import com.evolveum.midpoint.model.common.expression.evaluator.caching.AssociationSearchExpressionEvaluatorCache;
 import com.evolveum.midpoint.model.common.expression.script.ScriptExpression;
 import com.evolveum.midpoint.model.common.expression.script.ScriptExpressionFactory;
-import com.evolveum.midpoint.model.impl.ModelObjectResolver;
-import com.evolveum.midpoint.model.impl.controller.ModelImplUtils;
 import com.evolveum.midpoint.model.impl.lens.projector.ContextLoader;
 import com.evolveum.midpoint.model.impl.lens.projector.Projector;
 import com.evolveum.midpoint.model.impl.lens.projector.focus.FocusConstraintsChecker;
+import com.evolveum.midpoint.model.impl.lens.projector.policy.PolicyRuleScriptExecutor;
+import com.evolveum.midpoint.model.impl.migrator.Migrator;
 import com.evolveum.midpoint.model.impl.sync.RecomputeTaskHandler;
-import com.evolveum.midpoint.model.impl.util.Utils;
-import com.evolveum.midpoint.prism.*;
-import com.evolveum.midpoint.prism.delta.*;
+import com.evolveum.midpoint.model.impl.util.ModelImplUtils;
+import com.evolveum.midpoint.prism.PrismContainerValue;
+import com.evolveum.midpoint.prism.PrismContext;
+import com.evolveum.midpoint.prism.PrismObject;
+import com.evolveum.midpoint.prism.PrismProperty;
+import com.evolveum.midpoint.prism.PrismPropertyDefinition;
+import com.evolveum.midpoint.prism.PrismReferenceValue;
+import com.evolveum.midpoint.prism.delta.ChangeType;
+import com.evolveum.midpoint.prism.delta.ItemDelta;
+import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.prism.delta.builder.DeltaBuilder;
 import com.evolveum.midpoint.prism.marshaller.QueryConvertor;
 import com.evolveum.midpoint.prism.path.ItemPath;
@@ -56,7 +81,11 @@ import com.evolveum.midpoint.provisioning.api.ChangeNotificationDispatcher;
 import com.evolveum.midpoint.provisioning.api.ProvisioningService;
 import com.evolveum.midpoint.provisioning.api.ResourceObjectChangeListener;
 import com.evolveum.midpoint.provisioning.api.ResourceOperationListener;
+import com.evolveum.midpoint.repo.api.ConflictWatcher;
+import com.evolveum.midpoint.repo.api.PreconditionViolationException;
 import com.evolveum.midpoint.repo.api.RepositoryService;
+import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
+import com.evolveum.midpoint.repo.common.expression.ExpressionVariables;
 import com.evolveum.midpoint.schema.ObjectDeltaOperation;
 import com.evolveum.midpoint.schema.constants.ExpressionConstants;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
@@ -66,11 +95,6 @@ import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.result.OperationResultStatus;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.schema.util.SystemConfigurationTypeUtil;
-import com.evolveum.midpoint.security.api.OwnerResolver;
-import com.evolveum.midpoint.security.enforcer.api.AccessDecision;
-import com.evolveum.midpoint.security.enforcer.api.AuthorizationParameters;
-import com.evolveum.midpoint.security.enforcer.api.ObjectSecurityConstraints;
-import com.evolveum.midpoint.security.enforcer.api.SecurityEnforcer;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.task.api.TaskBinding;
 import com.evolveum.midpoint.task.api.TaskCategory;
@@ -78,7 +102,6 @@ import com.evolveum.midpoint.task.api.TaskExecutionStatus;
 import com.evolveum.midpoint.task.api.TaskManager;
 import com.evolveum.midpoint.util.DebugUtil;
 import com.evolveum.midpoint.util.Holder;
-import com.evolveum.midpoint.util.exception.AuthorizationException;
 import com.evolveum.midpoint.util.exception.CommunicationException;
 import com.evolveum.midpoint.util.exception.ConfigurationException;
 import com.evolveum.midpoint.util.exception.ExpressionEvaluationException;
@@ -91,29 +114,25 @@ import com.evolveum.midpoint.util.exception.SystemException;
 import com.evolveum.midpoint.util.logging.LoggingUtils;
 import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.AssignmentType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.CleanupPolicyType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ConflictResolutionActionType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ConflictResolutionType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.FocusType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.HookListType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.HookType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ModelHooksType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectDeltaOperationType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.OperationExecutionType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.OperationResultStatusType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.RoleType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ScriptExpressionEvaluatorType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.SystemConfigurationType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.TaskType;
 import com.evolveum.prism.xml.ns._public.query_3.QueryType;
 import com.evolveum.prism.xml.ns._public.query_3.SearchFilterType;
-
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang3.Validate;
-import org.jetbrains.annotations.NotNull;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Component;
-
-import javax.xml.datatype.XMLGregorianCalendar;
-import javax.xml.namespace.QName;
-
-import java.util.*;
-import java.util.Map.Entry;
-
-import static com.evolveum.midpoint.model.api.ProgressInformation.ActivityType.CLOCKWORK;
-import static com.evolveum.midpoint.model.api.ProgressInformation.ActivityType.WAITING;
-import static com.evolveum.midpoint.model.api.ProgressInformation.StateType.ENTERING;
-import static com.evolveum.midpoint.model.api.ProgressInformation.StateType.EXITING;
-import static org.apache.commons.collections4.CollectionUtils.emptyIfNull;
-import static org.apache.commons.lang3.ObjectUtils.defaultIfNull;
 
 /**
  * @author semancik
@@ -130,15 +149,11 @@ public class Clockwork {
 
 	private static final Trace LOGGER = TraceManager.getTrace(Clockwork.class);
 
-	// This is ugly
-	// TODO: cleanup
 	@Autowired private Projector projector;
 	@Autowired private ContextLoader contextLoader;
 	@Autowired private ChangeExecutor changeExecutor;
     @Autowired private AuditService auditService;
-    @Autowired private SecurityEnforcer securityEnforcer;
     @Autowired private Clock clock;
-	@Autowired private ModelObjectResolver objectResolver;
 	@Autowired private SystemObjectCache systemObjectCache;
 	@Autowired private transient ProvisioningService provisioningService;
 	@Autowired private transient ChangeNotificationDispatcher changeNotificationDispatcher;
@@ -151,6 +166,8 @@ public class Clockwork {
 	@Autowired private ContextFactory contextFactory;
 	@Autowired private Migrator migrator;
 	@Autowired private ClockworkMedic medic;
+	@Autowired private PolicyRuleScriptExecutor policyRuleScriptExecutor;
+	@Autowired private ClockworkAuthorizationHelper clockworkAuthorizationHelper;
 
 	@Autowired(required = false)
 	private HookRegistry hookRegistry;
@@ -408,7 +425,7 @@ public class Clockwork {
 			// We need to determine focus before auditing. Otherwise we will not know user
 			// for the accounts (unless there is a specific delta for it).
 			// This is ugly, but it is the easiest way now (TODO: cleanup).
-			contextLoader.determineFocusContext((LensContext<? extends FocusType>) context, result);
+			contextLoader.determineFocusContext((LensContext<? extends FocusType>) context, task, result);
 
 			ModelState state = context.getState();
 			if (state == ModelState.INITIAL) {
@@ -434,16 +451,17 @@ public class Clockwork {
 
 			if (recompute) {
 				context.cleanup();
+				LOGGER.trace("Running projector with cleaned-up context for execution wave {}", context.getExecutionWave());
 				projector.project(context, "PROJECTOR ("+state+")", task, result);
 			} else if (context.getExecutionWave() == context.getProjectionWave()) {
-				LOGGER.trace("Running projector for current execution wave");
+				LOGGER.trace("Resuming projector for execution wave {}", context.getExecutionWave());
 				projector.resume(context, "PROJECTOR ("+state+")", task, result);
 			} else {
 				LOGGER.trace("Skipping projection because the context is fresh and projection for current wave has already run");
 			}
 
 			if (!context.isRequestAuthorized()) {
-				authorizeContextRequest(context, task, result);
+				clockworkAuthorizationHelper.authorizeContextRequest(context, task, result);
 			}
 
 			medic.traceContext(LOGGER, "CLOCKWORK (" + state + ")", "before processing", true, context, false);
@@ -480,7 +498,7 @@ public class Clockwork {
 			return invokeHooks(context, task, result);
 
 		} catch (CommunicationException | ConfigurationException | ExpressionEvaluationException | ObjectNotFoundException |
-				PolicyViolationException | SchemaException | SecurityViolationException | RuntimeException |
+				PolicyViolationException | SchemaException | SecurityViolationException | RuntimeException | Error |
 				ObjectAlreadyExistsException | PreconditionViolationException e) {
 			processClockworkException(context, e, task, result);
 			throw e;
@@ -493,9 +511,9 @@ public class Clockwork {
      * @return
      *  - ERROR, if any hook reported error; otherwise returns
      *  - BACKGROUND, if any hook reported switching to background; otherwise
-     *  - FOREGROUND (if all hooks reported finishing on foreground)
+     *  - FOREGROUND (if all hooks reported finishing on foreground) 
      */
-    private HookOperationMode invokeHooks(LensContext context, Task task, OperationResult result) throws ExpressionEvaluationException, ObjectNotFoundException, SchemaException, PolicyViolationException {
+    private HookOperationMode invokeHooks(LensContext context, Task task, OperationResult result) throws ExpressionEvaluationException, ObjectNotFoundException, SchemaException, PolicyViolationException, CommunicationException, ConfigurationException, SecurityViolationException {
     	// TODO: following two parts should be merged together in later versions
 
     	// Execute configured scripting hooks
@@ -553,6 +571,15 @@ public class Clockwork {
 						} catch (SchemaException e) {
 							LOGGER.error("Evaluation of {} failed: {}", shortDesc, e.getMessage(), e);
 							throw new SchemaException("Evaluation of "+shortDesc+" failed: "+e.getMessage(), e);
+						} catch (CommunicationException e) {
+							LOGGER.error("Evaluation of {} failed: {}", shortDesc, e.getMessage(), e);
+							throw new CommunicationException("Evaluation of "+shortDesc+" failed: "+e.getMessage(), e);
+						} catch (ConfigurationException e) {
+							LOGGER.error("Evaluation of {} failed: {}", shortDesc, e.getMessage(), e);
+							throw new ConfigurationException("Evaluation of "+shortDesc+" failed: "+e.getMessage(), e);
+						} catch (SecurityViolationException e) {
+							LOGGER.error("Evaluation of {} failed: {}", shortDesc, e.getMessage(), e);
+							throw new SecurityViolationException("Evaluation of "+shortDesc+" failed: "+e.getMessage(), e);
 						}
 	    			}
 	    		}
@@ -579,7 +606,7 @@ public class Clockwork {
 
     private void evaluateScriptingHook(LensContext context, HookType hookType,
     		ScriptExpressionEvaluatorType scriptExpressionEvaluatorType, String shortDesc, Task task, OperationResult result)
-    				throws ExpressionEvaluationException, ObjectNotFoundException, SchemaException {
+    				throws ExpressionEvaluationException, ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException {
 
     	LOGGER.trace("Evaluating {}", shortDesc);
 		// TODO: it would be nice to cache this
@@ -596,7 +623,7 @@ public class Clockwork {
 		}
 		variables.addVariableDefinition(ExpressionConstants.VAR_FOCUS, focus);
 
-		Utils.evaluateScript(scriptExpression, context, variables, false, shortDesc, task, result);
+		ModelImplUtils.evaluateScript(scriptExpression, context, variables, false, shortDesc, task, result);
 		LOGGER.trace("Finished evaluation of {}", shortDesc);
 	}
 
@@ -619,7 +646,7 @@ public class Clockwork {
 			throws ObjectAlreadyExistsException, ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, 
 			SecurityViolationException, ExpressionEvaluationException, PolicyViolationException, PreconditionViolationException {
 		if (context.getExecutionWave() > context.getMaxWave() + 1) {
-			switchState(context, ModelState.FINAL);
+			processSecondaryToFinal(context, task, result);
 			return;
 		}
 
@@ -649,6 +676,12 @@ public class Clockwork {
 		}
 
 		medic.traceContext(LOGGER, "CLOCKWORK (" + context.getState() + ")", "change execution", false, context, false);
+	}
+
+
+	private <F extends ObjectType> void processSecondaryToFinal(LensContext<F> context, Task task, OperationResult result) {
+		switchState(context, ModelState.FINAL);
+		policyRuleScriptExecutor.execute(context, task, result);
 	}
 
 	/**
@@ -912,10 +945,10 @@ public class Clockwork {
 			task = task.getParentForLightweightAsynchronousTask();
 		}
 		if (task.isPersistent()) {
-			operation.setTaskRef(ObjectTypeUtil.createObjectRef(task.getTaskPrismObject()));
+			operation.setTaskRef(ObjectTypeUtil.createObjectRef(task.getTaskPrismObject(), prismContext));
 		}
 		operation.setStatus(overallStatus);
-		operation.setInitiatorRef(ObjectTypeUtil.createObjectRef(task.getOwner()));		// TODO what if the real initiator is different? (e.g. when executing approved changes)
+		operation.setInitiatorRef(ObjectTypeUtil.createObjectRef(task.getOwner(), prismContext));		// TODO what if the real initiator is different? (e.g. when executing approved changes)
 		operation.setChannel(channel);
 		operation.setTimestamp(now);
 	}
@@ -1036,13 +1069,13 @@ public class Clockwork {
 		auditEvent(context, AuditEventStage.EXECUTION, null, true, task, result);
 	}
 
-	private <F extends ObjectType> void processClockworkException(LensContext<F> context, Exception e, Task task, OperationResult result)
+	private <F extends ObjectType> void processClockworkException(LensContext<F> context, Throwable e, Task task, OperationResult result)
 			throws SchemaException, ObjectAlreadyExistsException, ObjectNotFoundException {
 		LOGGER.trace("Processing clockwork exception {}", e.toString());
 		result.recordFatalError(e);
 		auditEvent(context, AuditEventStage.EXECUTION, null, true, task, result);
 		recordOperationExecution(context, e, task, result);
-		reclaimSequences(context, task, result);
+		LensUtil.reclaimSequences(context, repositoryService, task, result);
 	}
 
 	private <F extends ObjectType> void auditEvent(LensContext<F> context, AuditEventStage stage,
@@ -1088,7 +1121,7 @@ public class Clockwork {
 		AuditEventRecord auditRecord = new AuditEventRecord(eventType, stage);
 
 		if (primaryObject != null) {
-			auditRecord.setTarget(primaryObject.clone());
+			auditRecord.setTarget(primaryObject.clone(), prismContext);
 //		} else {
 //			throw new IllegalStateException("No primary object in:\n"+context.dump());
 		}
@@ -1100,7 +1133,7 @@ public class Clockwork {
 			checkNamesArePresent(clonedDeltas, primaryObject);
 			auditRecord.addDeltas(clonedDeltas);
 			if (auditRecord.getTarget() == null) {
-				auditRecord.setTarget(Utils.determineAuditTargetDeltaOps(clonedDeltas));
+				auditRecord.setTarget(ModelImplUtils.determineAuditTargetDeltaOps(clonedDeltas));
 			}
 		} else if (stage == AuditEventStage.EXECUTION) {
 			auditRecord.setOutcome(result.getComputeStatus());
@@ -1283,6 +1316,9 @@ public class Clockwork {
 			for (LensProjectionContext projectionContext: context.getProjectionContexts()) {
 				DebugUtil.indentDebugDump(sb, 1);
 				sb.append(projectionContext.getHumanReadableName());
+				if (projectionContext.isTombstone()) {
+					sb.append(" THOMBSTONE");
+				}
 				sb.append(": ");
 				sb.append(projectionContext.getSynchronizationPolicyDecision());
 				sb.append("\n");
@@ -1307,305 +1343,6 @@ public class Clockwork {
 		LOGGER.debug("\n###[ CLOCKWORK SUMMARY ]######################################\n{}" +
 				       "##############################################################",
 				sb.toString());
-	}
-
-	private <F extends ObjectType> void authorizeContextRequest(LensContext<F> context, Task task, OperationResult parentResult) throws SecurityViolationException, SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException {
-		OperationResult result = parentResult.createMinorSubresult(Clockwork.class.getName()+".authorizeRequest");
-		LOGGER.trace("Authorizing request");
-		try {
-
-			final LensFocusContext<F> focusContext = context.getFocusContext();
-			OwnerResolver ownerResolver = new LensOwnerResolver<>(context, objectResolver, task, result);
-			if (focusContext != null) {
-				authorizeElementContext(context, focusContext, ownerResolver, true, task, result);
-			}
-			for (LensProjectionContext projectionContext: context.getProjectionContexts()) {
-				authorizeElementContext(context, projectionContext, ownerResolver, false, task, result);
-			}
-			context.setRequestAuthorized(true);
-			result.recordSuccess();
-
-			LOGGER.trace("Request authorized");
-
-		} catch (Throwable e) {
-			result.recordFatalError(e);
-			throw e;
-		}
-	}
-
-	private <F extends ObjectType, O extends ObjectType> ObjectSecurityConstraints authorizeElementContext(LensContext<F> context, LensElementContext<O> elementContext,
-			OwnerResolver ownerResolver, boolean isFocus, Task task, OperationResult result) throws SecurityViolationException, SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException {
-		ObjectDelta<O> primaryDelta = elementContext.getPrimaryDelta();
-		// If there is no delta then there is no request to authorize
-		if (primaryDelta != null) {
-			PrismObject<O> currentObject = elementContext.getObjectCurrent();
-			if (currentObject == null) {
-				currentObject = elementContext.getObjectOld();
-			}
-			primaryDelta = primaryDelta.clone();
-			PrismObject<O> object = elementContext.getObjectCurrent();
-			if (object == null) {
-				// This may happen when object is being added.
-				// But also in cases such as assignment of account and modification of
-				// the same account in one operation
-				object = elementContext.getObjectNew();
-			}
-			String operationUrl = ModelImplUtils.getOperationUrlFromDelta(primaryDelta);
-			ObjectSecurityConstraints securityConstraints = securityEnforcer.compileSecurityConstraints(object, ownerResolver, task, result);
-			if (securityConstraints == null) {
-				throw new AuthorizationException("Access denied");
-			}
-
-			if (isFocus) {
-				// Process assignments first. If the assignments are allowed then we
-				// have to ignore the assignment item in subsequent security checks
-				if (primaryDelta.hasItemOrSubitemDelta(SchemaConstants.PATH_ASSIGNMENT)) {
-					AccessDecision assignmentItemDecision = determineDecisionForAssignmentItems(securityConstraints, primaryDelta, currentObject, operationUrl, getRequestAuthorizationPhase(context));
-					LOGGER.trace("Security decision for assignment items: {}", assignmentItemDecision);
-					if (assignmentItemDecision == AccessDecision.ALLOW) {
-						// Nothing to do, operation is allowed for all values
-						LOGGER.debug("Allow assignment/unassignment to {} becasue access to assignment container/properties is explicitly allowed", object);
-					} else if (assignmentItemDecision == AccessDecision.DENY) {
-						LOGGER.debug("Deny assignment/unassignment to {} becasue access to assignment container/properties is explicitly denied", object);
-						throw new AuthorizationException("Access denied");
-					} else {
-						AuthorizationDecisionType allItemsDecision = securityConstraints.findAllItemsDecision(operationUrl, getRequestAuthorizationPhase(context));
-						if (allItemsDecision == AuthorizationDecisionType.ALLOW) {
-							// Nothing to do, operation is allowed for all values
-						} else if (allItemsDecision == AuthorizationDecisionType.DENY) {
-							throw new AuthorizationException("Access denied");
-						} else {
-							// No blank decision for assignment modification yet
-							// process each assignment individually
-							authorizeAssignmentRequest(context, operationUrl, ModelAuthorizationAction.ASSIGN.getUrl(),
-									object, ownerResolver, securityConstraints, PlusMinusZero.PLUS, true, task, result);
-
-							if (!primaryDelta.isAdd()) {
-								// We want to allow unassignment even if there are policies. Otherwise we would not be able to get
-								// rid of that assignment
-								authorizeAssignmentRequest(context, operationUrl, ModelAuthorizationAction.UNASSIGN.getUrl(),
-										object, ownerResolver, securityConstraints, PlusMinusZero.MINUS, false, task, result);
-							}
-						}
-					}
-					// assignments were authorized explicitly. Therefore we need to remove them from primary delta to avoid another
-					// authorization
-					if (primaryDelta.isAdd()) {
-						PrismObject<O> objectToAdd = primaryDelta.getObjectToAdd();
-						objectToAdd.removeContainer(FocusType.F_ASSIGNMENT);
-					} else if (primaryDelta.isModify()) {
-						primaryDelta.removeContainerModification(FocusType.F_ASSIGNMENT);
-					}
-				}
-			}
-
-			// Process credential changes explicitly. There is a special authorization for that.
-
-			if (!primaryDelta.isDelete()) {
-				if (primaryDelta.isAdd()) {
-					PrismObject<O> objectToAdd = primaryDelta.getObjectToAdd();
-					PrismContainer<CredentialsType> credentialsContainer = objectToAdd.findContainer(UserType.F_CREDENTIALS);
-					if (credentialsContainer != null) {
-						List<ItemPath> pathsToRemove = new ArrayList<>();
-						for (Item<?,?> item: credentialsContainer.getValue().getItems()) {
-							ContainerDelta<?> cdelta = new ContainerDelta(item.getPath(), (PrismContainerDefinition)item.getDefinition(), prismContext);
-							cdelta.addValuesToAdd(((PrismContainer)item).getValue().clone());
-							AuthorizationDecisionType cdecision = evaluateCredentialDecision(context, securityConstraints, cdelta);
-							LOGGER.trace("AUTZ: credential add {} decision: {}", item.getPath(), cdecision);
-							if (cdecision == AuthorizationDecisionType.ALLOW) {
-								// Remove it from primary delta, so it will not be evaluated later
-								pathsToRemove.add(item.getPath());
-							} else if (cdecision == AuthorizationDecisionType.DENY) {
-								throw new AuthorizationException("Access denied");
-							} else {
-								// Do nothing. The access will be evaluated later in a normal way
-							}
-						}
-						for (ItemPath pathToRemove: pathsToRemove) {
-							objectToAdd.removeContainer(pathToRemove);
-						}
-					}
-				} else {
-					// modify
-					Collection<? extends ItemDelta<?, ?>> credentialChanges = primaryDelta.findItemDeltasSubPath(new ItemPath(UserType.F_CREDENTIALS));
-					for (ItemDelta credentialChange: credentialChanges) {
-						AuthorizationDecisionType cdecision = evaluateCredentialDecision(context, securityConstraints, credentialChange);
-						LOGGER.trace("AUTZ: credential delta {} decision: {}", credentialChange.getPath(), cdecision);
-						if (cdecision == AuthorizationDecisionType.ALLOW) {
-							// Remove it from primary delta, so it will not be evaluated later
-							primaryDelta.removeModification(credentialChange);
-						} else if (cdecision == AuthorizationDecisionType.DENY) {
-							throw new AuthorizationException("Access denied");
-						} else {
-							// Do nothing. The access will be evaluated later in a normal way
-						}
-					}
-				}
-			}
-
-			if (primaryDelta != null && !primaryDelta.isEmpty()) {
-				// TODO: optimize, avoid evaluating the constraints twice
-				securityEnforcer.authorize(operationUrl, getRequestAuthorizationPhase(context) , AuthorizationParameters.Builder.buildObjectDelta(object, primaryDelta), ownerResolver, task, result);
-			}
-
-			return securityConstraints;
-		} else {
-			return null;
-		}
-	}
-
-	private <O extends ObjectType> AccessDecision determineDecisionForAssignmentItems(
-			ObjectSecurityConstraints securityConstraints, ObjectDelta<O> primaryDelta, PrismObject<O> currentObject, String operationUrl,
-			AuthorizationPhaseType requestAuthorizationPhase) {
-		return securityEnforcer.determineSubitemDecision(securityConstraints, primaryDelta, currentObject, operationUrl, requestAuthorizationPhase, SchemaConstants.PATH_ASSIGNMENT);
-	}
-
-	private <F extends ObjectType> AuthorizationPhaseType getRequestAuthorizationPhase(LensContext<F> context) {
-		if (context.isExecutionPhaseOnly()) {
-			return AuthorizationPhaseType.EXECUTION;
-		} else {
-			return AuthorizationPhaseType.REQUEST;
-		}
-	}
-
-	private <F extends ObjectType> AuthorizationDecisionType evaluateCredentialDecision(LensContext<F> context, ObjectSecurityConstraints securityConstraints, ItemDelta credentialChange) {
-		return securityConstraints.findItemDecision(credentialChange.getPath().namedSegmentsOnly(),
-				ModelAuthorizationAction.CHANGE_CREDENTIALS.getUrl(), getRequestAuthorizationPhase(context));
-	}
-
-	private <F extends ObjectType,O extends ObjectType> void authorizeAssignmentRequest(
-			LensContext<F> context,
-			String operationUrl,
-			String assignActionUrl,
-			PrismObject<O> object,
-			OwnerResolver ownerResolver,
-			ObjectSecurityConstraints securityConstraints,
-			PlusMinusZero plusMinusZero,
-			boolean prohibitPolicies,
-			Task task, 
-			OperationResult result) 
-					throws SecurityViolationException, SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException {
-		// This is *request* authorization. Therefore we care only about primary delta.
-		ObjectDelta<F> focusPrimaryDelta = context.getFocusContext().getPrimaryDelta();
-		if (focusPrimaryDelta == null) {
-			return;
-		}
-		ContainerDelta<AssignmentType> focusAssignmentDelta = focusPrimaryDelta.findContainerDelta(FocusType.F_ASSIGNMENT);
-		if (focusAssignmentDelta == null) {
-			return;
-		}
-		String operationDesc = assignActionUrl.substring(assignActionUrl.lastIndexOf('#') + 1);
-		Collection<PrismContainerValue<AssignmentType>> changedAssignmentValues = determineChangedAssignmentValues(context.getFocusContext(), focusAssignmentDelta, plusMinusZero);
-		for (PrismContainerValue<AssignmentType> changedAssignmentValue: changedAssignmentValues) {
-			AssignmentType changedAssignment = changedAssignmentValue.getRealValue();
-			ObjectReferenceType targetRef = changedAssignment.getTargetRef();
-			if (targetRef == null || targetRef.getOid() == null) {
-				// This may still be allowed by #add and #modify authorizations. We have already checked these, but there may be combinations of
-				// assignments, one of the assignments allowed by #assign, other allowed by #modify (e.g. MID-4517).
-				// Therefore check the items again. This is not very efficient to check it twice. But this is not a common case
-				// so there should not be any big harm in suffering this inefficiency.
-				AccessDecision subitemDecision = securityEnforcer.determineSubitemDecision(securityConstraints, changedAssignmentValue, operationUrl, 
-						getRequestAuthorizationPhase(context), null, plusMinusZero, operationDesc);
-				if (subitemDecision == AccessDecision.ALLOW) {
-					LOGGER.debug("{} of policy assignment to {} allowed with {} authorization", operationDesc, object, operationUrl);
-					continue;
-				} else {
-					LOGGER.debug("{} of non-target assignment not allowed", operationDesc);
-					securityEnforcer.failAuthorization(operationDesc, getRequestAuthorizationPhase(context), AuthorizationParameters.Builder.buildObject(object), result);
-				}
-			}
-			// We do not worry about performance here too much. The target was already evaluated. This will be retrieved from repo cache anyway.
-			PrismObject<ObjectType> target = objectResolver.resolve(targetRef.asReferenceValue(), "resolving assignment target", task, result);
-
-			ObjectDelta<O> assignmentObjectDelta = object.createModifyDelta();
-			ContainerDelta<AssignmentType> assignmentDelta = assignmentObjectDelta.createContainerModification(FocusType.F_ASSIGNMENT);
-			// We do not care if this is add or delete. All that matters for authorization is that it is in a delta.
-			assignmentDelta.addValuesToAdd(changedAssignment.asPrismContainerValue().clone());
-			QName relation = targetRef.getRelation();
-			if (relation == null) {
-				relation = SchemaConstants.ORG_DEFAULT;
-			}
-			AuthorizationParameters<O,ObjectType> autzParams = new AuthorizationParameters.Builder<O,ObjectType>()
-					.object(object)
-					.delta(assignmentObjectDelta)
-					.target(target)
-					.relation(relation)
-					.build();
-			
-			if (prohibitPolicies) {
-				if (changedAssignment.getPolicyRule() != null || !changedAssignment.getPolicyException().isEmpty() || !changedAssignment.getPolicySituation().isEmpty() || !changedAssignment.getTriggeredPolicyRule().isEmpty()) {
-					// This may still be allowed by #add and #modify authorizations. We have already checked these, but there may be combinations of
-					// assignments, one of the assignments allowed by #assign, other allowed by #modify (e.g. MID-4517).
-					// Therefore check the items again. This is not very efficient to check it twice. But this is not a common case
-					// so there should not be any big harm in suffering this inefficiency.
-					AccessDecision subitemDecision = securityEnforcer.determineSubitemDecision(securityConstraints, changedAssignmentValue, operationUrl, 
-							getRequestAuthorizationPhase(context), null, plusMinusZero, operationDesc);
-					if (subitemDecision == AccessDecision.ALLOW) {
-						LOGGER.debug("{} of policy assignment to {} allowed with {} authorization", operationDesc, object, operationUrl);
-						continue;
-					} else {
-						securityEnforcer.failAuthorization("with assignment because of policies in the assignment", getRequestAuthorizationPhase(context), autzParams, result);
-					}
-				}
-			}
-
-			if (securityEnforcer.isAuthorized(assignActionUrl, getRequestAuthorizationPhase(context), autzParams, ownerResolver, task, result)) {
-				LOGGER.debug("{} of target {} to {} allowed with {} authorization", operationDesc, target, object, assignActionUrl);
-				continue;
-			}
-			if (ObjectTypeUtil.isDelegationRelation(relation)) {
-				if (securityEnforcer.isAuthorized(ModelAuthorizationAction.DELEGATE.getUrl(), getRequestAuthorizationPhase(context), autzParams, ownerResolver, task, result)) {
-					if (LOGGER.isDebugEnabled()) {
-						LOGGER.debug("{} of target {} to {} allowed with {} authorization", operationDesc, target, object, ModelAuthorizationAction.DELEGATE.getUrl());
-					}
-					continue;
-				}
-			}
-			if (LOGGER.isDebugEnabled()) {
-				LOGGER.debug("{} of target {} to {} denied", operationDesc, target, object);
-			}
-			securityEnforcer.failAuthorization("with assignment", getRequestAuthorizationPhase(context),  autzParams, result);
-		}
-	}
-
-	private <F extends ObjectType> Collection<PrismContainerValue<AssignmentType>> determineChangedAssignmentValues(LensFocusContext<F> focusContext,
-			ContainerDelta<AssignmentType> assignmentDelta, PlusMinusZero plusMinusZero) {
-		Collection<PrismContainerValue<AssignmentType>> changedAssignmentValues = assignmentDelta.getValueChanges(plusMinusZero);
-		if (plusMinusZero == PlusMinusZero.PLUS) {
-			return changedAssignmentValues;
-		}
-		Collection<PrismContainerValue<AssignmentType>> processedChangedAssignmentValues = new ArrayList<>(changedAssignmentValues.size());
-		PrismObject<F> existingObject = focusContext.getObjectCurrentOrOld();
-		PrismContainer<AssignmentType> existingAssignmentContainer = existingObject.findContainer(FocusType.F_ASSIGNMENT);
-		for (PrismContainerValue<AssignmentType> changedAssignmentValue : changedAssignmentValues) {
-			if (changedAssignmentValue.isIdOnly()) {
-				if (existingAssignmentContainer != null) {
-					PrismContainerValue<AssignmentType> existingAssignmentValue = existingAssignmentContainer.findValue(changedAssignmentValue.getId());
-					if (existingAssignmentValue != null) {
-						processedChangedAssignmentValues.add(existingAssignmentValue);
-					}
-				}
-			} else {
-				processedChangedAssignmentValues.add(changedAssignmentValue);
-			}
-		}
-		return processedChangedAssignmentValues;
-	}
-
-	private <F extends ObjectType> void reclaimSequences(LensContext<F> context, Task task, OperationResult result) throws SchemaException {
-		Map<String, Long> sequenceMap = context.getSequences();
-		LOGGER.trace("Context sequence map: {}", sequenceMap);
-		for (Entry<String, Long> sequenceMapEntry: sequenceMap.entrySet()) {
-			Collection<Long> unusedValues = new ArrayList<>(1);
-			unusedValues.add(sequenceMapEntry.getValue());
-			try {
-				LOGGER.trace("Returning value {} to sequence {}", sequenceMapEntry.getValue(), sequenceMapEntry.getKey());
-				repositoryService.returnUnusedValuesToSequence(sequenceMapEntry.getKey(), unusedValues, result);
-			} catch (ObjectNotFoundException e) {
-				LOGGER.error("Cannot return unused value to sequence {}: it does not exist", sequenceMapEntry.getKey(), e);
-				// ... but otherwise ignore it and go on
-			}
-		}
 	}
 
 }

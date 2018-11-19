@@ -21,7 +21,7 @@
 	<groupId>com.evolveum.midpoint.samples</groupId>
 	<artifactId>model-client-sample</artifactId>
 	<!-- NOTE: no parent. We want this to be completely stand-alone. -->
-	<version>3.8</version>
+	<version>3.9</version>
 	<properties>
 		<project.source.version>1.8</project.source.version>
     	<cxf.version>3.1.6</cxf.version>
@@ -55,6 +55,27 @@
         <url>https://nexus.evolveum.com/nexus/content/repositories/snapshots/</url>
       </snapshotRepository>
     </distributionManagement>
+
+    <repositories>
+        <repository>
+            <id>evolveum</id>
+            <name>Evolveum Public Releases</name>
+            <url>https://nexus.evolveum.com/nexus/content/groups/public/</url>
+        </repository>
+        <repository>
+            <id>evolveum-snapshots</id>
+            <name>Evolveum Snapshots</name>
+            <url>https://nexus.evolveum.com/nexus/content/repositories/snapshots/</url>
+        </repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>evolveum</id>
+            <name>Evolveum</name>
+            <url>https://nexus.evolveum.com/nexus/content/groups/public</url>
+        </pluginRepository>
+    </pluginRepositories>
 
 	<issueManagement>
 		<system>Atlassian JIRA</system>
@@ -159,7 +180,7 @@
         <dependency>
 			<groupId>com.evolveum.midpoint.model</groupId>
 			<artifactId>model-client</artifactId>
-			<version>3.8</version>
+			<version>3.9</version>
 		</dependency>
 		<dependency>
             <groupId>org.apache.cxf</groupId>

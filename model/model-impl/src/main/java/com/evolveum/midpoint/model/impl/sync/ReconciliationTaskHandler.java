@@ -25,7 +25,7 @@ import com.evolveum.midpoint.common.refinery.RefinedResourceSchema;
 import com.evolveum.midpoint.common.refinery.RefinedResourceSchemaImpl;
 import com.evolveum.midpoint.model.api.ModelPublicConstants;
 import com.evolveum.midpoint.model.impl.ModelConstants;
-import com.evolveum.midpoint.model.impl.util.Utils;
+import com.evolveum.midpoint.model.impl.util.ModelImplUtils;
 import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.delta.ChangeType;
@@ -189,7 +189,7 @@ public class ReconciliationTaskHandler implements WorkBucketAwareTaskHandler {
 			resource = provisioningService.getObject(ResourceType.class, resourceOid, null, localCoordinatorTask, opResult);
 
 			RefinedResourceSchema refinedSchema = RefinedResourceSchemaImpl.getRefinedSchema(resource, LayerType.MODEL, prismContext);
-			objectclassDef = Utils.determineObjectClass(refinedSchema, localCoordinatorTask);
+			objectclassDef = ModelImplUtils.determineObjectClass(refinedSchema, localCoordinatorTask);
 
 		} catch (ObjectNotFoundException ex) {
 			// This is bad. The resource does not exist. Permanent problem.
@@ -238,7 +238,7 @@ public class ReconciliationTaskHandler implements WorkBucketAwareTaskHandler {
 		long reconStartTimestamp = clock.currentTimeMillis();
 
 		AuditEventRecord requestRecord = new AuditEventRecord(AuditEventType.RECONCILIATION, AuditEventStage.REQUEST);
-		requestRecord.setTarget(resource);
+		requestRecord.setTarget(resource, prismContext);
 		requestRecord.setMessage("Stage: " + stage + ", Work bucket: " + workBucket);
 		auditService.audit(requestRecord, localCoordinatorTask);
 
@@ -320,7 +320,7 @@ public class ReconciliationTaskHandler implements WorkBucketAwareTaskHandler {
 		}
 
 		AuditEventRecord executionRecord = new AuditEventRecord(AuditEventType.RECONCILIATION, AuditEventStage.EXECUTION);
-		executionRecord.setTarget(resource);
+		executionRecord.setTarget(resource, prismContext);
 		executionRecord.setOutcome(OperationResultStatus.SUCCESS);
 		executionRecord.setMessage(requestRecord.getMessage());
 		auditService.audit(executionRecord, localCoordinatorTask);
@@ -391,7 +391,7 @@ public class ReconciliationTaskHandler implements WorkBucketAwareTaskHandler {
 		task.setName(polyString);
 
 		// Set reference to the resource
-		task.setObjectRef(ObjectTypeUtil.createObjectRef(resource));
+		task.setObjectRef(ObjectTypeUtil.createObjectRef(resource, prismContext));
 
 		try {
 			task.setExtensionPropertyValue(ModelConstants.OBJECTCLASS_PROPERTY_NAME, objectclass);
@@ -453,7 +453,7 @@ public class ReconciliationTaskHandler implements WorkBucketAwareTaskHandler {
 		runResult.setRunResultStatus(runResultStatus);
 
 		AuditEventRecord executionRecord = new AuditEventRecord(AuditEventType.RECONCILIATION, AuditEventStage.EXECUTION);
-		executionRecord.setTarget(resource);
+		executionRecord.setTarget(resource, prismContext);
 		executionRecord.setOutcome(OperationResultStatus.FATAL_ERROR);
 		executionRecord.setMessage(ex.getMessage());
 		auditService.audit(executionRecord , task);
@@ -553,7 +553,7 @@ public class ReconciliationTaskHandler implements WorkBucketAwareTaskHandler {
 					.item(ShadowType.F_FULL_SYNCHRONIZATION_TIMESTAMP).le(XmlTypeConverter.createXMLGregorianCalendar(startTimestamp))
 					.or().item(ShadowType.F_FULL_SYNCHRONIZATION_TIMESTAMP).isNull()
 				.endBlock()
-				.and().item(ShadowType.F_RESOURCE_REF).ref(ObjectTypeUtil.createObjectRef(resource).asReferenceValue())
+				.and().item(ShadowType.F_RESOURCE_REF).ref(ObjectTypeUtil.createObjectRef(resource, prismContext).asReferenceValue())
 				.and().item(ShadowType.F_OBJECT_CLASS).eq(objectclassDef.getTypeName())
 				.build();
 
@@ -635,8 +635,10 @@ public class ReconciliationTaskHandler implements WorkBucketAwareTaskHandler {
 		OperationResult opResult = new OperationResult(OperationConstants.RECONCILIATION+".shadowReconciliation.object");
 		try {
 			Collection<SelectorOptions<GetOperationOptions>> options = null;
-			if (Utils.isDryRun(task)) {
+			if (ModelImplUtils.isDryRun(task)) {
 				 options = SelectorOptions.createCollection(GetOperationOptions.createDoNotDiscovery());
+			} else {
+				options = SelectorOptions.createCollection(GetOperationOptions.createForceRefresh());
 			}
 			return provisioningService.getObject(ShadowType.class, shadow.getOid(), options, task, opResult);
 		} catch (ObjectNotFoundException e) {
@@ -665,7 +667,7 @@ public class ReconciliationTaskHandler implements WorkBucketAwareTaskHandler {
 			change.setObjectDelta(shadowDelta);
 			// Need to also set current shadow. This will get reflected in "old" object in lens context
 			change.setCurrentShadow(shadow);
-            Utils.clearRequestee(task);
+            ModelImplUtils.clearRequestee(task);
 			changeNotificationDispatcher.notifyChange(change, task, result);
 		} catch (SchemaException | ObjectNotFoundException | CommunicationException | ConfigurationException | ExpressionEvaluationException e) {
 			processShadowReconError(e, shadow, result);
@@ -712,7 +714,7 @@ public class ReconciliationTaskHandler implements WorkBucketAwareTaskHandler {
 				RepositoryCache.enter();
 
 				ProvisioningOperationOptions options = ProvisioningOperationOptions.createCompletePostponed(false);
-                Utils.clearRequestee(task);
+                ModelImplUtils.clearRequestee(task);
 				provisioningService.refreshShadow(shadow, options, task, provisioningResult);
 //				retryFailedOperation(shadow.asObjectable(), opResult);
 

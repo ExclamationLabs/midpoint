@@ -79,13 +79,12 @@ import com.evolveum.midpoint.xml.ns._public.common.common_3.MetadataType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.PasswordType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.PolicyConstraintsType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.PolicyExceptionType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.PolicyRuleType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ResourceAttributeDefinitionType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.RoleType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.SystemConfigurationType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.SystemObjectsType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
 
 /**
@@ -107,6 +106,15 @@ public class TestSecurityAdvanced extends AbstractSecurityTest {
 	
 	protected static final File ROLE_VAULT_DWELLER_FILE = new File(TEST_DIR, "role-vault-dweller.xml");
 	protected static final String ROLE_VAULT_DWELLER_OID = "8d8471f4-2906-11e8-9078-4f2b205aa01d";
+	
+	protected static final File ROLE_READ_ROLE_MEMBERS_FILE = new File(TEST_DIR, "role-read-role-members.xml");
+	protected static final String ROLE_READ_ROLE_MEMBERS_OID = "40df00e8-3efc-11e7-8d18-7b955ccb96a1";
+
+	protected static final File ROLE_READ_ROLE_MEMBERS_WRONG_FILE = new File(TEST_DIR, "role-read-role-members-wrong.xml");
+	protected static final String ROLE_READ_ROLE_MEMBERS_WRONG_OID = "8418e248-3efc-11e7-a546-931a90cb8ee3";
+
+	protected static final File ROLE_READ_ROLE_MEMBERS_NONE_FILE = new File(TEST_DIR, "role-read-role-members-none.xml");
+	protected static final String ROLE_READ_ROLE_MEMBERS_NONE_OID = "9e93dfb2-3eff-11e7-b56b-1b0e35f837fc";
 	
 	protected static final File ROLE_LIMITED_ROLE_ADMINISTRATOR_FILE = new File(TEST_DIR, "role-limited-role-administrator.xml");
 	protected static final String ROLE_LIMITED_ROLE_ADMINISTRATOR_OID = "ce67b472-e5a6-11e7-98c3-174355334559";
@@ -135,6 +143,12 @@ public class TestSecurityAdvanced extends AbstractSecurityTest {
 	protected static final File ROLE_PROP_EXCEPT_ADMINISTRATIVE_STATUS_FILE = new File(TEST_DIR, "role-prop-except-administrative-status.xml");
 	protected static final String ROLE_PROP_EXCEPT_ADMINISTRATIVE_STATUS_OID = "cc549256-02a5-11e8-994e-43c307e2a819";
 	
+	protected static final File ROLE_PROP_SUBTYPE_FILE = new File(TEST_DIR, "role-prop-subtype.xml");
+	protected static final String ROLE_PROP_SUBTYPE_OID = "0a841bcc-c255-11e8-bd03-d72f34cdd7f8";
+	
+	protected static final File ROLE_PROP_SUBTYPE_ESCAPE_FILE = new File(TEST_DIR, "role-prop-subtype-escape.xml");
+	protected static final String ROLE_PROP_SUBTYPE_ESCAPE_OID = "bdf18bb2-c314-11e8-8e99-1709836f1462";
+	
 	protected static final File ROLE_ASSIGN_ORG_FILE = new File(TEST_DIR, "role-assign-org.xml");
 	protected static final String ROLE_ASSIGN_ORG_OID = "be96f834-2dbb-11e8-b29d-7f5de07e7995";
 
@@ -155,17 +169,99 @@ public class TestSecurityAdvanced extends AbstractSecurityTest {
 		repoAddObjectFromFile(ROLE_MODIFY_DESCRIPTION_FILE, initResult);
 		repoAddObjectFromFile(ROLE_PROP_EXCEPT_ASSIGNMENT_FILE, initResult);
 		repoAddObjectFromFile(ROLE_PROP_EXCEPT_ADMINISTRATIVE_STATUS_FILE, initResult);
+		repoAddObjectFromFile(ROLE_PROP_SUBTYPE_FILE, initResult);
+		repoAddObjectFromFile(ROLE_PROP_SUBTYPE_ESCAPE_FILE, initResult);
 		repoAddObjectFromFile(ROLE_ASSIGN_ORG_FILE, initResult);
+		repoAddObjectFromFile(ROLE_END_USER_WITH_PRIVACY_FILE, initResult);
+		repoAddObjectFromFile(ROLE_READ_ROLE_MEMBERS_FILE, initResult);
+		repoAddObjectFromFile(ROLE_READ_ROLE_MEMBERS_WRONG_FILE, initResult);
+		repoAddObjectFromFile(ROLE_READ_ROLE_MEMBERS_NONE_FILE, initResult);
 
 		setDefaultObjectTemplate(UserType.COMPLEX_TYPE, USER_TEMPLATE_SECURITY_OID, initResult);
 	}
 	
-	protected static final int NUMBER_OF_IMPORTED_ROLES = 10;
+	protected static final int NUMBER_OF_IMPORTED_ROLES = 16;
 	
 	protected int getNumberOfRoles() {
 		return super.getNumberOfRoles() + NUMBER_OF_IMPORTED_ROLES;
 	}
+	
+	/**
+	 * Stay logged in as administrator. Make sure that our assumptions about
+	 * the users and roles are correct.
+	 */
+	@Test
+    public void test000Sanity() throws Exception {
+		final String TEST_NAME = "test000Sanity";
+        displayTestTitle(TEST_NAME);
+        // GIVEN
+        cleanupAutzTest(USER_JACK_OID);
 
+        // WHEN
+        displayWhen(TEST_NAME);
+        assertSearch(UserType.class, null, NUMBER_OF_ALL_USERS);
+        assertSearch(RoleType.class, null, getNumberOfRoles());
+        
+        assertReadAllow(NUMBER_OF_ALL_USERS);
+		assertReadAllowRaw(NUMBER_OF_ALL_USERS);
+        assertAddAllow();
+        assertAddAllowRaw();
+        assertModifyAllow();
+        assertDeleteAllow();
+
+        assertGlobalStateUntouched();
+	}
+
+	/**
+	 * Simple end-user password change. But clear Jack's credentials before
+	 * the change. Make sure all password metadata is set correctly.
+	 * This also sets the stage for following persona tests.
+	 * 
+	 * MID-4830
+	 */
+	@Test
+    public void test080AutzJackEndUserPassword() throws Exception {
+		final String TEST_NAME = "test080AutzJackEndUserPassword";
+        displayTestTitle(TEST_NAME);
+        // GIVEN
+        cleanupAutzTest(USER_JACK_OID);
+
+        assignRole(USER_JACK_OID, ROLE_END_USER_OID);
+        
+        clearUserPassword(USER_JACK_OID);
+        
+        PrismObject<UserType> user = getUser(USER_JACK_OID);
+        display("User with cleared password", user);
+        assertAssignments(user, 1);
+        assertLinks(user, 0);
+        assertUserNoPassword(user);
+
+        assumeAssignmentPolicy(AssignmentPolicyEnforcementType.RELATIVE);
+
+        login(USER_JACK_USERNAME);
+
+        XMLGregorianCalendar startTs = clock.currentTimeXMLGregorianCalendar();
+        
+        // WHEN
+        displayWhen(TEST_NAME);
+        
+        assertAllow("set jack's password",
+        		(task, result) -> modifyUserSetPassword(USER_JACK_OID, "nbusr123", task, result) );
+        
+        // THEN
+        displayThen(TEST_NAME);
+        
+        XMLGregorianCalendar endTs = clock.currentTimeXMLGregorianCalendar();
+        
+        user = getUser(USER_JACK_OID);
+        display("user after password change", user);
+        PasswordType passwordType = assertUserPassword(user, "nbusr123");
+        MetadataType metadata = passwordType.getMetadata();
+        assertNotNull("No password metadata", metadata);
+        assertMetadata("password metadata", metadata, true, false, startTs, endTs, USER_JACK_OID, SchemaConstants.CHANNEL_GUI_USER_URI);
+
+        assertGlobalStateUntouched();
+	}
 
 	@Test
     public void test100AutzJackPersonaManagement() throws Exception {
@@ -209,6 +305,7 @@ public class TestSecurityAdvanced extends AbstractSecurityTest {
         assertGetDeny(UserType.class, USER_JACK_OID);
         assertGetDeny(UserType.class, USER_GUYBRUSH_OID);
         assertGetAllow(UserType.class, USER_LECHUCK_OID);
+        display("HEREHERE");
         assertGetAllow(UserType.class, USER_CHARLES_OID);
 
 //        TODO: MID-3899
@@ -222,6 +319,9 @@ public class TestSecurityAdvanced extends AbstractSecurityTest {
         assertGlobalStateUntouched();
 	}
 
+    /**
+     * MID-4830
+     */
     @Test
     public void test110AutzJackPersonaAdmin() throws Exception {
 		final String TEST_NAME = "test110AutzJackAddPersonaAdmin";
@@ -238,6 +338,7 @@ public class TestSecurityAdvanced extends AbstractSecurityTest {
         		(task,result) -> assignRole(USER_JACK_OID, ROLE_PERSONA_ADMIN_OID, task, result));
 
         PrismObject<UserType> userJack = assertGetAllow(UserType.class, USER_JACK_OID);
+        display("User jack after persona assign", userJack);
         assertGetDeny(UserType.class, USER_GUYBRUSH_OID);
         assertGetDeny(UserType.class, USER_LECHUCK_OID);
         assertGetDeny(UserType.class, USER_CHARLES_OID);
@@ -246,6 +347,7 @@ public class TestSecurityAdvanced extends AbstractSecurityTest {
         String personaJackOid = userJack.asObjectable().getPersonaRef().get(0).getOid();
 
         PrismObject<UserType> personaJack = assertGetAllow(UserType.class, personaJackOid);
+        display("Persona jack", personaJack);
         assertEquals("Wrong jack persona givenName before change", USER_JACK_GIVEN_NAME, personaJack.asObjectable().getGivenName().getOrig());
 
 //      TODO: MID-3899
@@ -2897,6 +2999,79 @@ public class TestSecurityAdvanced extends AbstractSecurityTest {
 	}
 	
 	/**
+	 * User tries to get out of his zone of control. Allowed to modify only objects that
+	 * subtype=captain and tries to modify subtype to something else.
+	 */
+	@Test
+    public void test310AutzJackPropSubtypeDenyEscapingZoneOfControl() throws Exception {
+		final String TEST_NAME = "test310AutzJackPropSubtypeDenyEscapingZoneOfControl";
+		displayTestTitle(TEST_NAME);
+		// GIVEN
+		cleanupAutzTest(USER_JACK_OID);
+		assignRole(USER_JACK_OID, ROLE_PROP_SUBTYPE_OID);
+		modifyJackValidTo();
+		login(USER_JACK_USERNAME);
+
+		assertUserBefore(USER_JACK_OID)
+			.assertName(USER_JACK_USERNAME)
+			.assertFullName(USER_JACK_FULL_NAME)
+			.assertSubtype(USER_JACK_SUBTYPE);
+		
+		// WHEN
+		displayWhen(TEST_NAME);
+		
+		assertModifyDeny(UserType.class, USER_JACK_OID, UserType.F_SUBTYPE, "escape");
+
+		// WHEN
+		displayThen(TEST_NAME);
+
+		assertUserAfter(USER_JACK_OID)
+			.assertName(USER_JACK_USERNAME)
+			.assertFullName(USER_JACK_FULL_NAME)
+			.assertSubtype(USER_JACK_SUBTYPE);
+		
+		assertGlobalStateUntouched();
+	}
+	
+	/**
+	 * User tries to get out of his zone of control. Allowed to modify only objects that
+	 * subtype=captain and tries to modify subtype to something else.
+	 * This time authorization explicitly allows escaping zone of control.
+	 */
+	@Test
+    public void test312AutzJackPropSubtypeAllowEscapingZoneOfControl() throws Exception {
+		final String TEST_NAME = "test312AutzJackPropSubtypeAllowEscapingZoneOfControl";
+		displayTestTitle(TEST_NAME);
+		// GIVEN
+		cleanupAutzTest(USER_JACK_OID);
+		assignRole(USER_JACK_OID, ROLE_PROP_SUBTYPE_ESCAPE_OID);
+		modifyJackValidTo();
+		login(USER_JACK_USERNAME);
+
+		assertUserBefore(USER_JACK_OID)
+			.assertName(USER_JACK_USERNAME)
+			.assertFullName(USER_JACK_FULL_NAME)
+			.assertSubtype(USER_JACK_SUBTYPE);
+		
+		// WHEN
+		displayWhen(TEST_NAME);
+		
+		assertModifyAllow(UserType.class, USER_JACK_OID, UserType.F_SUBTYPE, "escape");
+		assertModifyDeny(UserType.class, USER_JACK_OID, UserType.F_SUBTYPE, "escape again");
+		assertModifyDeny(UserType.class, USER_JACK_OID, UserType.F_SUBTYPE, USER_JACK_SUBTYPE);
+
+		// WHEN
+		displayThen(TEST_NAME);
+		
+		assertUserAfter(USER_JACK_OID)
+			.assertName(USER_JACK_USERNAME)
+			.assertFullName(USER_JACK_FULL_NAME)
+			.assertSubtype("escape");
+		
+		assertGlobalStateUntouched();
+	}
+	
+	/**
 	 * MID-4304
 	 */
 	@Test
@@ -2943,6 +3118,51 @@ public class TestSecurityAdvanced extends AbstractSecurityTest {
         assertAssignments(userBuybrush, 1);
         
         assertNoDummyAccount(RESOURCE_DUMMY_VAULT_NAME, USER_GUYBRUSH_USERNAME);
+		
+		assertGlobalStateUntouched();
+	}
+	
+	/**
+	 * We can get any users, but we can search only the CAPTAINs.
+	 * 
+	 * MID-4860, MID-4654, MID-4859
+	 */
+	@Test
+    public void test330AutzJackEndUserWithPrivacy() throws Exception {
+		final String TEST_NAME = "test330AutzJackEndUserWithPrivacy";
+		displayTestTitle(TEST_NAME);
+		// GIVEN
+		cleanupAutzTest(USER_JACK_OID);
+		assertNoDummyAccount(RESOURCE_DUMMY_VAULT_NAME, USER_GUYBRUSH_USERNAME);
+		
+		assignRole(USER_JACK_OID, ROLE_END_USER_WITH_PRIVACY_OID);
+		login(USER_JACK_USERNAME);
+
+		// WHEN
+		displayWhen(TEST_NAME);
+
+		PrismObject<UserType> userJack = assertGetAllow(UserType.class, USER_JACK_OID);
+		display("Jack", userJack);
+		// Access to employeeType is not allowed for get. Therefore is should not part of the result.
+		PrismAsserts.assertNoItem(userJack, UserType.F_SUBTYPE);
+		
+		// Direct get, should be allowed even though guybrush is not a CAPTAIN
+		PrismObject<UserType> userBuybrush = assertGetAllow(UserType.class, USER_GUYBRUSH_OID);
+		display("Guybrush", userBuybrush);
+		
+		assertReadDenyRaw();
+		assertGetDeny(LookupTableType.class, LOOKUP_LANGUAGES_OID);
+
+		assertSearch(UserType.class, null, 1);
+		assertSearchDeny(UserType.class, null, SelectorOptions.createCollection(GetOperationOptions.createRaw()));
+		assertSearch(UserType.class, createNameQuery(USER_JACK_USERNAME), 1);
+		assertSearchDeny(UserType.class, createNameQuery(USER_JACK_USERNAME), SelectorOptions.createCollection(GetOperationOptions.createRaw()));
+		assertSearch(UserType.class, createNameQuery(USER_GUYBRUSH_USERNAME), 0);
+		assertSearchDeny(UserType.class, createNameQuery(USER_GUYBRUSH_USERNAME), SelectorOptions.createCollection(GetOperationOptions.createRaw()));
+		
+		assertAddDeny();
+		assertModifyDeny();
+		assertDeleteDeny();
 		
 		assertGlobalStateUntouched();
 	}

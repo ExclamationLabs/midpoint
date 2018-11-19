@@ -32,9 +32,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import javax.annotation.PostConstruct;
 import javax.persistence.criteria.CriteriaQuery;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * TODO clean this up!
@@ -45,10 +45,8 @@ public class ExtItemDictionary {
 
     private static final Trace LOGGER = TraceManager.getTrace(ExtItemDictionary.class);
 
-    @Autowired
-    private SqlRepositoryServiceImpl repositoryService;
-    @Autowired
-    private BaseHelper baseHelper;
+    @Autowired private SqlRepositoryServiceImpl repositoryService;
+    @Autowired private BaseHelper baseHelper;
 
     private Map<Integer, RExtItem> itemsById;
     private Map<RExtItem.Key, RExtItem> itemsByKey;
@@ -76,8 +74,8 @@ public class ExtItemDictionary {
             List<RExtItem> items = session.createQuery(query).getResultList();
             LOGGER.debug("Fetched {} item definitions", items.size());
 
-            itemsById = new HashMap<>(items.size());
-            itemsByKey = new HashMap<>(items.size());
+            itemsById = new ConcurrentHashMap<>(items.size());
+            itemsByKey = new ConcurrentHashMap<>(items.size());
 
             for (RExtItem item : items) {
                 itemsById.put(item.getId(), item);
@@ -109,7 +107,7 @@ public class ExtItemDictionary {
     }
 
     @Contract("_, _, true -> !null")
-    private synchronized RExtItem createOrFindItemByDefinitionInternal(
+    private RExtItem createOrFindItemByDefinitionInternal(
             @NotNull ItemDefinition<?> definition, boolean create, boolean throwExceptionAfterCreate) {
 
         boolean fetchedNow = fetchItemsIfNeeded();
@@ -127,8 +125,7 @@ public class ExtItemDictionary {
 
             item = RExtItem.createFromDefinition(definition);
 
-            final RExtItem i = item;
-            executeAttempts("addExtItem", "Add ext item", () -> addExtItemAttempt(i));
+            addExtItemAttempt(item);
 
             if (throwExceptionAfterCreate) {
                 throw new SerializationRelatedException("Restarting parent operation");
@@ -149,7 +146,6 @@ public class ExtItemDictionary {
         try {
             session = baseHelper.beginTransaction();
             session.persist(item);
-
             session.getTransaction().commit();
         } catch (RuntimeException ex) {
             baseHelper.handleGeneralException(ex, session, null);
@@ -177,7 +173,7 @@ public class ExtItemDictionary {
         }
     }
 
-    public RExtItem getItemById(Integer extItemId) {
+    public synchronized RExtItem getItemById(Integer extItemId) {
         boolean fresh = fetchItemsIfNeeded();
         RExtItem extItem = itemsById.get(extItemId);
         if (extItem != null || fresh) {

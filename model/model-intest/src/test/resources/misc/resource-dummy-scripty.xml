@@ -15,13 +15,15 @@
   ~ limitations under the License.
   -->
   
-<!-- Resource with an ad-hoc provisioning script in outbound mappings. -->
+<!-- Resource with an ad-hoc provisioning script in outbound mappings.
+     It also puts connector instance name into 'ship' attribute (MID-3044).
+     Also, it puts connector number to 'wealth' attribute. -->
 
 <resource oid="399f5308-0447-11e8-91e9-a7f9c4100ffb"
 		  xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3"
           xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3"
           xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3"
-          xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance/10000000-0000-0000-0000-000000000004"
+          xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3"
 		  xmlns:mr="http://prism.evolveum.com/xml/ns/public/matching-rule-3"
           xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3"
           xmlns:piracy="http://midpoint.evolveum.com/xml/ns/samples/piracy"
@@ -52,6 +54,8 @@
 				<clearValue>whatever</clearValue>
 			</icfi:uselessGuardedString>
 			<icfi:uselessString>USEless</icfi:uselessString>
+			<icfi:connectorInstanceNameAttribute>ship</icfi:connectorInstanceNameAttribute>
+			<icfi:connectorInstanceNumberAttribute>wealth</icfi:connectorInstanceNumberAttribute>
 		</icfc:configurationProperties>
 		
 		<icfc:resultsHandlerConfiguration>
@@ -62,8 +66,6 @@
 
 	</connectorConfiguration>
 	
-	<namespace>http://midpoint.evolveum.com/xml/ns/public/resource/instance/10000000-0000-0000-0000-000000000004</namespace>
-
 	<schemaHandling>
 		<objectType>
 			<kind>account</kind>
@@ -132,14 +134,6 @@
 				<ref>ri:loot</ref>
 				<displayName>Loot</displayName>
 				<fetchStrategy>explicit</fetchStrategy>
-				<outbound>
-					<channel>http://pirates.net/avast</channel>
-					<expression>
-						<script>
-							<code>9999 + 1</code>
-						</script>
-					</expression>
-				</outbound>
 			</attribute>
 			<attribute>
 				<ref>ri:weapon</ref>
@@ -176,7 +170,6 @@
             <attribute>
                 <ref>ri:wealth</ref>
                 <displayName>Wealth</displayName>
-                <tolerant>false</tolerant>
             </attribute>
             <attribute>
                 <ref>ri:gossip</ref>

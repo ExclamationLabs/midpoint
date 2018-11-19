@@ -1,3 +1,18 @@
+/*
+ * Copyright (c) 2010-2018 Evolveum
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.evolveum.midpoint.provisioning.ucf.impl.connid;
 
 import java.util.HashMap;
@@ -14,6 +29,8 @@ import org.identityconnectors.framework.common.objects.OperationalAttributeInfos
 import org.identityconnectors.framework.common.objects.Uid;
 
 import com.evolveum.midpoint.prism.PrismObject;
+import com.evolveum.midpoint.prism.PrismPropertyDefinition;
+import com.evolveum.midpoint.prism.delta.PropertyDelta;
 import com.evolveum.midpoint.schema.constants.MidPointConstants;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.processor.ObjectClassComplexTypeDefinition;
@@ -124,28 +141,43 @@ public class ConnIdNameMapper {
 		return attrDef.getName();
 	}
 
-	public String convertAttributeNameToIcf(ResourceAttribute<?> attribute, ObjectClassComplexTypeDefinition ocDef)
+	public String convertAttributeNameToConnId(PropertyDelta<?> attributeDelta, ObjectClassComplexTypeDefinition ocDef)
 			throws SchemaException {
-		ResourceAttributeDefinition attrDef = attribute.getDefinition();
-		if (attrDef == null) {
-			attrDef = ocDef.findAttributeDefinition(attribute.getElementName());
+		PrismPropertyDefinition<?> propDef = attributeDelta.getDefinition();
+		ResourceAttributeDefinition attrDef;
+		if (propDef != null && (propDef instanceof ResourceAttributeDefinition)) {
+			attrDef = (ResourceAttributeDefinition)propDef;
+		} else {
+			attrDef = ocDef.findAttributeDefinition(attributeDelta.getElementName());
 			if (attrDef == null) {
-				throw new SchemaException("No attribute "+attribute.getElementName()+" in object class "+ocDef.getTypeName());
+				throw new SchemaException("No attribute "+attributeDelta.getElementName()+" in object class "+ocDef.getTypeName());
 			}
 		}
-		return convertAttributeNameToIcf(attrDef);
+		return convertAttributeNameToConnId(attrDef);
 	}
+	
+	public String convertAttributeNameToConnId(ResourceAttribute<?> attribute, ObjectClassComplexTypeDefinition ocDef)
+				throws SchemaException {
+			ResourceAttributeDefinition attrDef = attribute.getDefinition();
+			if (attrDef == null) {
+				attrDef = ocDef.findAttributeDefinition(attribute.getElementName());
+				if (attrDef == null) {
+					throw new SchemaException("No attribute "+attribute.getElementName()+" in object class "+ocDef.getTypeName());
+				}
+			}
+			return convertAttributeNameToConnId(attrDef);
+		}
 
-	public <T> String convertAttributeNameToIcf(QName attributeName, ObjectClassComplexTypeDefinition ocDef, String desc)
+	public <T> String convertAttributeNameToConnId(QName attributeName, ObjectClassComplexTypeDefinition ocDef, String desc)
 			throws SchemaException {
 		ResourceAttributeDefinition<T> attrDef = ocDef.findAttributeDefinition(attributeName);
 		if (attrDef == null) {
 			throw new SchemaException("No attribute "+attributeName+" in object class "+ocDef.getTypeName() + " " + desc);
 		}
-		return convertAttributeNameToIcf(attrDef);
+		return convertAttributeNameToConnId(attrDef);
 	}
 
-	public String convertAttributeNameToIcf(ResourceAttributeDefinition<?> attrDef)
+	public String convertAttributeNameToConnId(ResourceAttributeDefinition<?> attrDef)
 			throws SchemaException {
 		if (attrDef.getFrameworkAttributeName() != null) {
 			return attrDef.getFrameworkAttributeName();
@@ -228,13 +260,12 @@ public class ConnIdNameMapper {
 		}
 	}
 
-	public ObjectClass objectClassToIcf(PrismObject<? extends ShadowType> shadow, String schemaNamespace, ConnectorType connectorType, boolean legacySchema) {
+	public ObjectClass objectClassToConnId(PrismObject<? extends ShadowType> shadow, String schemaNamespace, ConnectorType connectorType, boolean legacySchema) {
 
 		ShadowType shadowType = shadow.asObjectable();
 		QName qnameObjectClass = shadowType.getObjectClass();
 		if (qnameObjectClass == null) {
-			ResourceAttributeContainer attrContainer = ShadowUtil
-					.getAttributesContainer(shadowType);
+			ResourceAttributeContainer attrContainer = ShadowUtil.getAttributesContainer(shadowType);
 			if (attrContainer == null) {
 				return null;
 			}
@@ -242,7 +273,7 @@ public class ConnIdNameMapper {
 			qnameObjectClass = objectClassDefinition.getTypeName();
 		}
 
-		return objectClassToIcf(qnameObjectClass, schemaNamespace, connectorType, legacySchema);
+		return objectClassToConnId(qnameObjectClass, schemaNamespace, connectorType, legacySchema);
 	}
 
 	/**
@@ -253,12 +284,12 @@ public class ConnIdNameMapper {
 	 * <p/>
 	 * TODO: mind the special characters in the ICF objectclass names.
 	 */
-	public ObjectClass objectClassToIcf(ObjectClassComplexTypeDefinition objectClassDefinition, String schemaNamespace, ConnectorType connectorType, boolean legacySchema) {
+	public ObjectClass objectClassToConnId(ObjectClassComplexTypeDefinition objectClassDefinition, String schemaNamespace, ConnectorType connectorType, boolean legacySchema) {
 		QName qnameObjectClass = objectClassDefinition.getTypeName();
-		return objectClassToIcf(qnameObjectClass, schemaNamespace, connectorType, legacySchema);
+		return objectClassToConnId(qnameObjectClass, schemaNamespace, connectorType, legacySchema);
 	}
 
-	public ObjectClass objectClassToIcf(QName qnameObjectClass, String schemaNamespace, ConnectorType connectorType, boolean legacySchema) {
+	public ObjectClass objectClassToConnId(QName qnameObjectClass, String schemaNamespace, ConnectorType connectorType, boolean legacySchema) {
 		if (!schemaNamespace.equals(qnameObjectClass.getNamespaceURI())) {
 			throw new IllegalArgumentException("ObjectClass QName " + qnameObjectClass
 					+ " is not in the appropriate namespace for "

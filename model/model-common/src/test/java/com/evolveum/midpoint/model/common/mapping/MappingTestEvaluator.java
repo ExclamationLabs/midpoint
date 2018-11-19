@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,10 +28,12 @@ import com.evolveum.prism.xml.ns._public.types_3.ProtectedStringType;
 
 import org.xml.sax.SAXException;
 
+import com.evolveum.midpoint.repo.common.DirectoryFileObjectResolver;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
 import com.evolveum.midpoint.repo.common.expression.Source;
 import com.evolveum.midpoint.repo.common.expression.ValuePolicyResolver;
+import com.evolveum.midpoint.common.Clock;
 import com.evolveum.midpoint.model.common.expression.ExpressionTestUtil;
 import com.evolveum.midpoint.prism.ItemDefinition;
 import com.evolveum.midpoint.prism.OriginType;
@@ -46,14 +48,13 @@ import com.evolveum.midpoint.prism.delta.ItemDelta;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.prism.delta.PrismValueDeltaSetTriple;
 import com.evolveum.midpoint.prism.path.ItemPath;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.prism.util.PrismTestUtil;
 import com.evolveum.midpoint.schema.MidPointPrismContextFactory;
 import com.evolveum.midpoint.schema.constants.ExpressionConstants;
 import com.evolveum.midpoint.schema.constants.MidPointConstants;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
-import com.evolveum.midpoint.test.util.DirectoryFileObjectResolver;
 import com.evolveum.midpoint.test.util.MidPointTestConstants;
 import com.evolveum.midpoint.test.util.TestUtil;
 import com.evolveum.midpoint.util.PrettyPrinter;
@@ -99,7 +100,8 @@ public class MappingTestEvaluator {
     	prismContext = PrismTestUtil.createInitializedPrismContext();
     	ObjectResolver resolver = new DirectoryFileObjectResolver(MidPointTestConstants.OBJECTS_DIR);
     	protector = ExpressionTestUtil.createInitializedProtector(prismContext);
-    	ExpressionFactory expressionFactory = ExpressionTestUtil.createInitializedExpressionFactory(resolver, protector, prismContext, null, null);
+    	Clock clock = new Clock();
+    	ExpressionFactory expressionFactory = ExpressionTestUtil.createInitializedExpressionFactory(resolver, protector, prismContext, clock, null, null);
 
         mappingFactory = new MappingFactory();
         mappingFactory.setExpressionFactory(expressionFactory);
@@ -234,6 +236,7 @@ public class MappingTestEvaluator {
     	builder.addVariableDefinition(ExpressionConstants.VAR_FOCUS, user);
     	builder.addVariableDefinition(ExpressionConstants.VAR_ACCOUNT, account.asPrismObject());
     	builder.addVariableDefinition(ExpressionConstants.VAR_SHADOW, account.asPrismObject());
+    	builder.addVariableDefinition(ExpressionConstants.VAR_PROJECTION, account.asPrismObject());
 
     	ValuePolicyResolver stringPolicyResolver = new ValuePolicyResolver() {
 			ItemPath outputPath;

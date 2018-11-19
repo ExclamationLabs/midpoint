@@ -49,6 +49,8 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
+import static com.evolveum.midpoint.schema.util.CertCampaignTypeUtil.norm;
+
 /**
  * @author lazyman
  * @author mederly
@@ -89,6 +91,7 @@ public class RAccessCertificationCase implements Container<RAccessCertificationC
     private XMLGregorianCalendar reviewDeadline;
     private XMLGregorianCalendar remediedTimestamp;
     private String currentStageOutcome;
+    private Integer iteration;
     private Integer stageNumber;
     private String outcome;
 
@@ -173,6 +176,11 @@ public class RAccessCertificationCase implements Container<RAccessCertificationC
         return currentStageOutcome;
     }
 
+    @Column(nullable = false)
+    public Integer getIteration() {
+        return iteration;
+    }
+
     public Integer getStageNumber() {
         return stageNumber;
     }
@@ -232,6 +240,10 @@ public class RAccessCertificationCase implements Container<RAccessCertificationC
         this.currentStageOutcome = currentStageOutcome;
     }
 
+    public void setIteration(Integer iteration) {
+        this.iteration = iteration;
+    }
+
     public void setStageNumber(Integer stageNumber) {
         this.stageNumber = stageNumber;
     }
@@ -270,6 +282,7 @@ public class RAccessCertificationCase implements Container<RAccessCertificationC
                 Objects.equals(reviewDeadline, that.reviewDeadline) &&
                 Objects.equals(remediedTimestamp, that.remediedTimestamp) &&
                 currentStageOutcome == that.currentStageOutcome &&
+                Objects.equals(iteration, that.iteration) &&
                 Objects.equals(stageNumber, that.stageNumber) &&
                 Objects.equals(outcome, that.outcome);
     }
@@ -277,7 +290,7 @@ public class RAccessCertificationCase implements Container<RAccessCertificationC
     @Override
     public int hashCode() {
         return Objects.hash(fullObject, ownerOid, id, workItems, objectRef, targetRef, tenantRef, orgRef, activation,
-                reviewRequestedTimestamp, reviewDeadline, remediedTimestamp, currentStageOutcome, stageNumber,
+                reviewRequestedTimestamp, reviewDeadline, remediedTimestamp, currentStageOutcome, iteration, stageNumber,
                 outcome);
     }
 
@@ -321,13 +334,13 @@ public class RAccessCertificationCase implements Container<RAccessCertificationC
 			RepositoryContext context) throws DtoTranslationException {
         rCase.setTransient(null);       // we don't try to advise hibernate - let it do its work, even if it would cost some SELECTs
         rCase.setId(RUtil.toInteger(case1.getId()));
-        rCase.setObjectRef(RUtil.jaxbRefToEmbeddedRepoRef(case1.getObjectRef(), context.prismContext));
-        rCase.setTargetRef(RUtil.jaxbRefToEmbeddedRepoRef(case1.getTargetRef(), context.prismContext));
-        rCase.setTenantRef(RUtil.jaxbRefToEmbeddedRepoRef(case1.getTenantRef(), context.prismContext));
-        rCase.setOrgRef(RUtil.jaxbRefToEmbeddedRepoRef(case1.getOrgRef(), context.prismContext));
+        rCase.setObjectRef(RUtil.jaxbRefToEmbeddedRepoRef(case1.getObjectRef(), context.relationRegistry));
+        rCase.setTargetRef(RUtil.jaxbRefToEmbeddedRepoRef(case1.getTargetRef(), context.relationRegistry));
+        rCase.setTenantRef(RUtil.jaxbRefToEmbeddedRepoRef(case1.getTenantRef(), context.relationRegistry));
+        rCase.setOrgRef(RUtil.jaxbRefToEmbeddedRepoRef(case1.getOrgRef(), context.relationRegistry));
         if (case1.getActivation() != null) {
             RActivation activation = new RActivation();
-            RActivation.copyFromJAXB(case1.getActivation(), activation, context);
+            RActivation.fromJaxb(case1.getActivation(), activation, context);
             rCase.setActivation(activation);
         }
 		for (AccessCertificationWorkItemType workItem : case1.getWorkItem()) {
@@ -337,6 +350,7 @@ public class RAccessCertificationCase implements Container<RAccessCertificationC
         rCase.setReviewDeadline(case1.getCurrentStageDeadline());
         rCase.setRemediedTimestamp(case1.getRemediedTimestamp());
         rCase.setCurrentStageOutcome(case1.getCurrentStageOutcome());
+        rCase.setIteration(norm(case1.getIteration()));
         rCase.setStageNumber(case1.getStageNumber());
         rCase.setOutcome(case1.getOutcome());
         PrismContainerValue<AccessCertificationCaseType> cvalue = case1.asPrismContainerValue();

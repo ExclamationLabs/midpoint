@@ -252,9 +252,9 @@ public abstract class Item<V extends PrismValue, D extends ItemDefinition> imple
 		}
 	}
 
-    public Object getUserData(String key) {
+    public <T> T getUserData(String key) {
 		// TODO make returned data immutable (?)
-		return getUserData().get(key);
+		return (T) getUserData().get(key);
 	}
 
     public void setUserData(String key, Object value) {
@@ -621,7 +621,7 @@ public abstract class Item<V extends PrismValue, D extends ItemDefinition> imple
 	@Override
 	public void accept(Visitor visitor) {
 		visitor.visit(this);
-		for(PrismValue value: getValues()) {
+		for (PrismValue value: getValues()) {
 			value.accept(visitor);
 		}
 	}

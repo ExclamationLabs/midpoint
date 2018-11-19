@@ -19,16 +19,14 @@ import com.evolveum.midpoint.audit.api.AuditEventRecord;
 import com.evolveum.midpoint.audit.api.AuditEventStage;
 import com.evolveum.midpoint.audit.api.AuditEventType;
 import com.evolveum.midpoint.audit.api.AuditService;
+import com.evolveum.midpoint.common.Clock;
 import com.evolveum.midpoint.model.api.ModelService;
 import com.evolveum.midpoint.prism.*;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
-import com.evolveum.midpoint.schema.GetOperationOptions;
-import com.evolveum.midpoint.schema.ResultHandler;
-import com.evolveum.midpoint.schema.RetrieveOption;
-import com.evolveum.midpoint.schema.SelectorOptions;
+import com.evolveum.midpoint.schema.*;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
@@ -52,9 +50,14 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import static com.evolveum.midpoint.schema.GetOperationOptions.resolveItemsNamed;
+import static com.evolveum.midpoint.schema.util.CertCampaignTypeUtil.norm;
 import static com.evolveum.midpoint.xml.ns._public.common.common_3.AccessCertificationCampaignStateType.CLOSED;
 import static com.evolveum.midpoint.xml.ns._public.common.common_3.AccessCertificationCampaignType.F_STATE;
 import static com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType.F_NAME;
+import javax.xml.datatype.DatatypeConfigurationException;
+import javax.xml.datatype.DatatypeFactory;
+import javax.xml.datatype.XMLGregorianCalendar;
 
 public class ReportFunctions {
 
@@ -147,7 +150,7 @@ public class ReportFunctions {
                     .filter(as -> as.getTargetRef() != null && as.getTargetRef().getOid() != null
                             && filterOids.contains(as.getTargetRef().getOid()))
                     // filter to default relation only - ignores approvers etc
-                    .filter(as -> ObjectTypeUtil.isDefaultRelation(as.getTargetRef().getRelation()))
+                    .filter(as -> prismContext.isDefaultRelation(as.getTargetRef().getRelation()))
                     .collect(Collectors.toList());
         }
 
@@ -335,6 +338,46 @@ public class ReportFunctions {
 //    Object parseObjectFromXML (String xml) throws SchemaException {
 //        return prismContext.parserFor(xml).xml().parseAnyData();
 //    }
+    public List<PrismContainerValue<WorkItemType>> searchApprovalWorkItems()
+            throws CommunicationException, ObjectNotFoundException, SchemaException, SecurityViolationException,
+            ConfigurationException, ExpressionEvaluationException, DatatypeConfigurationException {
+        return searchApprovalWorkItems(0, null);
+    }
+    
+    /*
+     * @param days - return only workitems with createTimestamp older than (now-days), 0 to return all
+     * @sortColumn - optionally AbstractWorkItemType QName to asc sort results (e.g. AbstractWorkItemType.F_CREATE_TIMESTAMP)
+    */
+    public List<PrismContainerValue<WorkItemType>> searchApprovalWorkItems(int days, QName sortColumn)
+            throws CommunicationException, ObjectNotFoundException, SchemaException, SecurityViolationException,
+            ConfigurationException, ExpressionEvaluationException, DatatypeConfigurationException {
+        Task task = taskManager.createTaskInstance();
+        OperationResult result = task.getResult();
+        ObjectQuery query = QueryBuilder.queryFor(AbstractWorkItemType.class, prismContext).build();
+        
+        if (days > 0) {
+            XMLGregorianCalendar since = (new Clock()).currentTimeXMLGregorianCalendar();
+            DatatypeFactory df = DatatypeFactory.newInstance();        
+            since.add (df.newDuration(false, 0, 0, days, 0, 0, 0));
+
+            query.addFilter(QueryBuilder.queryFor(AbstractWorkItemType.class, prismContext)
+                         .item(AbstractWorkItemType.F_CREATE_TIMESTAMP).lt(since).buildFilter());
+        } 
+        
+        if (sortColumn != null) {
+            query.addFilter(QueryBuilder.queryFor(AbstractWorkItemType.class, prismContext)
+                        .asc(sortColumn)
+                        .buildFilter());
+        }
+        
+        SearchResultList<WorkItemType> workItems = model.searchContainers(WorkItemType.class, query,
+                resolveItemsNamed(
+                        WorkItemType.F_ASSIGNEE_REF,
+                        new ItemPath(PrismConstants.T_PARENT, WfContextType.F_OBJECT_REF),
+                        new ItemPath(PrismConstants.T_PARENT, WfContextType.F_TARGET_REF),
+                        new ItemPath(PrismConstants.T_PARENT, WfContextType.F_REQUESTER_REF)), task, result);
+        return PrismContainerValue.toPcvList(workItems);
+    }
 
     /**
      * Retrieves all definitions.
@@ -446,30 +489,68 @@ public class ReportFunctions {
     }
 
     public List<PrismContainerValue<AccessCertificationWorkItemType>> getCertificationCampaignDecisions(String campaignName, Integer stageNumber)
+            throws CommunicationException, ObjectNotFoundException, SchemaException, SecurityViolationException,
+            ConfigurationException, ExpressionEvaluationException {
+        return getCertificationCampaignDecisions(campaignName, stageNumber, null);
+    }
+
+    public List<PrismContainerValue<AccessCertificationWorkItemType>> getCertificationCampaignDecisions(String campaignName, Integer stageNumber, Integer iteration)
             throws SchemaException, SecurityViolationException, ConfigurationException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException {
         List<AccessCertificationCaseType> cases = getCertificationCampaignCasesAsBeans(campaignName);
         List<AccessCertificationWorkItemType> workItems = new ArrayList<>();
         for (AccessCertificationCaseType aCase : cases) {
             for (AccessCertificationWorkItemType workItem : aCase.getWorkItem()) {
-                if (stageNumber == null || java.util.Objects.equals(workItem.getStageNumber(), stageNumber)) {
-                    workItems.add(workItem);
+                if (stageNumber != null && !Objects.equals(workItem.getStageNumber(), stageNumber)) {
+                    continue;
                 }
+                if (iteration != null && norm(workItem.getIteration()) != iteration) {
+                    continue;
+                }
+                workItems.add(workItem);
             }
         }
         return PrismContainerValue.toPcvList(workItems);
     }
 
+    private AccessCertificationCampaignType getCampaignByName(String campaignName)
+            throws CommunicationException, ObjectNotFoundException, SchemaException, SecurityViolationException,
+            ConfigurationException, ExpressionEvaluationException {
+        Task task = taskManager.createTaskInstance();
+        if (StringUtils.isEmpty(campaignName)) {
+            return null;
+        }
+        ObjectQuery query = QueryBuilder.queryFor(AccessCertificationCampaignType.class, prismContext)
+                .item(AccessCertificationCampaignType.F_NAME).eqPoly(campaignName).matchingOrig()
+                .build();
+        List<PrismObject<AccessCertificationCampaignType>> objects = model
+                .searchObjects(AccessCertificationCampaignType.class, query, null, task, task.getResult());
+        if (objects.isEmpty()) {
+            return null;
+        } else if (objects.size() == 1) {
+            return objects.get(0).asObjectable();
+        } else {
+            throw new IllegalStateException("More than one certification campaign found by name '" + campaignName + "': " + objects);
+        }
+    }
+
+    @SuppressWarnings("unused")
     public List<PrismContainerValue<AccessCertificationWorkItemType>> getCertificationCampaignNonResponders(String campaignName, Integer stageNumber)
             throws SchemaException, SecurityViolationException, ConfigurationException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException {
-        List<AccessCertificationCaseType> cases = getCertificationCampaignNotRespondedCasesAsBeans(campaignName);
         List<AccessCertificationWorkItemType> workItems = new ArrayList<>();
-        for (AccessCertificationCaseType aCase : cases) {
-            for (AccessCertificationWorkItemType workItem : aCase.getWorkItem()) {
-                if ((workItem.getOutput() == null || workItem.getOutput().getOutcome() == null)
-                    && (stageNumber == null || java.util.Objects.equals(workItem.getStageNumber(), stageNumber))) {
-                    workItems.add(workItem);
+        AccessCertificationCampaignType campaign = getCampaignByName(campaignName);
+        if (campaign != null) {
+            List<AccessCertificationCaseType> cases = getCertificationCampaignNotRespondedCasesAsBeans(campaignName);
+            for (AccessCertificationCaseType aCase : cases) {
+                for (AccessCertificationWorkItemType workItem : aCase.getWorkItem()) {
+                    if (norm(workItem.getIteration()) == norm(campaign.getIteration())
+                            && (workItem.getOutput() == null || workItem.getOutput().getOutcome() == null)
+                            && (stageNumber == null || Objects.equals(workItem.getStageNumber(), stageNumber))) {
+                        workItems.add(workItem);
+                    }
                 }
             }
+        } else {
+            LOGGER.debug("No campaign named '{}' was found", campaignName);
         }
         return PrismContainerValue.toPcvList(workItems);
     }

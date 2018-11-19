@@ -17,10 +17,9 @@ public class InputTable<T> extends Component<T>{
     }
 
     public InputTable<T> addAttributeValue(String attributeName, String attributeValue){
-        System.out.println("The inner html: " + getParentElement().innerHtml());
 
-        SelenideElement element = $(Schrodinger.byAncestorPrecedingSiblingElementValue("input","type","text",null,null,attributeName))
-                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT).setValue(attributeValue);
+        SelenideElement element = $(Schrodinger.byAncestorPrecedingSiblingDescendantOrSelfElementEnclosedValue("input","type","text",null,null,attributeName))
+                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT_2_S).setValue(attributeValue);
 
         return this;
     }
@@ -28,8 +27,8 @@ public class InputTable<T> extends Component<T>{
 
     public InputTable<T> clickCheckBox(String attributeName){
 
-    $(Schrodinger.byAncestorPrecedingSiblingElementValue("input","type","checkbox",null,null,attributeName))
-                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT).click();
+    $(Schrodinger.byAncestorPrecedingSiblingDescendantOrSelfElementEnclosedValue("input","type","checkbox",null,null,attributeName))
+                .waitUntil(Condition.appears, MidPoint.TIMEOUT_DEFAULT_2_S).click();
 
         return this;
     }

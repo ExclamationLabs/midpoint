@@ -1,6 +1,8 @@
 package com.evolveum.midpoint.schrodinger.page.configuration;
 
+import com.codeborne.selenide.Condition;
 import com.codeborne.selenide.SelenideElement;
+import com.evolveum.midpoint.schrodinger.MidPoint;
 import com.evolveum.midpoint.schrodinger.component.common.FeedbackBox;
 import com.evolveum.midpoint.schrodinger.page.BasicPage;
 import org.openqa.selenium.By;
@@ -155,9 +157,6 @@ public class ImportObjectPage extends BasicPage {
         return this;
     }
 
-    public FeedbackBox<ImportObjectPage> feedback() {
-        SelenideElement feedback = $(By.cssSelector("div.feedbackContainer"));
 
-        return new FeedbackBox<>(this, feedback);
-    }
+
 }

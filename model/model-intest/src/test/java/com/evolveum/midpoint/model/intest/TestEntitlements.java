@@ -28,6 +28,7 @@ import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.SearchResultList;
 import com.evolveum.midpoint.schema.SelectorOptions;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
+import com.evolveum.midpoint.schema.internals.InternalCounters;
 import com.evolveum.midpoint.schema.processor.ObjectClassComplexTypeDefinition;
 import com.evolveum.midpoint.schema.processor.ResourceAttributeDefinition;
 import com.evolveum.midpoint.schema.result.OperationResult;
@@ -70,6 +71,9 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 
 	public static final File ROLE_SWASHBUCKLER_FILE = new File(TEST_DIR, "role-swashbuckler.xml");
 	public static final String ROLE_SWASHBUCKLER_OID = "10000000-0000-0000-0000-000000001601";
+	
+	public static final File ROLE_SWASHBUCKLER_BLUE_FILE = new File(TEST_DIR, "role-swashbuckler-blue.xml");
+	public static final String ROLE_SWASHBUCKLER_BLUE_OID = "181a58ae-90dd-11e8-a371-77713d9f7a57";
 
 	public static final File ROLE_LANDLUBER_FILE = new File(TEST_DIR, "role-landluber.xml");
 	public static final String ROLE_LANDLUBER_OID = "10000000-0000-0000-0000-000000001603";
@@ -103,6 +107,11 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 	public static final String SHADOW_GROUP_DUMMY_SWASHBUCKLERS_OID = "20000000-0000-0000-3333-000000000001";
 	public static final String GROUP_DUMMY_SWASHBUCKLERS_NAME = "swashbucklers";
 	public static final String GROUP_DUMMY_SWASHBUCKLERS_DESCRIPTION = "Scurvy swashbucklers";
+	
+	public static final File SHADOW_GROUP_DUMMY_SWASHBUCKLERS_BLUE_FILE = new File(TEST_DIR, "group-swashbucklers-blue.xml");
+	public static final String SHADOW_GROUP_DUMMY_SWASHBUCKLERS_BLUE_OID = "20000000-0000-0000-3333-020400000001";
+	public static final String GROUP_DUMMY_SWASHBUCKLERS_BLUE_NAME = "swashbucklers";
+	public static final String GROUP_DUMMY_SWASHBUCKLERS_BLUE_DESCRIPTION = "Scurvy blue swashbucklers";
 
 	public static final File SHADOW_GROUP_DUMMY_LANDLUBERS_FILE = new File(TEST_DIR, "group-landlubers.xml");
 	public static final String SHADOW_GROUP_DUMMY_LANDLUBERS_OID = "20000000-0000-0000-3333-000000000003";
@@ -130,6 +139,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
         super.initSystem(initTask, initResult);
 
         importObjectFromFile(ROLE_SWASHBUCKLER_FILE);
+        importObjectFromFile(ROLE_SWASHBUCKLER_BLUE_FILE);
         importObjectFromFile(ROLE_LANDLUBER_FILE);
         importObjectFromFile(ROLE_MAPMAKER_FILE);
         importObjectFromFile(ROLE_CREW_OF_GUYBRUSH_FILE);
@@ -168,6 +178,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
         assertEquals("Wrong group description", GROUP_DUMMY_SWASHBUCKLERS_DESCRIPTION,
         		dummyGroup.getAttributeValue(DummyResourceContoller.DUMMY_GROUP_ATTRIBUTE_DESCRIPTION));
         
+        assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 0); // MID-4779
         assertSteadyResources();
 	}
 
@@ -394,6 +405,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
         display("Group @orange", dummyGroupAtOrange);
         assertNoGroupMembers(dummyGroupAtOrange);
         
+        assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 0); // MID-4779
         assertSteadyResources();
     }
 
@@ -907,8 +919,8 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_ORANGE_OID, null, task, result);
-        assignAccount(USER_RAPP_OID, RESOURCE_DUMMY_ORANGE_OID, null, task, result);
+        assignAccountToUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_ORANGE_OID, null, task, result);
+        assignAccountToUser(USER_RAPP_OID, RESOURCE_DUMMY_ORANGE_OID, null, task, result);
 
         // THEN
         displayThen(TEST_NAME);
@@ -1018,8 +1030,8 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        unassignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_ORANGE_OID, null, task, result);
-        unassignAccount(USER_RAPP_OID, RESOURCE_DUMMY_ORANGE_OID, null, task, result);
+        unassignAccountFromUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_ORANGE_OID, null, task, result);
+        unassignAccountFromUser(USER_RAPP_OID, RESOURCE_DUMMY_ORANGE_OID, null, task, result);
 
         // THEN
         displayThen(TEST_NAME);
@@ -1372,15 +1384,17 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 		assertGroupMember(getDummyGroup(null, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
 
 		// WHEN
+		displayWhen(TEST_NAME);
 		reconcileUser(USER_GUYBRUSH_OID, task, result);
 
 		// THEN
+		displayThen(TEST_NAME);
 		dumpUserAndAccounts(getUser(USER_GUYBRUSH_OID), task, result);
 		assertNoGroupMember(getDummyGroup(null, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
 		
 		assertSteadyResources();
 	}
-
+	
 	/**
 	 * Add account to a group using model service (shadow operations) - preparation for next test (tolerantValuePatterns)
 	 */
@@ -1419,7 +1433,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 		OperationResult result = task.getResult();
 
 		// GIVEN
-		assignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_ORANGE_OID, "default", task, result);
+		assignAccountToUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_ORANGE_OID, "default", task, result);
 		dumpUserAndAccounts(USER_GUYBRUSH_OID);
 
 		PrismObject<ShadowType> orangeAccount = findAccountShadowByUsername(USER_GUYBRUSH_USERNAME, getDummyResourceObject(RESOURCE_DUMMY_ORANGE_NAME), result);
@@ -1691,6 +1705,151 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 		
 		assertNoDummyAccount(ACCOUNT_GUYBRUSH_DUMMY_USERNAME);
 	}
+	
+	/**
+	 * Mostly just preparation for following tests
+	 */
+	@Test
+	public void test780AssignGuybrushSwashbuckler() throws Exception {
+		final String TEST_NAME = "test780AssignGuybrushSwashbuckler";
+		displayTestTitle(TEST_NAME);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+		
+		// WHEN
+		displayWhen(TEST_NAME);
+		assignRole(USER_GUYBRUSH_OID, ROLE_SWASHBUCKLER_OID, task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		dumpUserAndAccounts(getUser(USER_GUYBRUSH_OID), task, result);
+		assertGroupMember(getDummyGroup(null, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
+		
+		assertSteadyResources();
+	}
+
+	/**
+	 * Guybrush has swashbuckler role. But its group membership is lost somewhere.
+	 * Reconcile should fix that because swashbuckler group mapping is strong.
+	 * MID-4792
+	 */
+	@Test
+	public void test781GuybrushTheLostSwashbuckler() throws Exception {
+		final String TEST_NAME = "test781GuybrushTheLostSwashbuckler";
+		displayTestTitle(TEST_NAME);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+		
+		DummyGroup dummyGroup = getDummyResource().getGroupByName(GROUP_DUMMY_SWASHBUCKLERS_NAME);
+		dummyGroup.removeMember(USER_GUYBRUSH_USERNAME);
+		assertNoGroupMember(getDummyGroup(null, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		reconcileUser(USER_GUYBRUSH_OID, task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		dumpUserAndAccounts(getUser(USER_GUYBRUSH_OID), task, result);
+		assertGroupMember(getDummyGroup(null, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
+		
+		assertSteadyResources();
+	}
+	
+	@Test
+	public void test784UnassignGuybrushSwashbuckler() throws Exception {
+		final String TEST_NAME = "test784UnassignGuybrushSwashbuckler";
+		displayTestTitle(TEST_NAME);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		unassignRole(USER_GUYBRUSH_OID, ROLE_SWASHBUCKLER_OID, task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		dumpUserAndAccounts(getUser(USER_GUYBRUSH_OID), task, result);
+		assertNoGroupMember(getDummyGroup(null, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
+		
+		assertSteadyResources();
+	}
+	
+	@Test
+	public void test785AssignGuybrushBlueSwashbuckler() throws Exception {
+		final String TEST_NAME = "test785AssignGuybrushBlueSwashbuckler";
+		displayTestTitle(TEST_NAME);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+		
+		PrismObject<ShadowType> group = prismContext.parseObject(SHADOW_GROUP_DUMMY_SWASHBUCKLERS_BLUE_FILE);
+		addObject(group, task, result);
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		assignRole(USER_GUYBRUSH_OID, ROLE_SWASHBUCKLER_BLUE_OID, task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		dumpUserAndAccounts(getUser(USER_GUYBRUSH_OID), task, result);
+		assertGroupMember(getDummyGroup(RESOURCE_DUMMY_BLUE_NAME, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
+		
+		assertSteadyResources();
+	}
+	
+	/**
+	 * Guybrush has blue swashbuckler role. But its group membership is lost somewhere.
+	 * Reconcile should fix that because swashbuckler group mapping is strong.
+	 * MID-4792
+	 */
+	@Test
+	public void test786GuybrushTheLostBlueSwashbuckler() throws Exception {
+		final String TEST_NAME = "test786GuybrushTheLostBlueSwashbuckler";
+		displayTestTitle(TEST_NAME);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+		
+		DummyGroup dummyGroup = getDummyResource(RESOURCE_DUMMY_BLUE_NAME).getGroupByName(GROUP_DUMMY_SWASHBUCKLERS_NAME);
+		dummyGroup.removeMember(USER_GUYBRUSH_USERNAME);
+		assertNoGroupMember(getDummyGroup(RESOURCE_DUMMY_BLUE_NAME, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		reconcileUser(USER_GUYBRUSH_OID, task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		dumpUserAndAccounts(getUser(USER_GUYBRUSH_OID), task, result);
+		assertGroupMember(getDummyGroup(RESOURCE_DUMMY_BLUE_NAME, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
+		
+		assertSteadyResources();
+	}
+	
+	@Test
+	public void test789UnassignGuybrushBlueSwashbuckler() throws Exception {
+		final String TEST_NAME = "test789UnassignGuybrushBlueSwashbuckler";
+		displayTestTitle(TEST_NAME);
+
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		unassignRole(USER_GUYBRUSH_OID, ROLE_SWASHBUCKLER_BLUE_OID, task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		dumpUserAndAccounts(getUser(USER_GUYBRUSH_OID), task, result);
+		assertNoGroupMember(getDummyGroup(RESOURCE_DUMMY_BLUE_NAME, GROUP_DUMMY_SWASHBUCKLERS_NAME), USER_GUYBRUSH_USERNAME);
+		
+		assertSteadyResources();
+	}
+	
 	/**
 	 * MID-4021
 	 */
@@ -2071,7 +2230,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
 
         // THEN
         displayThen(TEST_NAME);
@@ -2309,7 +2468,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        unassignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
+        unassignAccountFromUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
 
         // THEN
         displayThen(TEST_NAME);
@@ -2324,14 +2483,14 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
         assertSteadyResources();
 	}
 
-	private void assertJackClean() throws SchemaViolationException, ConflictException, ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, ExpressionEvaluationException {
+	private void assertJackClean() throws SchemaViolationException, ConflictException, ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, ExpressionEvaluationException, InterruptedException {
         PrismObject<UserType> userBefore = getUser(USER_JACK_OID);
         display("User before", userBefore);
         assertAssignments(userBefore, 0);
         assertNoDummyAccount(ACCOUNT_JACK_DUMMY_USERNAME);
 	}
 
-	private void assertJackJustAccount() throws SchemaViolationException, ConflictException, ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, ExpressionEvaluationException, ConnectException, FileNotFoundException {
+	private void assertJackJustAccount() throws SchemaViolationException, ConflictException, ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, ExpressionEvaluationException, ConnectException, FileNotFoundException, InterruptedException {
         PrismObject<UserType> userBefore = getUser(USER_JACK_OID);
         display("User before", userBefore);
         assertAssignments(userBefore, 1);
@@ -2343,7 +2502,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 	/**
 	 * Account: yes, group: yes
 	 */
-    private void assertJackAccountSwashbuckler() throws SchemaViolationException, ConflictException, ConnectException, FileNotFoundException {
+    private void assertJackAccountSwashbuckler() throws SchemaViolationException, ConflictException, ConnectException, FileNotFoundException, InterruptedException {
         assertDefaultDummyAccount(ACCOUNT_JACK_DUMMY_USERNAME, ACCOUNT_JACK_DUMMY_FULLNAME, true);
         DummyGroup dummyGroup = getDummyResource().getGroupByName(GROUP_DUMMY_SWASHBUCKLERS_NAME);
         assertNotNull("No group on dummy resource", dummyGroup);
@@ -2356,7 +2515,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 	/**
 	 * Account: yes, group: no
 	 */
- 	private void assertJackAccountNoSwashbuckler() throws SchemaViolationException, ConflictException, ConnectException, FileNotFoundException {
+ 	private void assertJackAccountNoSwashbuckler() throws SchemaViolationException, ConflictException, ConnectException, FileNotFoundException, InterruptedException {
  		assertDefaultDummyAccount(ACCOUNT_JACK_DUMMY_USERNAME, ACCOUNT_JACK_DUMMY_FULLNAME, true);
  		DummyGroup dummyGroup = getDummyResource().getGroupByName(GROUP_DUMMY_SWASHBUCKLERS_NAME);
 		assertNotNull("No group on dummy resource", dummyGroup);
@@ -2369,7 +2528,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 	/**
 	 * Account: no, group: no
 	 */
-	private void assertJackNoAccountNoSwashbuckler() throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	private void assertJackNoAccountNoSwashbuckler() throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		DummyGroup dummyGroup = getDummyResource().getGroupByName(GROUP_DUMMY_SWASHBUCKLERS_NAME);
         assertNotNull("No group on dummy resource", dummyGroup);
         display("Group", dummyGroup);
@@ -2419,7 +2578,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 
 	@SuppressWarnings("unused")
 	private void dumpAccountAndGroups(PrismObject<UserType> user, String dummyResourceName)
-			throws ConflictException, SchemaViolationException, FileNotFoundException, ConnectException {
+			throws ConflictException, SchemaViolationException, FileNotFoundException, ConnectException, InterruptedException {
 		String userName = user.getName().getOrig();
 		DummyAccount dummyAccount = getDummyAccount(dummyResourceName, userName);
 		display("dummy account: " + dummyResourceName, dummyAccount);
@@ -2428,7 +2587,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 	}
 
 	private List<DummyGroup> getGroupsForUser(String dummyResourceName, String userName)
-			throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+			throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		return DummyResource.getInstance(dummyResourceName).listGroups().stream()
 				.filter(g -> g.containsMember(userName))
 				.collect(Collectors.toList());
@@ -2463,7 +2622,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 	}
 
 	private void assertGroupMember(String groupName, String accountName, DummyResource dummyResource)
-			throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+			throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		DummyGroup dummyGroup = dummyResource.getGroupByName(groupName);
 		assertNotNull("No group " + dummyGroup + " on " + dummyResource, dummyGroup);
 		display("group", dummyGroup);
@@ -2471,7 +2630,7 @@ public class TestEntitlements extends AbstractInitializedModelIntegrationTest {
 	}
 
 	private void assertNoGroupMember(String groupName, String accountName, DummyResource dummyResource)
-			throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+			throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		DummyGroup dummyGroup = dummyResource.getGroupByName(groupName);
 		assertNotNull("No group " + dummyGroup + " on " + dummyResource, dummyGroup);
 		display("group", dummyGroup);

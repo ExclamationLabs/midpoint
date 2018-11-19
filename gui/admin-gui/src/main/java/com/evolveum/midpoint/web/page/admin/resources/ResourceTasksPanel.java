@@ -121,11 +121,6 @@ public class ResourceTasksPanel extends Panel implements Popupable{
 			}
 
 			@Override
-			protected PrismObject<TaskType> getNewObjectListObject(){
-				return (new TaskType()).asPrismObject();
-			}
-
-			@Override
 			public void objectDetailsPerformed(AjaxRequestTarget target, TaskType task) {
 				// TODO Auto-generated method stub
 //				super.objectDetailsPerformed(target, task);
@@ -246,6 +241,16 @@ public class ResourceTasksPanel extends Panel implements Popupable{
 	@Override
 	public int getHeight() {
 		return 500;
+	}
+
+	@Override
+	public String getWidthUnit(){
+		return "px";
+	}
+
+	@Override
+	public String getHeightUnit(){
+		return "px";
 	}
 
 	@Override

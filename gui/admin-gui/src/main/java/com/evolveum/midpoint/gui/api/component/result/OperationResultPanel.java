@@ -267,6 +267,8 @@ public class OperationResultPanel extends BasePanel<OpResult> implements Popupab
 
 				String msg = null;
 				if (result.getUserFriendlyMessage() != null) {
+					
+					//TODO: unify with WebModelServiceUtil.translateMessage()
 					LocalizationService service = page.getLocalizationService();
 					Locale locale = page.getSession().getLocale();
 
@@ -728,6 +730,16 @@ public class OperationResultPanel extends BasePanel<OpResult> implements Popupab
 	@Override
 	public int getHeight() {
 		return 500;
+	}
+
+	@Override
+	public String getWidthUnit(){
+		return "px";
+	}
+
+	@Override
+	public String getHeightUnit(){
+		return "px";
 	}
 
 	@Override

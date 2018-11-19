@@ -21,7 +21,9 @@ import com.evolveum.midpoint.gui.api.page.PageBase;
 import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
+import org.apache.wicket.AttributeModifier;
 import org.apache.wicket.ajax.AjaxRequestTarget;
+import org.apache.wicket.ajax.attributes.AjaxRequestAttributes;
 import org.apache.wicket.ajax.markup.html.AjaxLink;
 import org.apache.wicket.behavior.AttributeAppender;
 import org.apache.wicket.markup.html.basic.Label;
@@ -64,6 +66,13 @@ public abstract class UserSelectionButton extends BasePanel<List<UserType>> {
     private void initLayout(){
         AjaxLink<String> userSelectionButton = new AjaxLink<String>(ID_USER_SELECTION_BUTTON) {
             private static final long serialVersionUID = 1L;
+
+            @Override
+            protected void updateAjaxAttributes(AjaxRequestAttributes attributes) {
+                super.updateAjaxAttributes(attributes);
+                attributes.setEventPropagation(AjaxRequestAttributes.EventPropagation.BUBBLE);
+            }
+
             @Override
             public void onClick(AjaxRequestTarget target) {
                 if (showUserSelectionPopup) {
@@ -72,6 +81,7 @@ public abstract class UserSelectionButton extends BasePanel<List<UserType>> {
                 showUserSelectionPopup = true;
             }
         };
+        userSelectionButton.add(AttributeModifier.append("class", getTargetUserButtonClass()));
         userSelectionButton.setOutputMarkupId(true);
         userSelectionButton.add(new AttributeAppender("title", new AbstractReadOnlyModel<String>() {
             private static final long serialVersionUID = 1L;
@@ -105,7 +115,7 @@ public abstract class UserSelectionButton extends BasePanel<List<UserType>> {
             private static final long serialVersionUID = 1L;
             @Override
             public boolean isVisible(){
-                return getModelObject() != null && getModelObject().size() > 0;
+                return isDeleteButtonVisible();
             }
         });
         userSelectionButton.add(deleteButton);
@@ -113,8 +123,16 @@ public abstract class UserSelectionButton extends BasePanel<List<UserType>> {
 
     protected abstract String getUserButtonLabel();
 
+    protected boolean isDeleteButtonVisible(){
+        return getModelObject() != null && getModelObject().size() > 0;
+    }
+
     protected void onDeleteSelectedUsersPerformed(AjaxRequestTarget target){
         showUserSelectionPopup = false;
+    }
+
+    protected String getTargetUserButtonClass(){
+        return "";
     }
 
     private void initUserSelectionPopup(AjaxRequestTarget target) {

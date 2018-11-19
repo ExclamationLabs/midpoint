@@ -24,6 +24,7 @@ import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.schema.util.FocusTypeUtil;
 import com.evolveum.midpoint.util.exception.ConfigurationException;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.LifecycleStateModelType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectPolicyConfigurationType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
@@ -37,12 +38,7 @@ import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
 public class ModelUtils {
 	
 	public static <O extends ObjectType> ObjectPolicyConfigurationType determineObjectPolicyConfiguration(PrismObject<O> object, SystemConfigurationType systemConfigurationType) throws ConfigurationException {
-		List<String> subTypes;
-        if (object.getOid() == null){
-            subTypes = new ArrayList<>();
-        } else {
-            subTypes = FocusTypeUtil.determineSubTypes(object);
-        }
+		List<String> subTypes = FocusTypeUtil.determineSubTypes(object);
 		return determineObjectPolicyConfiguration(object.getCompileTimeClass(), subTypes, systemConfigurationType);
 	}
 
@@ -101,5 +97,19 @@ public class ModelUtils {
 		return null;
 	}
 
+	public static <O extends ObjectType> LifecycleStateModelType determineLifecycleModel(PrismObject<O> object, PrismObject<SystemConfigurationType> systemConfiguration) throws ConfigurationException {
+		if (systemConfiguration == null) {
+			return null;
+		}
+		return determineLifecycleModel(object, systemConfiguration.asObjectable());
+	}
+	
+	public static <O extends ObjectType> LifecycleStateModelType determineLifecycleModel(PrismObject<O> object, SystemConfigurationType systemConfigurationType) throws ConfigurationException {
+		ObjectPolicyConfigurationType objectPolicyConfiguration = determineObjectPolicyConfiguration(object, systemConfigurationType);
+		if (objectPolicyConfiguration == null) {
+			return null;
+		}
+		return objectPolicyConfiguration.getLifecycleStateModel();
+	}
 
 }

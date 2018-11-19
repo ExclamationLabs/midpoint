@@ -22,6 +22,7 @@ import java.util.List;
 import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.schema.util.AdminGuiConfigTypeUtil;
+import com.evolveum.midpoint.web.component.prism.*;
 import com.evolveum.midpoint.web.component.progress.ProgressPanel;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.apache.commons.lang.StringUtils;
@@ -53,11 +54,8 @@ import com.evolveum.midpoint.util.exception.SystemException;
 import com.evolveum.midpoint.util.logging.LoggingUtils;
 import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
-import com.evolveum.midpoint.web.component.FocusSummaryPanel;
+import com.evolveum.midpoint.web.component.ObjectSummaryPanel;
 import com.evolveum.midpoint.web.component.objectdetails.AbstractObjectMainPanel;
-import com.evolveum.midpoint.web.component.prism.ContainerStatus;
-import com.evolveum.midpoint.web.component.prism.ObjectWrapper;
-import com.evolveum.midpoint.web.component.prism.ObjectWrapperFactory;
 import com.evolveum.midpoint.web.component.progress.ProgressReportingAwarePage;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
 import com.evolveum.midpoint.web.page.admin.users.dto.FocusSubwrapperDto;
@@ -148,7 +146,8 @@ public abstract class PageAdminObjectDetails<O extends ObjectType> extends PageA
 					name = WebComponentUtil.getName(getObjectWrapper().getObject());
 				}
 
-				String key = "PageAdminObjectDetails.title.edit" + getCompileTimeClass().getSimpleName();
+				String key = (getObjectWrapper().isReadonly() ? "PageAdminObjectDetails.title.view" : "PageAdminObjectDetails.title.edit")
+						+ getCompileTimeClass().getSimpleName();
 				return createStringResource(key, name).getObject();
 			}
 		};
@@ -251,18 +250,18 @@ public abstract class PageAdminObjectDetails<O extends ObjectType> extends PageA
 		add(progressPanel);
 	}
 
-	protected abstract FocusSummaryPanel<O> createSummaryPanel();
+	protected abstract ObjectSummaryPanel<O> createSummaryPanel();
 
 	protected void initLayoutSummaryPanel() {
 
-		FocusSummaryPanel<O> summaryPanel = createSummaryPanel();
+		ObjectSummaryPanel<O> summaryPanel = createSummaryPanel();
 		summaryPanel.setOutputMarkupId(true);
 
 		setSummaryPanelVisibility(summaryPanel);
 		add(summaryPanel);
 	}
 
-    protected void setSummaryPanelVisibility(FocusSummaryPanel<O> summaryPanel){
+    protected void setSummaryPanelVisibility(ObjectSummaryPanel<O> summaryPanel){
         summaryPanel.add(new VisibleEnableBehaviour() {
             private static final long serialVersionUID = 1L;
 
@@ -347,7 +346,7 @@ public abstract class PageAdminObjectDetails<O extends ObjectType> extends PageA
 		ObjectWrapper<O> wrapper;
 		ObjectWrapperFactory owf = new ObjectWrapperFactory(this);
 		try {
-			wrapper = owf.createObjectWrapper("pageAdminFocus.focusDetails", null, object, status, task);
+			wrapper = owf.createObjectWrapper("pageAdminFocus.focusDetails", null, object, status, isReadonly, task);
 		} catch (Exception ex) {
 			result.recordFatalError("Couldn't get user.", ex);
 			LoggingUtils.logUnexpectedException(LOGGER, "Couldn't load user", ex);
@@ -446,9 +445,13 @@ public abstract class PageAdminObjectDetails<O extends ObjectType> extends PageA
 		previewRequested = true;
 		saveOrPreviewPerformed(target, result, true);
 	}
-
+	
 	public void saveOrPreviewPerformed(AjaxRequestTarget target, OperationResult result, boolean previewOnly) {
-		boolean isAnythingChanged = processDeputyAssignments(previewOnly);
+		saveOrPreviewPerformed(target, result, previewOnly, null);
+	}
+
+	public void saveOrPreviewPerformed(AjaxRequestTarget target, OperationResult result, boolean previewOnly, Task task) {
+		boolean delegationChangesExist = processDeputyAssignments(previewOnly);
 
 		ObjectWrapper<O> objectWrapper = getObjectWrapper();
 		LOGGER.debug("Saving object {}", objectWrapper);
@@ -460,12 +463,12 @@ public abstract class PageAdminObjectDetails<O extends ObjectType> extends PageA
 		// (error message is still displayed)
 		delta = null;
 
-		Task task = createSimpleTask(OPERATION_SEND_TO_SUBMIT);
-
-		ModelExecuteOptions options = getExecuteChangesOptions();
-		if (previewOnly) {
-			options.getOrCreatePartialProcessing().setApprovals(PartialProcessingTypeType.PROCESS);
+		if(task == null) {
+		task = createSimpleTask(OPERATION_SEND_TO_SUBMIT);
 		}
+
+		ModelExecuteOptions options = getOptions(previewOnly);
+
 		LOGGER.debug("Using execute options {}.", options);
 
 		try {
@@ -556,17 +559,21 @@ public abstract class PageAdminObjectDetails<O extends ObjectType> extends PageA
 							return;
 						}
 						progressPanel.executeChanges(deltas, previewOnly, options, task, result, target);
+					} else if (previewOnly && delta.isEmpty() && delegationChangesExist){
+						progressPanel.executeChanges(deltas, previewOnly, options, task, result, target);
 					} else {
 						progressPanel.clearProgressPanel();			// from previous attempts (useful only if we would call finishProcessing at the end, but that's not the case now)
 						if (!previewOnly) {
-							if (!isAnythingChanged) {
+							if (!delegationChangesExist) {
 								result.recordWarning(getString("PageAdminObjectDetails.noChangesSave"));
 								showResult(result);
 							}
 							redirectBack();
 						} else {
-							warn(getString("PageAdminObjectDetails.noChangesPreview"));
-							target.add(getFeedbackPanel());
+							if (!delegationChangesExist) {
+								warn(getString("PageAdminObjectDetails.noChangesPreview"));
+								target.add(getFeedbackPanel());
+							}
 						}
 					}
 
@@ -622,8 +629,12 @@ public abstract class PageAdminObjectDetails<O extends ObjectType> extends PageA
 	}
 
 	@NotNull
-	protected ModelExecuteOptions getExecuteChangesOptions() {
-		return mainPanel.getExecuteChangeOptionsDto().createOptions();
+	protected ModelExecuteOptions getOptions(boolean previewOnly) {
+		ModelExecuteOptions options = mainPanel.getExecuteChangeOptionsDto().createOptions();
+		if (previewOnly) {
+			options.getOrCreatePartialProcessing().setApprovals(PartialProcessingTypeType.PROCESS);
+		}
+		return options;
 	}
 
 	protected void prepareObjectForAdd(PrismObject<O> object) throws SchemaException {
@@ -732,4 +743,5 @@ public abstract class PageAdminObjectDetails<O extends ObjectType> extends PageA
 		GuiObjectDetailsPageType objectDetails = AdminGuiConfigTypeUtil.findObjectConfiguration(getCompileTimeClass(), getAdminGuiConfiguration());
 		return objectDetails != null && DetailsPageSaveMethodType.FORCED_PREVIEW.equals(objectDetails.getSaveMethod());
 	}
+
 }

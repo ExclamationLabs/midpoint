@@ -22,14 +22,12 @@ import java.util.List;
 
 import javax.xml.namespace.QName;
 
-import com.evolveum.midpoint.gui.api.GuiStyleConstants;
-import com.evolveum.midpoint.schema.util.ShadowUtil;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.apache.wicket.Component;
 import org.apache.wicket.extensions.markup.html.repeater.data.grid.ICellPopulator;
 import org.apache.wicket.extensions.markup.html.repeater.data.table.AbstractColumn;
 import org.apache.wicket.extensions.markup.html.repeater.data.table.IColumn;
 import org.apache.wicket.extensions.markup.html.repeater.data.table.PropertyColumn;
+import org.apache.wicket.extensions.markup.html.repeater.data.table.export.AbstractExportableColumn;
 import org.apache.wicket.markup.html.basic.Label;
 import org.apache.wicket.markup.repeater.Item;
 import org.apache.wicket.markup.repeater.RepeatingView;
@@ -39,11 +37,24 @@ import org.apache.wicket.model.Model;
 import org.apache.wicket.model.PropertyModel;
 import org.apache.wicket.model.StringResourceModel;
 
+import com.evolveum.midpoint.gui.api.GuiStyleConstants;
 import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.prism.PrismProperty;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
+import com.evolveum.midpoint.schema.util.ShadowUtil;
 import com.evolveum.midpoint.web.component.util.SelectableBean;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.AbstractRoleType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.AccessCertificationDefinitionType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ResourceType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.RoleType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ServiceType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowKindType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.TaskType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
 
 public class ColumnUtils {
 
@@ -283,7 +294,7 @@ public class ColumnUtils {
 				//TODO what for this label is needed? getHeader is overrided and sends "" as label
 //				return createStringResource("pageContentAccounts.isProtected");
 				//fix for icon column width
-				return null;
+				return Model.of("");
 			}
 		};
 	}
@@ -495,7 +506,7 @@ public class ColumnUtils {
 				SelectableBean<TaskType> object = (SelectableBean<TaskType>) rowModel.getObject();
 				PrismProperty<QName> pObjectClass = object.getValue() != null ?
 						object.getValue().asPrismObject().findProperty(
-								new ItemPath(TaskType.F_EXTENSION, SchemaConstants.OBJECTCLASS_PROPERTY_NAME))
+								new ItemPath(TaskType.F_EXTENSION, SchemaConstants.MODEL_EXTENSION_OBJECTCLASS))
 						: null;
 				if (pObjectClass != null) {
 					cellItem.add(new Label(componentId, pObjectClass.getRealValue().getLocalPart()));
@@ -541,14 +552,12 @@ public class ColumnUtils {
 		return columns;
 	}
 
-	private static <T extends ObjectType> List<IColumn<SelectableBean<T>, String>> getDefaultAbstractRoleColumns(QName type) {
+	private static <T extends AbstractRoleType> List<IColumn<SelectableBean<T>, String>> getDefaultAbstractRoleColumns(QName type) {
 
 		String sortByDisplayName = null;
 		String sortByIdentifer = null;
-		if (OrgType.COMPLEX_TYPE.equals(type)) {
-			sortByDisplayName = AbstractRoleType.F_DISPLAY_NAME.getLocalPart();
-			sortByIdentifer = AbstractRoleType.F_IDENTIFIER.getLocalPart();
-		}
+		sortByDisplayName = AbstractRoleType.F_DISPLAY_NAME.getLocalPart();
+		sortByIdentifer = AbstractRoleType.F_IDENTIFIER.getLocalPart();
 		List<ColumnTypeDto<String>> columnsDefs = Arrays.asList(
 				new ColumnTypeDto<String>("AbstractRoleType.displayName",
 						sortByDisplayName,
@@ -560,7 +569,30 @@ public class ColumnUtils {
 						SelectableBean.F_VALUE + ".identifier", false)
 
 		);
-		return createColumns(columnsDefs);
+		List<IColumn<SelectableBean<T>, String>> columns = createColumns(columnsDefs);
+		
+		IColumn<SelectableBean<T>, String> column = new AbstractExportableColumn<SelectableBean<T>, String>(
+				createStringResource("pageUsers.accounts")) {
+
+			@Override
+			public void populateItem(Item<ICellPopulator<SelectableBean<T>>> cellItem,
+					String componentId, IModel<SelectableBean<T>> model) {
+				cellItem.add(new Label(componentId,
+						model.getObject().getValue() != null ?
+								model.getObject().getValue().getLinkRef().size() : null));
+			}
+
+			@Override
+			public IModel<String> getDataModel(IModel<SelectableBean<T>> rowModel) {
+				return Model.of(rowModel.getObject().getValue() != null ?
+						Integer.toString(rowModel.getObject().getValue().getLinkRef().size()) : "");
+			}
+
+
+		};
+
+		columns.add(column);
+		return columns;
 
 	}
 

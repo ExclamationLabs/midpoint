@@ -18,6 +18,7 @@ package com.evolveum.midpoint.web.component.prism;
 
 import com.evolveum.midpoint.gui.api.GuiStyleConstants;
 import com.evolveum.midpoint.gui.api.component.BasePanel;
+import com.evolveum.midpoint.gui.api.component.PendingOperationPanel;
 import com.evolveum.midpoint.gui.api.component.togglebutton.ToggleIconButton;
 import com.evolveum.midpoint.gui.api.page.PageBase;
 import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
@@ -28,6 +29,7 @@ import com.evolveum.midpoint.prism.PrismProperty;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.web.component.BootstrapLabel;
+import com.evolveum.midpoint.web.component.util.VisibleBehaviour;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
 import com.evolveum.midpoint.web.util.TooltipBehavior;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
@@ -58,6 +60,7 @@ public class CheckTableHeader<O extends ObjectType> extends BasePanel<ObjectWrap
     private static final String ID_SHOW_MORE = "showMore";
     private static final String ID_TRIGGER = "trigger";
     private static final String ID_EXPAND = "expand";
+    private static final String ID_PENDING_OPERATION = "pendingOperation";
 
     public CheckTableHeader(String id, IModel<ObjectWrapper<O>> model) {
         super(id, model);
@@ -76,6 +79,10 @@ public class CheckTableHeader<O extends ObjectType> extends BasePanel<ObjectWrap
             }
         };
         add(check);
+
+        PendingOperationPanel pendingPanel = new PendingOperationPanel(ID_PENDING_OPERATION, createPendingOperationsModel());
+        pendingPanel.add(new VisibleBehaviour(() -> ShadowType.class.equals(getModelObject().getDefinition().getCompileTimeClass())));
+        add(pendingPanel);
 
         Label icon = new Label(ID_ICON);
         icon.add(AttributeModifier.replace("class", new AbstractReadOnlyModel<String>() {
@@ -155,11 +162,11 @@ public class CheckTableHeader<O extends ObjectType> extends BasePanel<ObjectWrap
         ToggleIconButton expandButton = new ToggleIconButton(ID_EXPAND,
         		GuiStyleConstants.CLASS_ICON_EXPAND, GuiStyleConstants.CLASS_ICON_COLLAPSE) {
         	private static final long serialVersionUID = 1L;
-
+        	
         	@Override
-            public void onClick(AjaxRequestTarget target) {
+        	public void onClick(AjaxRequestTarget target) {
         		onClickPerformed(target);
-            }
+        	}
 
         	@Override
 			public boolean isOn() {
@@ -168,6 +175,30 @@ public class CheckTableHeader<O extends ObjectType> extends BasePanel<ObjectWrap
         };
         add(expandButton);
 
+    }
+
+    private IModel<List<PendingOperationType>> createPendingOperationsModel() {
+        return new AbstractReadOnlyModel<List<PendingOperationType>>() {
+
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public List<PendingOperationType> getObject() {
+                List<PendingOperationType> list = new ArrayList<>();
+
+                ObjectWrapper wrapper = getModelObject();
+                ContainerWrapper operations = wrapper.findContainerWrapper(new ItemPath(ShadowType.F_PENDING_OPERATION));
+                if (operations == null) {
+                    return list;
+                }
+
+                for (ContainerValueWrapper<PendingOperationType> cw : (List<ContainerValueWrapper>) operations.getValues()) {
+                    list.add(cw.getContainerValue().asContainerable());
+                }
+
+                return list;
+            }
+        };
     }
 
     private String createAccountIcon() {

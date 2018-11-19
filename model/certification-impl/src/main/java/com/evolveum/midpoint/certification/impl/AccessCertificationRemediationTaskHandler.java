@@ -15,7 +15,9 @@
  */
 package com.evolveum.midpoint.certification.impl;
 
+import com.evolveum.midpoint.certification.api.OutcomeUtils;
 import com.evolveum.midpoint.certification.impl.handlers.CertificationHandler;
+import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.repo.api.RepositoryService;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
@@ -24,6 +26,7 @@ import com.evolveum.midpoint.schema.util.CertCampaignTypeUtil;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.task.api.*;
 import com.evolveum.midpoint.task.api.TaskRunResult.TaskRunResultStatus;
+import com.evolveum.midpoint.util.exception.CommonException;
 import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.logging.LoggingUtils;
@@ -42,6 +45,8 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import java.util.List;
 
+import static com.evolveum.midpoint.schema.util.CertCampaignTypeUtil.norm;
+
 /**
  * The task handler for automatic remediation.
  *
@@ -59,6 +64,7 @@ public class AccessCertificationRemediationTaskHandler implements TaskHandler {
     @Autowired private AccCertGeneralHelper helper;
     @Autowired private AccCertCaseOperationsHelper caseHelper;
     @Autowired private AccCertQueryHelper queryHelper;
+    @Autowired private PrismContext prismContext;
     @Autowired @Qualifier("cacheRepositoryService") private RepositoryService repositoryService;
 
     private static final transient Trace LOGGER = TraceManager.getTrace(AccessCertificationRemediationTaskHandler.class);
@@ -113,9 +119,9 @@ public class AccessCertificationRemediationTaskHandler implements TaskHandler {
             int revokedOk = 0;
             int revokedError = 0;
 
-            List<AccessCertificationCaseType> caseList = queryHelper.searchCases(campaignOid, null, null, opResult);
+            List<AccessCertificationCaseType> caseList = queryHelper.getAllCurrentIterationCases(campaignOid, norm(campaign.getIteration()), null, opResult);
             for (AccessCertificationCaseType _case : caseList) {
-                if (helper.isRevoke(_case, campaign)) {
+                if (OutcomeUtils.isRevoke(_case, campaign)) {
                     OperationResult caseResult = opResult.createMinorSubresult(opResult.getOperation()+".revoke");
                     final Long caseId = _case.asPrismContainerValue().getId();
                     caseResult.addContext("caseId", caseId);
@@ -125,7 +131,7 @@ public class AccessCertificationRemediationTaskHandler implements TaskHandler {
                         caseResult.computeStatus();
                         revokedOk++;
 						task.incrementProgressAndStoreStatsIfNeeded();
-                    } catch (Exception e) {     // TODO
+                    } catch (CommonException | RuntimeException e) {
                         String message = "Couldn't revoke case " + caseId + ": " + e.getMessage();
                         LoggingUtils.logUnexpectedException(LOGGER, message, e);
                         caseResult.recordPartialError(message, e);
@@ -184,7 +190,7 @@ public class AccessCertificationRemediationTaskHandler implements TaskHandler {
         task.setName(polyString);
 
         // Set reference to the resource
-        task.setObjectRef(ObjectTypeUtil.createObjectRef(campaign));
+        task.setObjectRef(ObjectTypeUtil.createObjectRef(campaign, prismContext));
 
         task.setOwner(repositoryService.getObject(UserType.class, SystemObjectsType.USER_ADMINISTRATOR.value(), null, result));
 

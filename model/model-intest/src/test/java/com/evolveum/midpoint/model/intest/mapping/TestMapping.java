@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,11 @@ import java.util.UUID;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import com.evolveum.midpoint.prism.Containerable;
+import com.evolveum.midpoint.prism.PrismContainerValue;
+import com.evolveum.midpoint.prism.delta.builder.DeltaBuilder;
+import com.evolveum.midpoint.schema.constants.SchemaConstants;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.annotation.DirtiesContext.ClassMode;
 import org.springframework.test.context.ContextConfiguration;
@@ -60,14 +65,6 @@ import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
 import com.evolveum.midpoint.util.exception.PolicyViolationException;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.exception.SecurityViolationException;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ActivationStatusType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ActivationType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.AssignmentPolicyEnforcementType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.AssignmentType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.FocusType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
 
 /**
  * @author semancik
@@ -133,8 +130,9 @@ public class TestMapping extends AbstractMappingTest {
 	protected static final String DRINK_GRAPPA = "grappa";
 	protected static final String DRINK_GIN = "gin";
 	protected static final String DRINK_MEZCAL = "mezcal";
-	
 
+	private static final String USER_JIM_NAME = "jim";
+	private static final String USER_TYPE_CARTHESIAN = "carthesian";
 
 	@Override
 	public void initSystem(Task initTask, OperationResult initResult) throws Exception {
@@ -155,6 +153,8 @@ public class TestMapping extends AbstractMappingTest {
 		repoAddObjectFromFile(ROLE_COBALT_NEVERLAND_FILE, initResult);
 		
 		assumeAssignmentPolicy(AssignmentPolicyEnforcementType.FULL);
+
+		setDefaultObjectTemplate(UserType.COMPLEX_TYPE, USER_TYPE_CARTHESIAN, USER_TEMPLATE_CARTHESIAN_OID, initResult);
 	}
 
 	/**
@@ -172,7 +172,7 @@ public class TestMapping extends AbstractMappingTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_BLUE_OID, null, task, result);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_BLUE_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -976,7 +976,7 @@ public class TestMapping extends AbstractMappingTest {
 		assertNoDummyAccount(RESOURCE_DUMMY_COBALT_NAME, USER_JACK_USERNAME);
         
 		// WHEN
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_COBALT_OID, null, task, result);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_COBALT_OID, null, task, result);
 
 		// THEN
         assertSuccess(result);
@@ -1377,7 +1377,7 @@ public class TestMapping extends AbstractMappingTest {
 		display("User before", userBefore);
         
 		// WHEN
-        unassignAccount(USER_JACK_OID, RESOURCE_DUMMY_COBALT_OID, null, task, result);
+        unassignAccountFromUser(USER_JACK_OID, RESOURCE_DUMMY_COBALT_OID, null, task, result);
 
 		// THEN
         assertSuccess(result);
@@ -1534,18 +1534,12 @@ public class TestMapping extends AbstractMappingTest {
         deltas.add(accountDelta);
 
 		// WHEN
-        try {
-        	modelService.executeChanges(deltas, null, task, result);
-
-        	AssertJUnit.fail("Unexpected success");
-        } catch (SchemaException e) {
-        	// This is expected
-        	display("Expected exception", e);
-        }
+        displayWhen(TEST_NAME);
+    	modelService.executeChanges(deltas, null, task, result);
 
 		// THEN
-		result.computeStatus();
-        TestUtil.assertFailure(result);
+        displayThen(TEST_NAME);
+		assertPartialError(result);
 
 		userJack = getUser(USER_JACK_OID);
 		display("User after change execution", userJack);
@@ -1558,8 +1552,8 @@ public class TestMapping extends AbstractMappingTest {
         dummyAuditService.assertSimpleRecordSanity();
         dummyAuditService.assertRecords(2);
         dummyAuditService.assertAnyRequestDeltas();
-        dummyAuditService.assertExecutionDeltas(0);
-        dummyAuditService.assertExecutionOutcome(OperationResultStatus.FATAL_ERROR);
+        dummyAuditService.assertExecutionDeltas(1);
+        dummyAuditService.assertExecutionOutcome(OperationResultStatus.PARTIAL_ERROR);
 	}
 
 	/**
@@ -1628,19 +1622,13 @@ public class TestMapping extends AbstractMappingTest {
         		prismContext, "Black Pearl");
         deltas.add(accountDelta);
 
-     // WHEN
-        try {
-        	modelService.executeChanges(deltas, null, task, result);
-
-        	AssertJUnit.fail("Unexpected success");
-        } catch (PolicyViolationException e) {
-        	// This is expected
-        	display("Expected exception", e);
-        }
+        // WHEN
+        displayWhen(TEST_NAME);
+    	modelService.executeChanges(deltas, null, task, result);
 
 		// THEN
-		result.computeStatus();
-        TestUtil.assertFailure(result);
+    	displayThen(TEST_NAME);
+		assertPartialError(result);
 
 		userJack = getUser(USER_JACK_OID);
 		display("User after change execution", userJack);
@@ -1653,8 +1641,8 @@ public class TestMapping extends AbstractMappingTest {
         dummyAuditService.assertSimpleRecordSanity();
         dummyAuditService.assertRecords(2);
         dummyAuditService.assertAnyRequestDeltas();
-        dummyAuditService.assertExecutionDeltas(0);
-        dummyAuditService.assertExecutionOutcome(OperationResultStatus.FATAL_ERROR);
+        dummyAuditService.assertExecutionDeltas(1);
+        dummyAuditService.assertExecutionOutcome(OperationResultStatus.PARTIAL_ERROR);
 	}
 
 	/**
@@ -1948,18 +1936,13 @@ public class TestMapping extends AbstractMappingTest {
         deltas.add(accountDelta);
 
 		// WHEN
-        try {
-        	modelService.executeChanges(deltas, null, task, result);
-
-        	AssertJUnit.fail("Unexpected success");
-        } catch (SchemaException e) {
-        	// This is expected
-        	display("Expected exception", e);
-        }
+        displayWhen(TEST_NAME);
+        
+    	modelService.executeChanges(deltas, null, task, result);
 
 		// THEN
-		result.computeStatus();
-        TestUtil.assertFailure(result);
+        displayThen(TEST_NAME);
+		assertPartialError(result);
 
 		userJack = getUser(USER_JACK_OID);
 		display("User after change execution", userJack);
@@ -1972,8 +1955,8 @@ public class TestMapping extends AbstractMappingTest {
         dummyAuditService.assertSimpleRecordSanity();
         dummyAuditService.assertRecords(2);
         dummyAuditService.assertAnyRequestDeltas();
-        dummyAuditService.assertExecutionDeltas(0);
-        dummyAuditService.assertExecutionOutcome(OperationResultStatus.FATAL_ERROR);
+        dummyAuditService.assertExecutionDeltas(1);
+        dummyAuditService.assertExecutionOutcome(OperationResultStatus.PARTIAL_ERROR);
 	}
 
 	/**
@@ -2042,19 +2025,13 @@ public class TestMapping extends AbstractMappingTest {
         		prismContext, "Fountain of Youth");
         deltas.add(accountDelta);
 
-     // WHEN
-        try {
-        	modelService.executeChanges(deltas, null, task, result);
-
-        	AssertJUnit.fail("Unexpected success");
-        } catch (PolicyViolationException e) {
-        	// This is expected
-        	display("Expected exception", e);
-        }
+        // WHEN
+        displayWhen(TEST_NAME);
+    	modelService.executeChanges(deltas, null, task, result);
 
 		// THEN
-        result.computeStatus();
-        TestUtil.assertFailure(result);
+        displayThen(TEST_NAME);
+        assertPartialError(result);
 
 		userJack = getUser(USER_JACK_OID);
 		display("User after change execution", userJack);
@@ -2067,8 +2044,8 @@ public class TestMapping extends AbstractMappingTest {
         dummyAuditService.assertSimpleRecordSanity();
         dummyAuditService.assertRecords(2);
         dummyAuditService.assertAnyRequestDeltas();
-        dummyAuditService.assertExecutionDeltas(0);
-        dummyAuditService.assertExecutionOutcome(OperationResultStatus.FATAL_ERROR);
+        dummyAuditService.assertExecutionDeltas(1);
+        dummyAuditService.assertExecutionOutcome(OperationResultStatus.PARTIAL_ERROR);
 	}
 
 	@Test
@@ -2147,27 +2124,27 @@ public class TestMapping extends AbstractMappingTest {
 
 
 	private void assertAccountShip(PrismObject<UserType> userJack, String expectedFullName, String expectedShip,
-			String dummyResourceName, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException {
+			String dummyResourceName, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException, InterruptedException {
 		assertAccount(userJack, expectedFullName, DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_SHIP_NAME, expectedShip, true, getDummyResourceController(dummyResourceName), task);
 	}
 
 	private void assertAccountShip(PrismObject<UserType> userJack, String expectedFullName, String expectedShip,
-			boolean expectedEnabled, DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException {
+			boolean expectedEnabled, DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException, InterruptedException {
 		assertAccount(userJack, expectedFullName, DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_SHIP_NAME, expectedShip, expectedEnabled, resourceCtl, task);
 	}
 
 	private void assertAccountLocation(PrismObject<UserType> userJack, String expectedFullName, String expectedShip,
-			DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException {
+			DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException, InterruptedException {
 		assertAccount(userJack, expectedFullName, DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_LOCATION_NAME, expectedShip, true, resourceCtl, task);
 	}
 
 	private void assertAccountRename(PrismObject<UserType> userJack, String name, String expectedFullName,
-			DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException {
+			DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException, InterruptedException {
 		assertAccount(userJack, name, expectedFullName, null, null, true, resourceCtl, task);
 	}
 
 	private void assertAccount(PrismObject<UserType> userJack, String name, String expectedFullName, String shipAttributeName, String expectedShip,
-			boolean expectedEnabled, DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException {
+			boolean expectedEnabled, DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException, InterruptedException {
 		// ship inbound mapping is used, it is strong
         String accountOid = getSingleLinkOid(userJack);
 
@@ -2200,7 +2177,7 @@ public class TestMapping extends AbstractMappingTest {
 	}
 
 	private void assertAccount(PrismObject<UserType> userJack, String expectedFullName, String attributeName, String expectedShip,
-			boolean expectedEnabled, DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException {
+			boolean expectedEnabled, DummyResourceContoller resourceCtl, Task task) throws ObjectNotFoundException, SchemaException, SecurityViolationException, CommunicationException, ConfigurationException, SchemaViolationException, ConflictException, ExpressionEvaluationException, InterruptedException {
 		assertAccount(userJack, "jack", expectedFullName, attributeName, expectedShip, expectedEnabled, resourceCtl, task);
 	}
 
@@ -2216,7 +2193,7 @@ public class TestMapping extends AbstractMappingTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_CRIMSON_OID, null, task, result);
+        assignAccountToUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_CRIMSON_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -2641,7 +2618,7 @@ public class TestMapping extends AbstractMappingTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        unassignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_CRIMSON_OID, null, task, result);
+        unassignAccountFromUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_CRIMSON_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -2676,7 +2653,7 @@ public class TestMapping extends AbstractMappingTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_LIGHT_CRIMSON_OID, null, task, result);
+        assignAccountToUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_LIGHT_CRIMSON_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -3102,7 +3079,7 @@ public class TestMapping extends AbstractMappingTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        unassignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_LIGHT_CRIMSON_OID, null, task, result);
+        unassignAccountFromUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_LIGHT_CRIMSON_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -3135,7 +3112,7 @@ public class TestMapping extends AbstractMappingTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_YELLOW_OID, null, task, result);
+        assignAccountToUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_YELLOW_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -3203,7 +3180,7 @@ public class TestMapping extends AbstractMappingTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        unassignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_YELLOW_OID, null, task, result);
+        unassignAccountFromUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_YELLOW_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -3231,7 +3208,7 @@ public class TestMapping extends AbstractMappingTest {
 
 		// WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_CUSTOM_FUNCTION_CRIMSON_OID, null, task, result);
+        assignAccountToUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_CUSTOM_FUNCTION_CRIMSON_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -3367,7 +3344,7 @@ public class TestMapping extends AbstractMappingTest {
         Task task = createTask(TEST_NAME);
         OperationResult result = task.getResult();
         
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
         
         PrismObject<UserType> userBefore = getUser(USER_JACK_OID);
         display("User before", userBefore);
@@ -3440,7 +3417,7 @@ public class TestMapping extends AbstractMappingTest {
 
         // WHEN
         displayWhen(TEST_NAME);
-        unassignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
+        unassignAccountFromUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -3452,6 +3429,97 @@ public class TestMapping extends AbstractMappingTest {
         assertLinks(userAfter, 0);
 	}
 
+	/**
+	 * MID-4862
+	 */
+	@Test
+	public void test500AssignmentsCombinationSingle() throws Exception {
+		final String TEST_NAME = "test500AssignmentsCombinationSingle";
+		displayTestTitle(TEST_NAME);
+
+		// GIVEN
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		UserType jim = prismContext.createKnownObjectable(UserType.class)
+				.name(USER_JIM_NAME)
+				.subtype(USER_TYPE_CARTHESIAN)
+				.beginAssignment()
+					.targetRef(ROLE_SUPERUSER_OID, RoleType.COMPLEX_TYPE)
+				.end();
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		addObject(jim.asPrismObject());
+
+		// THEN
+		displayThen(TEST_NAME);
+
+		PrismObject<UserType> userAfter = getUser(jim.getOid());
+		display("User after", userAfter);
+		assertAssignments(userAfter, 1);
+	}
+
+	/**
+	 * MID-4862
+	 */
+	@Test
+	public void test510AssignmentsCombinationCouple() throws Exception {
+		final String TEST_NAME = "test500AssignmentsCombinationCouple";
+		displayTestTitle(TEST_NAME);
+
+		// GIVEN
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		PrismObject<UserType> jim = findUserByUsername(USER_JIM_NAME);
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		assignOrg(jim.getOid(), ORG_SAVE_ELAINE_OID, task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		assertSuccess(result);
+
+		PrismObject<UserType> userAfter = getUser(jim.getOid());
+		display("User after", userAfter);
+		assertAssignments(userAfter, 3);
+	}
+
+	/**
+	 * MID-4863
+	 */
+	@Test
+	public void test520DeleteUserAssignment() throws Exception {
+		final String TEST_NAME = "test520DeleteUserAssignment";
+		displayTestTitle(TEST_NAME);
+
+		// GIVEN
+		Task task = createTask(TEST_NAME);
+		OperationResult result = task.getResult();
+
+		PrismObject<UserType> jim = findUserByUsername(USER_JIM_NAME);
+
+		// WHEN
+		displayWhen(TEST_NAME);
+		AssignmentType orgAssignment = findAssignment(jim, ORG_SAVE_ELAINE_OID, SchemaConstants.ORG_DEFAULT);
+		assertNotNull("org assignment not found", orgAssignment);
+		PrismContainerValue<Containerable> orgAssignmentPcv = new PrismContainerValue<>(prismContext);
+		orgAssignmentPcv.setId(orgAssignment.getId());
+		ObjectDelta<UserType> delta = DeltaBuilder.deltaFor(UserType.class, prismContext)
+				.item(UserType.F_ASSIGNMENT).delete(orgAssignmentPcv)
+				.asObjectDeltaCast(jim.getOid());
+		executeChanges(delta, null, task, result);
+
+		// THEN
+		displayThen(TEST_NAME);
+		assertSuccess(result);
+
+		PrismObject<UserType> userAfter = getUser(jim.getOid());
+		display("User after", userAfter);
+		assertAssignments(userAfter, 1);
+	}
 
 	private String rumFrom(String locality) {
 		return "rum from " + locality;

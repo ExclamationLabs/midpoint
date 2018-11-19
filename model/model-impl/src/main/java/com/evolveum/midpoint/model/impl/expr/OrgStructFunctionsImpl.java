@@ -20,12 +20,12 @@ import com.evolveum.midpoint.model.api.expr.OrgStructFunctions;
 import com.evolveum.midpoint.prism.PrismConstants;
 import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.prism.PrismObject;
-import com.evolveum.midpoint.prism.PrismReferenceValue;
 import com.evolveum.midpoint.prism.polystring.PolyString;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
-import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
 import com.evolveum.midpoint.repo.api.RepositoryService;
-import com.evolveum.midpoint.schema.constants.SchemaConstants;
+import com.evolveum.midpoint.schema.GetOperationOptions;
+import com.evolveum.midpoint.schema.RelationRegistry;
+import com.evolveum.midpoint.schema.SelectorOptions;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.ObjectQueryUtil;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
@@ -45,6 +45,8 @@ import org.springframework.stereotype.Component;
 import javax.xml.namespace.QName;
 import java.util.*;
 
+import static com.evolveum.midpoint.schema.util.FocusTypeUtil.determineSubTypes;
+
 /**
  * @author mederly
  */
@@ -63,6 +65,9 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
     @Autowired
     private PrismContext prismContext;
 
+    @Autowired
+    private RelationRegistry relationRegistry;
+
     /**
      * Returns a list of user's managers. Formally, for each Org O which this user has (any) relation to,
      * all managers of O are added to the result.
@@ -71,13 +76,11 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
      * or defining who is a manager of a user who is itself a manager in its org.unit. (A parent org unit manager,
      * perhaps.)
      *
-     * @param user
      * @return list of oids of the respective managers
-     * @throws SchemaException
-     * @throws ObjectNotFoundException
      */
     @Override
-    public Collection<String> getManagersOids(UserType user, boolean preAuthorized) throws SchemaException, ObjectNotFoundException, SecurityViolationException {
+    public Collection<String> getManagersOids(UserType user, boolean preAuthorized) throws SchemaException,
+            SecurityViolationException {
         Set<String> retval = new HashSet<>();
         for (UserType u : getManagers(user, preAuthorized)) {
             retval.add(u.getOid());
@@ -86,7 +89,8 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
     }
 
     @Override
-    public Collection<String> getManagersOidsExceptUser(UserType user, boolean preAuthorized) throws SchemaException, ObjectNotFoundException, SecurityViolationException {
+    public Collection<String> getManagersOidsExceptUser(UserType user, boolean preAuthorized) throws SchemaException,
+            SecurityViolationException {
         Set<String> retval = new HashSet<>();
         for (UserType u : getManagers(user, preAuthorized)) {
             if (!u.getOid().equals(user.getOid())) {
@@ -108,17 +112,20 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
     }
 
     @Override
-    public Collection<UserType> getManagers(UserType user, boolean preAuthorized) throws SchemaException, ObjectNotFoundException, SecurityViolationException {
+    public Collection<UserType> getManagers(UserType user, boolean preAuthorized) throws SchemaException,
+            SecurityViolationException {
         return getManagers(user, null, false, preAuthorized);
     }
 
     @Override
-    public Collection<UserType> getManagersByOrgType(UserType user, String orgType, boolean preAuthorized) throws SchemaException, ObjectNotFoundException, SecurityViolationException {
+    public Collection<UserType> getManagersByOrgType(UserType user, String orgType, boolean preAuthorized) throws SchemaException,
+            SecurityViolationException {
         return getManagers(user, orgType, false, preAuthorized);
     }
 
     @Override
-    public Collection<UserType> getManagers(UserType user, String orgType, boolean allowSelf, boolean preAuthorized) throws SchemaException, ObjectNotFoundException, SecurityViolationException {
+    public Collection<UserType> getManagers(UserType user, String orgType, boolean allowSelf, boolean preAuthorized) throws SchemaException,
+            SecurityViolationException {
         Set<UserType> retval = new HashSet<>();
         if (user == null) {
         	return retval;
@@ -130,16 +137,17 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
             for (String orgOid : orgOids) {
                 if (orgType != null) {
                     OrgType org = getOrgByOid(orgOid, preAuthorized);
-                    if (org == null || org.getOrgType() == null) {
+                    if (org == null) {
                     	continue;
                     }
-                    if (!org.getOrgType().contains(orgType)) {
+                    if (!determineSubTypes(org).contains(orgType)) {
                         continue;
                     } else {
                         thisLevelOrgs.add(org);
                     }
                 }
                 Collection<UserType> managersOfOrg = getManagersOfOrg(orgOid, preAuthorized);
+                LOGGER.trace("managersOfOrg {}: {}", orgOid, managersOfOrg);
                 for (UserType managerOfOrg: managersOfOrg) {
                     if (allowSelf || !managerOfOrg.getOid().equals(user.getOid())) {
                         retval.add(managerOfOrg);
@@ -193,7 +201,7 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
             return retval;
         }
         for (ObjectReferenceType orgRef : user.getParentOrgRef()) {
-            if (ObjectTypeUtil.relationMatches(relation, orgRef.getRelation())) {
+            if (prismContext.relationMatches(relation, orgRef.getRelation())) {
                 retval.add(orgRef.getOid());
             }
         }
@@ -262,7 +270,7 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
         List<ObjectReferenceType> parentOrgRefs = object.getParentOrgRef();
         List<OrgType> parentOrgs = new ArrayList<>(parentOrgRefs.size());
         for (ObjectReferenceType parentOrgRef: parentOrgRefs) {
-            if (!ObjectTypeUtil.relationMatches(relation, parentOrgRef.getRelation())) {
+            if (!prismContext.relationMatches(relation, parentOrgRef.getRelation())) {
             	continue;
 			}
             OrgType parentOrg;
@@ -276,7 +284,7 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
                 // This should not happen.
                 throw new SystemException(e.getMessage(), e);
             }
-            if (orgType == null || parentOrg.getOrgType().contains(orgType)) {
+            if (orgType == null || determineSubTypes(parentOrg).contains(orgType)) {
                 parentOrgs.add(parentOrg);
             }
         }
@@ -288,12 +296,7 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
         Set<UserType> retval = new HashSet<>();
         OperationResult result = new OperationResult("getManagerOfOrg");
 
-        PrismReferenceValue parentOrgRefVal = new PrismReferenceValue(orgOid, OrgType.COMPLEX_TYPE);
-        parentOrgRefVal.setRelation(SchemaConstants.ORG_MANAGER);
-        ObjectQuery objectQuery = QueryBuilder.queryFor(ObjectType.class, prismContext)
-                .item(ObjectType.F_PARENT_ORG_REF).ref(parentOrgRefVal)
-                .build();
-
+        ObjectQuery objectQuery = ObjectTypeUtil.createManagerQuery(ObjectType.class, orgOid, relationRegistry, prismContext);
         List<PrismObject<ObjectType>> members = searchObjects(ObjectType.class, objectQuery, result, preAuthorized);
         for (PrismObject<ObjectType> member : members) {
             if (member.asObjectable() instanceof UserType) {
@@ -307,7 +310,8 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
     @Override
     public boolean isManagerOf(UserType user, String orgOid, boolean preAuthorized) {
         for (ObjectReferenceType objectReferenceType : user.getParentOrgRef()) {
-            if (orgOid.equals(objectReferenceType.getOid()) && ObjectTypeUtil.isManagerRelation(objectReferenceType.getRelation())) {
+            if (orgOid.equals(objectReferenceType.getOid()) &&
+                    relationRegistry.isManager(objectReferenceType.getRelation())) {
                 return true;
             }
         }
@@ -317,7 +321,7 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
     @Override
     public boolean isManager(UserType user) {
         for (ObjectReferenceType objectReferenceType : user.getParentOrgRef()) {
-            if (ObjectTypeUtil.isManagerRelation(objectReferenceType.getRelation())) {
+            if (relationRegistry.isManager(objectReferenceType.getRelation())) {
                 return true;
             }
         }
@@ -327,9 +331,9 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
     @Override
     public boolean isManagerOfOrgType(UserType user, String orgType, boolean preAuthorized) throws SchemaException {
         for (ObjectReferenceType objectReferenceType : user.getParentOrgRef()) {
-            if (ObjectTypeUtil.isManagerRelation(objectReferenceType.getRelation())) {
+            if (relationRegistry.isManager(objectReferenceType.getRelation())) {
                 OrgType org = getOrgByOid(objectReferenceType.getOid(), preAuthorized);
-                if (org.getOrgType().contains(orgType)) {
+                if (determineSubTypes(org).contains(orgType)) {
                     return true;
                 }
             }
@@ -343,7 +347,8 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
         if (preAuthorized) {
             prismObject = repositoryService.getObject(type, oid, null, getCurrentResult());
         } else {
-            prismObject = modelService.getObject(type, oid, null, getCurrentTask(), getCurrentResult());
+        	Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(GetOperationOptions.createExecutionPhase());
+			prismObject = modelService.getObject(type, oid, options, getCurrentTask(), getCurrentResult());
         }
         return prismObject.asObjectable();
     }
@@ -354,7 +359,8 @@ public class OrgStructFunctionsImpl implements OrgStructFunctions {
             return repositoryService.searchObjects(clazz, query, null, result);
         } else {
             try {
-                return modelService.searchObjects(clazz, query, null, getCurrentTask(), result);
+            	Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(GetOperationOptions.createExecutionPhase());
+                return modelService.searchObjects(clazz, query, options, getCurrentTask(), result);
             } catch (ObjectNotFoundException | CommunicationException | ConfigurationException | ExpressionEvaluationException e) {
                 throw new SystemException("Couldn't search objects: " + e.getMessage(), e);
             }

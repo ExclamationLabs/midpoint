@@ -20,6 +20,7 @@ import com.evolveum.midpoint.common.refinery.RefinedAttributeDefinition;
 import com.evolveum.midpoint.gui.api.component.BasePanel;
 import com.evolveum.midpoint.gui.api.model.LoadableModel;
 import com.evolveum.midpoint.gui.api.page.PageBase;
+import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.prism.*;
 import com.evolveum.midpoint.prism.delta.ItemDelta;
 import com.evolveum.midpoint.prism.path.ItemPath;
@@ -83,21 +84,7 @@ public class PrismPropertyPanel<IW extends ItemWrapper> extends Panel {
             @Override
             public boolean isVisible() {
             	IW propertyWrapper = model.getObject();
-            	
-            	if (visibilityHandler != null) {
-            		ItemVisibility visible = visibilityHandler.isVisible(propertyWrapper);
-            		if (visible != null) {
-            			switch (visible) {
-            				case VISIBLE:
-            					return true;
-            				case HIDDEN:
-            					return false;
-            				default:
-            					// automatic, go on ...
-            			}
-            		}
-            	}
-                boolean visible = propertyWrapper.isVisible();
+                boolean visible = PrismPropertyPanel.this.isVisible(visibilityHandler);
                 LOGGER.trace("isVisible: {}: {}", propertyWrapper, visible);
                 return visible;
             }
@@ -110,7 +97,26 @@ public class PrismPropertyPanel<IW extends ItemWrapper> extends Panel {
 
         initLayout(model, form);
     }
-
+    
+    public boolean isVisible(ItemVisibilityHandler visibilityHandler) {
+    	IW propertyWrapper = getModel().getObject();
+    	
+    	if (visibilityHandler != null) {
+    		ItemVisibility visible = visibilityHandler.isVisible(propertyWrapper);
+    		if (visible != null) {
+    			switch (visible) {
+    				case VISIBLE:
+    					return true;
+    				case HIDDEN:
+    					return false;
+    				default:
+    					// automatic, go on ...
+    			}
+    		}
+    	}
+        return propertyWrapper.isVisible();
+    }
+    
     public IModel<IW> getModel() {
         return model;
     }
@@ -148,7 +154,7 @@ public class PrismPropertyPanel<IW extends ItemWrapper> extends Panel {
 
             @Override
             protected String load() {
-                return loadHelpText(model);
+                return WebComponentUtil.loadHelpText(model, PrismPropertyPanel.this);
             }
         };
         Label help = new Label(ID_HELP);
@@ -308,18 +314,6 @@ public class PrismPropertyPanel<IW extends ItemWrapper> extends Panel {
 
     protected String getValueCssClass() {
         return "row";
-    }
-
-    private String loadHelpText(IModel<IW> model) {
-        IW property = (IW) model.getObject();
-        ItemDefinition def = property.getItemDefinition();
-        String doc = def.getHelp();
-        if (StringUtils.isEmpty(doc)) {
-            return null;
-        }
-
-        return PageBase.createStringResourceStatic(this, doc).getString();
-//        return StringResourceModelMigration.of(doc, null, doc).getString();
     }
 
     protected IModel<String> createStyleClassModel(final IModel<ValueWrapper> value) {

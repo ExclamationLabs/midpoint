@@ -23,7 +23,7 @@ import com.evolveum.midpoint.prism.PrismContainerDefinition;
 import com.evolveum.midpoint.prism.PrismContainerValue;
 import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.PrismValue;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.repo.common.expression.Source;
 import com.evolveum.midpoint.util.ShortDumpable;
 import com.evolveum.midpoint.util.exception.SchemaException;
@@ -90,9 +90,10 @@ public class FocalMappingSpec implements ShortDumpable {
 		AssignmentPropertiesSpecificationType assignmentProperties = autoassignMappingType.getAssignmentProperties();
 		if (assignmentProperties != null) {
 			relation = assignmentProperties.getRelation();
+			assignmentType.getSubtype().addAll(assignmentProperties.getSubtype());
 		}
 		assignmentType.targetRef(role.getOid(), role.asPrismObject().getDefinition().getTypeName(), relation);
-		Source<PrismContainerValue<AssignmentType>, PrismContainerDefinition<AssignmentType>> source = 
+		Source<PrismContainerValue<AssignmentType>, PrismContainerDefinition<AssignmentType>> source =
 				new Source<>(assignment, null, assignment, FocusType.F_ASSIGNMENT);
 		return (Source<V, D>) source;
 	}

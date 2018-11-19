@@ -18,7 +18,8 @@ package com.evolveum.midpoint.model.impl.lens;
 import java.util.*;
 
 import com.evolveum.midpoint.prism.path.ItemPath;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
+import com.evolveum.midpoint.model.api.util.ModelUtils;
 import com.evolveum.midpoint.prism.Item;
 import com.evolveum.midpoint.prism.ItemDefinition;
 import com.evolveum.midpoint.prism.Objectable;
@@ -31,6 +32,7 @@ import com.evolveum.midpoint.prism.delta.ItemDelta;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
+import com.evolveum.midpoint.schema.util.FocusTypeUtil;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.DebugUtil;
 import com.evolveum.midpoint.util.exception.*;
@@ -51,13 +53,16 @@ public class LensFocusContext<O extends ObjectType> extends LensElementContext<O
 
 	private ObjectDeltaWaves<O> secondaryDeltas = new ObjectDeltaWaves<>();
 
-	transient private SecurityPolicyType securityPolicy;
 	transient private ObjectPolicyConfigurationType objectPolicyConfigurationType;
 
 	// extracted from the template(s)
 	// this is not to be serialized into XML, but let's not mark it as transient
 	@NotNull private Map<ItemPath, ObjectTemplateItemDefinitionType> itemDefinitionsMap = new HashMap<>();
 
+	public LensFocusContext(Class<O> objectTypeClass, LensContext<O> lensContext) {
+		super(objectTypeClass, lensContext);
+	}
+	
 	private int getProjectionWave() {
 		return getLensContext().getProjectionWave();
 	}
@@ -66,24 +71,19 @@ public class LensFocusContext<O extends ObjectType> extends LensElementContext<O
 		return getLensContext().getProjectionWave();
 	}
 
-	public SecurityPolicyType getSecurityPolicy() {
-		return securityPolicy;
-	}
-
-	public void setSecurityPolicy(SecurityPolicyType securityPolicy) {
-		this.securityPolicy = securityPolicy;
-	}
-
 	public ObjectPolicyConfigurationType getObjectPolicyConfigurationType() {
 		return objectPolicyConfigurationType;
 	}
-
+	
 	public void setObjectPolicyConfigurationType(ObjectPolicyConfigurationType objectPolicyConfigurationType) {
 		this.objectPolicyConfigurationType = objectPolicyConfigurationType;
 	}
-
-	public LensFocusContext(Class<O> objectTypeClass, LensContext<O> lensContext) {
-		super(objectTypeClass, lensContext);
+	
+	public LifecycleStateModelType getLifecycleModel() {
+		if (objectPolicyConfigurationType == null) {
+			return null;
+		}
+		return objectPolicyConfigurationType.getLifecycleStateModel();
 	}
 
 	@Override
@@ -280,7 +280,7 @@ public class LensFocusContext<O extends ObjectType> extends LensElementContext<O
     	}
     	return getWaveDelta(wave);
     }
-
+    
     @Override
 	public void cleanup() {
 		// Clean up only delta in current wave. The deltas in previous waves are already done.
@@ -288,6 +288,29 @@ public class LensFocusContext<O extends ObjectType> extends LensElementContext<O
 //		if (secondaryDeltas.get(getWave()) != null) {
 //			secondaryDeltas.remove(getWave());
 //		}
+	}
+    
+
+	@Override
+	public void recompute() throws SchemaException, ConfigurationException {
+		super.recompute();
+		updateObjectPolicy();
+	}
+
+	private void updateObjectPolicy() throws ConfigurationException {
+		PrismObject<SystemConfigurationType> systemConfiguration = getLensContext().getSystemConfiguration();
+		if (systemConfiguration == null) {
+			return;
+		}
+		PrismObject<O> object = getObjectAny();
+		ObjectPolicyConfigurationType policyConfigurationType = ModelUtils.determineObjectPolicyConfiguration(object, systemConfiguration.asObjectable());
+		if (policyConfigurationType != getObjectPolicyConfigurationType()) {
+			if (LOGGER.isTraceEnabled()) {
+				LOGGER.trace("Changed policy configuration because of changed subtypes {}:\n{}", 
+						FocusTypeUtil.determineSubTypes(object), policyConfigurationType==null?null:policyConfigurationType.asPrismContainerValue().debugDump(1));
+			}
+			setObjectPolicyConfigurationType(policyConfigurationType);
+		}
 	}
 
 	@Override

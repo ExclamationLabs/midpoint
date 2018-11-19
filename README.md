@@ -1,6 +1,8 @@
 Status: [![Build Status](https://travis-ci.org/Evolveum/midpoint.svg?branch=master)](https://travis-ci.org/Evolveum/midpoint)
 
-MidPoint 3.8 "Watt"
+Gitter: [![Gitter](https://badges.gitter.im/JoinChat.svg)](https://gitter.im/Evolveum/midpoint)
+
+MidPoint 3.9 "Galileo"
 ------------------------------------
 
 General information:

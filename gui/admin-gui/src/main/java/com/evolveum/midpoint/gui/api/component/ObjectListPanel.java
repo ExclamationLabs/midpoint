@@ -25,6 +25,8 @@ import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.task.api.Task;
+import com.evolveum.midpoint.web.component.data.column.InlineMenuButtonColumn;
+import com.evolveum.midpoint.web.component.util.SerializableSupplier;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.wicket.Component;
@@ -64,6 +66,8 @@ import com.evolveum.midpoint.web.session.PageStorage;
 import com.evolveum.midpoint.web.session.UserProfileStorage.TableId;
 import org.jetbrains.annotations.NotNull;
 
+import static java.util.Collections.singleton;
+
 /**
  * @author katkav
  */
@@ -75,6 +79,8 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 	private static final String ID_TABLE = "table";
 
 	private static final Trace LOGGER = TraceManager.getTrace(ObjectListPanel.class);
+	private static final String DOT_CLASS = ObjectListPanel.class.getName() + ".";
+	private static final String OPERATION_LOAD_CUSTOM_MENU_ITEMS = DOT_CLASS + "loadCustomMenuItems";
 
 	private ObjectTypes type;
 	private PageBase parentPage;
@@ -87,8 +93,6 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 
 	private TableId tableId;
 
-	protected List<O> selectedObjects = null;
-
 	private String addutionalBoxCssClasses;
 
 	public Class<? extends O> getType() {
@@ -100,24 +104,23 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 	 */
 	public ObjectListPanel(String id, Class<? extends O> defaultType, TableId tableId, Collection<SelectorOptions<GetOperationOptions>> options,
 			PageBase parentPage) {
-		this(id, defaultType, tableId, options, false, parentPage, null);
+		this(id, defaultType, tableId, options, false, parentPage);
 	}
 
 	/**
 	 * @param defaultType specifies type of the object that will be selected by default. It can be changed.
 	 */
 	ObjectListPanel(String id, Class<? extends O> defaultType, TableId tableId, boolean multiselect, PageBase parentPage) {
-		this(id, defaultType, tableId, null, multiselect, parentPage, null);
+		this(id, defaultType, tableId, null, multiselect, parentPage);
 	}
 
 	public ObjectListPanel(String id, Class<? extends O> defaultType, TableId tableId, Collection<SelectorOptions<GetOperationOptions>> options,
-						   boolean multiselect, PageBase parentPage, List<O> selectedObjectsList) {
+						   boolean multiselect, PageBase parentPage) {
 		super(id);
 		this.type = defaultType  != null ? ObjectTypes.getObjectType(defaultType) : null;
 		this.parentPage = parentPage;
 		this.options = options;
 		this.multiselect = multiselect;
-		this.selectedObjects = selectedObjectsList;
 		this.tableId = tableId;
 		initLayout();
 	}
@@ -128,10 +131,11 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 
 	public int getSelectedObjectsCount(){
 		List<O> selectedList = getSelectedObjects();
-		return selectedList == null ? 0 : selectedList.size();
+		return selectedList.size();
 	}
 
 	@SuppressWarnings("unchecked")
+	@NotNull
 	public List<O> getSelectedObjects() {
 		BaseSortableDataProvider<SelectableBean<O>> dataProvider = getDataProvider();
 		if (dataProvider instanceof SelectableBeanObjectDataProvider) {
@@ -187,6 +191,16 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 			columns = initCustomColumns();
 		} else {
 			columns = initColumns();
+		}
+		List<InlineMenuItem> menuItems = createInlineMenu();
+		if (menuItems == null) {
+			menuItems = new ArrayList<>();
+		}
+		addCustomActions(menuItems, () -> getSelectedObjects());
+
+		if (!menuItems.isEmpty()) {
+			InlineMenuButtonColumn<SelectableBean<O>> actionsColumn = new InlineMenuButtonColumn<>(menuItems, parentPage);
+			columns.add(actionsColumn);
 		}
 
 		BaseSortableDataProvider<SelectableBean<O>> provider = initProvider();
@@ -247,10 +261,6 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 		columns.add(iconColumn);
 
 		columns.addAll(getCustomColumnsTransformed(customColumns));
-		IColumn<SelectableBean<O>, String> actionsColumn = createActionsColumn();
-		if (actionsColumn != null){
-			columns.add(actionsColumn);
-		}
 		LOGGER.trace("Finished to init custom columns, created columns {}", columns);
 		return columns;
 	}
@@ -365,18 +375,14 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 
 		List<IColumn<SelectableBean<O>, String>> others = createColumns();
 		columns.addAll(others);
-		IColumn<SelectableBean<O>, String> actionsColumn = createActionsColumn();
-		if (actionsColumn != null) {
-			columns.add(createActionsColumn());
-		}
 		LOGGER.trace("Finished to init columns, created columns {}", columns);
 		return columns;
 	}
 
 	protected BaseSortableDataProvider<SelectableBean<O>> initProvider() {
-		Set<O> selectedObjectsSet = selectedObjects == null ? null : new HashSet<>(selectedObjects);
+		List<O> preSelectedObjectList = getPreselectedObjectList();
 		SelectableBeanObjectDataProvider<O> provider = new SelectableBeanObjectDataProvider<O>(
-				parentPage, (Class) type.getClassDefinition(), selectedObjectsSet) {
+				parentPage, (Class) type.getClassDefinition(), preSelectedObjectList == null ? null : new HashSet<>(preSelectedObjectList)) {
 			private static final long serialVersionUID = 1L;
 
 			@Override
@@ -393,9 +399,13 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 			@Override
 			public SelectableBean<O> createDataObjectWrapper(O obj) {
 				SelectableBean<O> bean = super.createDataObjectWrapper(obj);
+
 				List<InlineMenuItem> inlineMenu = createInlineMenu();
 				if (inlineMenu != null) {
 					bean.getMenuItems().addAll(inlineMenu);
+				}
+				if (obj.getOid() != null) {
+					addCustomActions(bean.getMenuItems(), () -> singleton(obj));
 				}
 				return bean;
 			}
@@ -409,13 +419,23 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 				}
 				return super.createObjectOrderings(sortParam);
 			}
+
+			@Override
+			public boolean isOrderingDisabled() {
+				GuiObjectListPanelConfigurationType additionalPanelConfig = getAdditionalPanelConfig();
+				if (additionalPanelConfig != null && additionalPanelConfig.isDisableSorting() != null) {
+					return additionalPanelConfig.isDisableSorting();
+				} else {
+					return super.isOrderingDisabled();
+				}
+			}
 		};
 		if (options == null){
-			if (ResourceType.class.equals(type)) {
+			if (ResourceType.class.equals(type.getClassDefinition())) {
 				options = SelectorOptions.createCollection(GetOperationOptions.createNoFetch());
 			}
 		} else {
-			if (ResourceType.class.equals(type)) {
+			if (ResourceType.class.equals(type.getClassDefinition())) {
 				GetOperationOptions root = SelectorOptions.findRootOptions(options);
 				root.setNoFetch(Boolean.TRUE);
 			}
@@ -426,7 +446,20 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 		return provider;
 	}
 
+	protected List<O> getPreselectedObjectList(){
+		return null;
+	}
+
 	protected List<ObjectOrdering> createCustomOrdering(SortParam<String> sortParam) {
+		return null;
+	}
+
+	/**
+	 * should be overrided in case when ObjectListPanel is used
+	 * for additional panel of some object type (e.g. members panel on the org tree page)
+	 * @return
+	 */
+	protected GuiObjectListPanelConfigurationType getAdditionalPanelConfig(){
 		return null;
 	}
 
@@ -486,6 +519,10 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 				.getDataTable().getDataProvider();
 		return provider;
 
+	}
+
+	protected Collection<SelectorOptions<GetOperationOptions>> getOptions(){
+		return options;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -606,34 +643,43 @@ public abstract class ObjectListPanel<O extends ObjectType> extends BasePanel<O>
 
 	protected abstract List<IColumn<SelectableBean<O>, String>> createColumns();
 
-	protected IColumn<SelectableBean<O>, String> createActionsColumn(){
-		return null;
-	}
-
 	protected abstract List<InlineMenuItem> createInlineMenu();
 
+	protected void addCustomActions(@NotNull List<InlineMenuItem> actionsList, SerializableSupplier<Collection<? extends ObjectType>> objectsSupplier) {
+		GuiObjectListViewType guiObjectListViewType = getGuiObjectListViewType();
+		if (guiObjectListViewType != null && !guiObjectListViewType.getAction().isEmpty()) {
+			actionsList.addAll(WebComponentUtil.createMenuItemsFromActions(guiObjectListViewType.getAction(),
+					OPERATION_LOAD_CUSTOM_MENU_ITEMS, parentPage, objectsSupplier));
+		}
+	}
 
 	public void addPerformed(AjaxRequestTarget target, List<O> selected) {
 		parentPage.hideMainPopup(target);
 	}
 
 	private List<GuiObjectColumnType> getGuiObjectColumnTypeList(){
+		GuiObjectListViewType guiObjectListViewType = getGuiObjectListViewType();
+		return guiObjectListViewType != null ? guiObjectListViewType.getColumn() : null;
+	}
+
+	private GuiObjectListViewType getGuiObjectListViewType(){
 		AdminGuiConfigurationType adminGuiConfig = parentPage.getPrincipal().getAdminGuiConfiguration();
 		if (adminGuiConfig != null && adminGuiConfig.getObjectLists() != null &&
 				adminGuiConfig.getObjectLists().getObjectList() != null){
-			for (GuiObjectListType object : adminGuiConfig.getObjectLists().getObjectList()){
+			for (GuiObjectListViewType object : adminGuiConfig.getObjectLists().getObjectList()){
 				if (object.getType() != null &&
 						!type.getClassDefinition().getSimpleName().equals(object.getType().getLocalPart())){
 					continue;
 				}
-				return object.getColumn();
+				return object;
 			}
 		}
 		return null;
 	}
 
 	private boolean isCustomColumnsListConfigured(){
-		return getGuiObjectColumnTypeList() != null;
+		List<GuiObjectColumnType> columnList = getGuiObjectColumnTypeList();
+		return columnList != null && !columnList.isEmpty();
 	}
 
 	private String getItemDisplayName(GuiObjectColumnType column){

@@ -15,12 +15,20 @@
  */
 package com.evolveum.midpoint.web.page.admin.orgs;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
+import com.evolveum.midpoint.gui.api.model.LoadableModel;
+import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
+import com.evolveum.midpoint.prism.query.ObjectFilter;
+import com.evolveum.midpoint.schema.result.OperationResult;
+import com.evolveum.midpoint.task.api.Task;
+import com.evolveum.midpoint.web.session.OrgTreeStateStorage;
+import com.evolveum.midpoint.web.session.UsersStorage;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.FocusType;
 import org.apache.wicket.Component;
 import org.apache.wicket.ajax.AjaxRequestTarget;
 import org.apache.wicket.markup.html.panel.Panel;
+import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.Model;
 import org.apache.wicket.model.StringResourceModel;
 
@@ -34,7 +42,7 @@ import com.evolveum.midpoint.web.component.util.SelectableBean;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgType;
 
-public class OrgTreeAssignablePanel extends BasePanel<OrgType> implements Popupable{
+public class OrgTreeAssignablePanel  extends BasePanel<OrgType> implements Popupable{
 
 	private static final long serialVersionUID = 1L;
 
@@ -43,10 +51,12 @@ public class OrgTreeAssignablePanel extends BasePanel<OrgType> implements Popupa
 	public static final String PARAM_ORG_RETURN = "org";
 
 	private static final String DOT_CLASS = OrgTreeAssignablePanel.class.getName() + ".";
+	private static final String OPERATION_LOAD_ASSIGNABLE_ITEMS = DOT_CLASS + "loadAssignableOrgs";
 
 	private static final String ID_ORG_TABS = "orgTabs";
 	private static final String ID_ASSIGN = "assign";
 	private boolean selectable;
+	List<OrgType> allTabsSelectedOrgs = new ArrayList<>();
 
 	public OrgTreeAssignablePanel(String id, boolean selectable, PageBase parentPage) {
 		super(id);
@@ -56,20 +66,67 @@ public class OrgTreeAssignablePanel extends BasePanel<OrgType> implements Popupa
 	}
 
 	private void initLayout() {
-
+		if (getPreselectedOrgsList() != null) {
+			allTabsSelectedOrgs.addAll(getPreselectedOrgsList());
+		}
 		AbstractOrgTabPanel tabbedPanel = new AbstractOrgTabPanel(ID_ORG_TABS, getPageBase()) {
 
 			private static final long serialVersionUID = 1L;
 
 			@Override
 			protected Panel createTreePanel(String id, Model<String> model, PageBase pageBase) {
-				OrgTreePanel panel = new OrgTreePanel(id, model, selectable, pageBase) {
+				OrgTreePanel panel = new OrgTreePanel(id, model, selectable, pageBase, "", allTabsSelectedOrgs) {
 					private static final long serialVersionUID = 1L;
 
 					@Override
+					protected IModel<Boolean> getCheckBoxValueModel(IModel<SelectableBean<OrgType>> rowModel){
+						return new LoadableModel<Boolean>(true) {
+
+							@Override
+							public Boolean load() {
+								for (OrgType org : allTabsSelectedOrgs){
+									if (rowModel.getObject().getValue().getOid().equals(org.getOid())) {
+										return true;
+									}
+								}
+								return false;
+							}
+						};
+					}
+
+					@Override
+					protected void onOrgTreeCheckBoxSelectionPerformed(AjaxRequestTarget target, IModel<SelectableBean<OrgType>> rowModel){
+							if (rowModel != null && rowModel.getObject() != null) {
+								boolean isAlreadyInList = false;
+								Iterator<OrgType> it = allTabsSelectedOrgs.iterator();
+								while (it.hasNext()){
+									OrgType org = it.next();
+									if (org.getOid().equals(rowModel.getObject().getValue().getOid())) {
+										isAlreadyInList = true;
+										it.remove();
+									}
+								}
+								if (!isAlreadyInList){
+									allTabsSelectedOrgs.add(rowModel.getObject().getValue());
+								}
+							}
+						OrgTreeAssignablePanel.this.onOrgTreeCheckBoxSelectionPerformed(target, rowModel);
+					}
+
+					@Override
 					protected void selectTreeItemPerformed(SelectableBean<OrgType> selected,
-							AjaxRequestTarget target) {
+														   AjaxRequestTarget target) {
 						onItemSelect(selected, target);
+					}
+
+					@Override
+					protected OrgTreeStateStorage getOrgTreeStateStorage(){
+						return null;
+					}
+
+					@Override
+					protected ObjectFilter getCustomFilter(){
+						return getAssignableItemsFilter();
 					}
 				};
 
@@ -80,6 +137,16 @@ public class OrgTreeAssignablePanel extends BasePanel<OrgType> implements Popupa
 			@Override
 			protected boolean isWarnMessageVisible(){
 				return false;
+			}
+
+			@Override
+			protected ObjectFilter getAssignableItemsFilter(){
+				return OrgTreeAssignablePanel.this.getAssignableItemsFilter();
+			}
+
+			@Override
+			protected UsersStorage getUsersSessionStorage(){
+				return null;
 			}
 
 		};
@@ -94,14 +161,7 @@ public class OrgTreeAssignablePanel extends BasePanel<OrgType> implements Popupa
 
 			@Override
 			public void onClick(AjaxRequestTarget target) {
-				AbstractOrgTabPanel orgPanel = (AbstractOrgTabPanel) getParent().get(ID_ORG_TABS);
-				Panel treePanel = orgPanel.getPanel();
-				List<OrgType> selectedOrgs = new ArrayList<>();
-				if (treePanel != null && treePanel instanceof OrgTreePanel) {
-					selectedOrgs = ((OrgTreePanel)treePanel).getSelectedOrgs();
-				}
-				assignSelectedOrgPerformed(selectedOrgs, target);
-
+				assignSelectedOrgPerformed(getAllTabPanelsSelectedOrgs(), target);
 			}
 		};
 		assignButton.setOutputMarkupId(true);
@@ -110,20 +170,48 @@ public class OrgTreeAssignablePanel extends BasePanel<OrgType> implements Popupa
 
 			@Override
 			public boolean isVisible() {
-				return selectable;
+				return isAssignButtonVisible();
 			}
 		});
 		add(assignButton);
 
 	}
 
+	protected boolean isAssignButtonVisible(){
+		return selectable;
+	}
+
 	protected void assignSelectedOrgPerformed(List<OrgType> selectedOrgs, AjaxRequestTarget target) {
 
+	}
+
+	public List<OrgType> getAllTabPanelsSelectedOrgs(){
+		return allTabsSelectedOrgs;
 	}
 
 	protected void onItemSelect(SelectableBean<OrgType> selected, AjaxRequestTarget target) {
 
 	}
+
+	private ObjectFilter getAssignableItemsFilter(){
+		if (getAssignmentOwnerObject() == null){
+			return null;
+		}
+		Task task = getPageBase().createSimpleTask(OPERATION_LOAD_ASSIGNABLE_ITEMS);
+		OperationResult result = task.getResult();
+		return WebComponentUtil.getAssignableRolesFilter(getAssignmentOwnerObject().asPrismObject(), OrgType.class,
+				result, task, getPageBase());
+	}
+
+	protected <F extends FocusType> F getAssignmentOwnerObject(){
+		return null;
+	}
+
+	protected List<OrgType> getPreselectedOrgsList(){
+		return null;
+	}
+
+	protected void onOrgTreeCheckBoxSelectionPerformed(AjaxRequestTarget target, IModel<SelectableBean<OrgType>> rowModel){}
 
 	@Override
 	public int getWidth() {
@@ -133,6 +221,16 @@ public class OrgTreeAssignablePanel extends BasePanel<OrgType> implements Popupa
 	@Override
 	public int getHeight() {
 		return 500;
+	}
+
+	@Override
+	public String getWidthUnit(){
+		return "px";
+	}
+
+	@Override
+	public String getHeightUnit(){
+		return "px";
 	}
 
 	@Override

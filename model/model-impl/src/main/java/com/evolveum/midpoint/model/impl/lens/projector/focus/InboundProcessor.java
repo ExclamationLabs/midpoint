@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,10 +76,10 @@ import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.prism.delta.PrismValueDeltaSetTriple;
 import com.evolveum.midpoint.prism.delta.PropertyDelta;
 import com.evolveum.midpoint.prism.path.ItemPath;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
 import com.evolveum.midpoint.provisioning.api.ProvisioningService;
 import com.evolveum.midpoint.repo.common.expression.ExpressionUtil;
 import com.evolveum.midpoint.repo.common.expression.ExpressionVariables;
-import com.evolveum.midpoint.repo.common.expression.ItemDeltaItem;
 import com.evolveum.midpoint.repo.common.expression.Source;
 import com.evolveum.midpoint.repo.common.expression.ValuePolicyResolver;
 import com.evolveum.midpoint.repo.common.expression.VariableProducer;
@@ -179,7 +179,7 @@ public class InboundProcessor {
 
 		try {
             for (LensProjectionContext projectionContext : context.getProjectionContexts()) {
-            	if (projectionContext.isThombstone()) {
+            	if (projectionContext.isTombstone()) {
             		if (LOGGER.isTraceEnabled()) {
             			LOGGER.trace("Skipping processing of inbound expressions for projection {} because is is thombstone", projectionContext.getHumanReadableName());
             		}
@@ -241,7 +241,7 @@ public class InboundProcessor {
         }
 
         PrismObject<ShadowType> accountCurrent = projContext.getObjectCurrent();
-        if (hasAnyStrongMapping(projectionDefinition) && !projContext.isFullShadow() && !projContext.isThombstone()) {
+        if (hasAnyStrongMapping(projectionDefinition) && !projContext.isFullShadow() && !projContext.isTombstone()) {
         	LOGGER.trace("There are strong inbound mapping, but the shadow hasn't be fully loaded yet. Trying to load full shadow now.");
 			accountCurrent = loadProjection(context, projContext, task, result, accountCurrent);
 			if (projContext.getSynchronizationPolicyDecision() == SynchronizationPolicyDecision.BROKEN) {
@@ -735,7 +735,7 @@ public class InboundProcessor {
     		ItemDelta<V,D> attributeAPrioriDelta,
             PrismObject<F> focusNew, 
             VariableProducer<V> variableProducer, Map<ItemDefinition, List<MappingImpl<?,?>>> mappingsToTarget,
-            Task task, OperationResult result) throws ExpressionEvaluationException, ObjectNotFoundException, SchemaException, ConfigurationException, SecurityViolationException, CommunicationException {
+            Task task, OperationResult result) throws ObjectNotFoundException, SchemaException, ConfigurationException, CommunicationException, SecurityViolationException, ExpressionEvaluationException {
 
     	if (oldAccountProperty != null && oldAccountProperty.hasRaw()) {
         	throw new SystemException("Property "+oldAccountProperty+" has raw parsing state, such property cannot be used in inbound expressions");
@@ -755,6 +755,7 @@ public class InboundProcessor {
     	variables.addVariableDefinition(ExpressionConstants.VAR_FOCUS, focusNew);
     	variables.addVariableDefinition(ExpressionConstants.VAR_ACCOUNT, accountNew);
     	variables.addVariableDefinition(ExpressionConstants.VAR_SHADOW, accountNew);
+    	variables.addVariableDefinition(ExpressionConstants.VAR_PROJECTION, accountNew);
     	variables.addVariableDefinition(ExpressionConstants.VAR_RESOURCE, resource);
     	variables.addVariableDefinition(ExpressionConstants.VAR_CONFIGURATION, context.getSystemConfiguration());
     	variables.addVariableDefinition(ExpressionConstants.VAR_OPERATION, context.getFocusContext().getOperation().getValue());
@@ -1359,6 +1360,7 @@ public class InboundProcessor {
 				PrismObject<ShadowType> accountNew = projContext.getObjectNew();
 				builder = builder.addVariableDefinition(ExpressionConstants.VAR_ACCOUNT, accountNew)
 						.addVariableDefinition(ExpressionConstants.VAR_SHADOW, accountNew)
+						.addVariableDefinition(ExpressionConstants.VAR_PROJECTION, accountNew)
 						.addVariableDefinition(ExpressionConstants.VAR_RESOURCE, projContext.getResource())
 						.valuePolicyResolver(createStringPolicyResolver(context, task, opResult))
 						.originType(OriginType.INBOUND)

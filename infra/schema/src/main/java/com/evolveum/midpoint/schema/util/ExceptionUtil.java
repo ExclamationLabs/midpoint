@@ -24,6 +24,7 @@ import com.evolveum.midpoint.util.exception.PolicyViolationException;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.exception.SecurityViolationException;
 import com.evolveum.midpoint.util.exception.TunnelException;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.CriticalityType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ErrorSelectorType;
 
 /**
@@ -52,29 +53,32 @@ public class ExceptionUtil {
 		return null;
 	}
 
-	public static boolean isSelected(ErrorSelectorType selector, Throwable exception, boolean defaultValue) {
+	public static CriticalityType getCriticality(ErrorSelectorType selector, Throwable exception, CriticalityType defaultValue) {
 		if (selector == null) {
 			return defaultValue;
 		}
 		if (exception instanceof CommunicationException) {
-			return isSelected(selector.isNetwork(), defaultValue);
+			return getCriticality(selector.getNetwork(), defaultValue);
 		}
 		if (exception instanceof SecurityViolationException) {
-			return isSelected(selector.isSecurity(), defaultValue);
+			return getCriticality(selector.getSecurity(), defaultValue);
 		}
 		if (exception instanceof PolicyViolationException) {
-			return isSelected(selector.isPolicy(), defaultValue);
+			return getCriticality(selector.getPolicy(), defaultValue);
 		}
 		if (exception instanceof SchemaException) {
-			return isSelected(selector.isSchema(), defaultValue);
+			return getCriticality(selector.getSchema(), defaultValue);
 		}
 		if (exception instanceof ConfigurationException || exception instanceof ExpressionEvaluationException) {
-			return isSelected(selector.isConfiguration(), defaultValue);
+			return getCriticality(selector.getConfiguration(), defaultValue);
 		}
-		return isSelected(selector.isGeneric(), defaultValue);
+		if (exception instanceof UnsupportedOperationException) {
+			return getCriticality(selector.getUnsupported(), defaultValue);
+		}
+		return getCriticality(selector.getGeneric(), defaultValue);
 	}
 
-	private static boolean isSelected(Boolean value, boolean defaultValue) {
+	private static CriticalityType getCriticality(CriticalityType value, CriticalityType defaultValue) {
 		if (value == null) {
 			return defaultValue;
 		} else {
@@ -98,6 +102,17 @@ public class ExceptionUtil {
 	public static <T extends Throwable> T findCause(Throwable throwable, Class<T> causeClass) {
 		while (throwable != null) {
 			if (causeClass.isAssignableFrom(throwable.getClass())) {
+				//noinspection unchecked
+				return (T) throwable;
+			}
+			throwable = throwable.getCause();
+		}
+		return null;
+	}
+
+	public static <T extends Throwable> T findException(Throwable throwable, Class<T> clazz) {
+		while (throwable != null) {
+			if (clazz.isAssignableFrom(throwable.getClass())) {
 				//noinspection unchecked
 				return (T) throwable;
 			}

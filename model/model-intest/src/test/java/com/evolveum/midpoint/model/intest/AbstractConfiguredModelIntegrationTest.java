@@ -41,10 +41,7 @@ import com.evolveum.midpoint.util.QNameUtil;
 import com.evolveum.midpoint.util.exception.*;
 import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.RoleType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.SystemObjectsType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.TaskType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 
 import org.testng.AssertJUnit;
 import org.testng.IHookCallBack;
@@ -75,11 +72,10 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 	public static final File SYSTEM_CONFIGURATION_FILE = new File(COMMON_DIR, "system-configuration.xml");
 	public static final String SYSTEM_CONFIGURATION_OID = SystemObjectsType.SYSTEM_CONFIGURATION.value();
 
-	protected static final int NUMBER_OF_GLOBAL_POLICY_RULES = 6;
+	protected static final int NUMBER_OF_GLOBAL_POLICY_RULES = 7;
 
 	public static final File USER_ADMINISTRATOR_FILE = new File(COMMON_DIR, "user-administrator.xml");
 	protected static final String USER_ADMINISTRATOR_OID = "00000000-0000-0000-0000-000000000002";
-	protected static final String USER_ADMINISTRATOR_USERNAME = "administrator";
 
 	protected static final String USER_TEMPLATE_FILENAME = COMMON_DIR + "/user-template.xml";
 	protected static final String USER_TEMPLATE_OID = "10000000-0000-0000-0000-000000000002";
@@ -101,6 +97,9 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 
     protected static final String USER_TEMPLATE_ORG_ASSIGNMENT_FILENAME = COMMON_DIR + "/user-template-org-assignment.xml";
     protected static final String USER_TEMPLATE_ORG_ASSIGNMENT_OID = "10000000-0000-0000-0000-000000000444";
+
+    protected static final String USER_TEMPLATE_CARTHESIAN_FILENAME = COMMON_DIR + "/user-template-carthesian.xml";
+    protected static final String USER_TEMPLATE_CARTHESIAN_OID = "8e47c2b2-dde6-44a9-a7c0-de21a14cb70d";
 
     protected static final File OBJECT_TEMPLATE_PERSONA_ADMIN_FILE = new File(COMMON_DIR, "object-template-persona-admin.xml");
 	protected static final String OBJECT_TEMPLATE_PERSONA_ADMIN_OID = "894ea1a8-2c0a-11e7-a950-ff2047b0c053";
@@ -294,6 +293,9 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 	protected static final File ROLE_ADMINS_FILE = new File(COMMON_DIR, "role-admins.xml");
 	protected static final String ROLE_ADMINS_OID = "be835a70-e3f4-11e6-82cb-9b47ecb57v15";
 	
+	protected static final File ROLE_END_USER_FILE = new File(COMMON_DIR, "role-end-user.xml");
+	protected static final String ROLE_END_USER_OID = "00000000-0000-0000-0000-00000000aa0f";
+	
 	public static final File USER_JACK_FILE = new File(COMMON_DIR, "user-jack.xml");
 	public static final String USER_JACK_OID = "c0c010c0-d34d-b33f-f00d-111111111111";
 	public static final String USER_JACK_USERNAME = "jack";
@@ -302,7 +304,7 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 	public static final String USER_JACK_FAMILY_NAME = "Sparrow";
 	public static final String USER_JACK_ADDITIONAL_NAME = "Jackie";
 	public static final String USER_JACK_DESCRIPTION = "Where's the rum?";
-	public static final String USER_JACK_EMPLOYEE_TYPE = "CAPTAIN";
+	public static final String USER_JACK_SUBTYPE = "captain";
 	public static final String USER_JACK_EMPLOYEE_NUMBER = "emp1234";
 	public static final String USER_JACK_LOCALITY = "Caribbean";
 	public static final String USER_JACK_PASSWORD = "deadmentellnotales";
@@ -429,6 +431,7 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 	protected static final String ORG_SCUMM_BAR_NAME = "F0006";
 	protected static final String ORG_SCUMM_BAR_DISPLAY_NAME = "Scumm Bar";
 	protected static final String ORG_MINISTRY_OF_OFFENSE_OID = "00000000-8888-6666-0000-100000000003";
+	protected static final String ORG_MINISTRY_OF_OFFENSE_NAME = "F0003";
     protected static final String ORG_MINISTRY_OF_DEFENSE_OID = "00000000-8888-6666-0000-100000000002";
     protected static final String ORG_MINISTRY_OF_DEFENSE_NAME = "F0002";
 	protected static final String ORG_MINISTRY_OF_RUM_OID = "00000000-8888-6666-0000-100000000004";
@@ -494,6 +497,7 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 	protected static final QName PIRACY_MARK = new QName(NS_PIRACY, "mark");
 	protected static final QName PIRACY_KEY = new QName(NS_PIRACY, "key");
 	protected static final QName PIRACY_BINARY_ID = new QName(NS_PIRACY, "binaryId");
+	protected static final QName RELATION_PIRACY_CAPTAIN = new QName(NS_PIRACY, "captain");
 
     protected static final ItemPath ROLE_EXTENSION_COST_CENTER_PATH = new ItemPath(RoleType.F_EXTENSION, new QName(NS_PIRACY, "costCenter"));
 
@@ -523,6 +527,14 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 	protected static final String AUTZ_SAIL_URL = QNameUtil.qNameToUri(AUTZ_SAIL_QNAME);
 	protected static final QName AUTZ_DRINK_QNAME = new QName(NS_TEST_AUTZ, "drink");
 	protected static final String AUTZ_DRINK_URL = QNameUtil.qNameToUri(AUTZ_DRINK_QNAME);
+	protected static final QName AUTZ_APPARATE_QNAME = new QName(NS_TEST_AUTZ, "apparate");
+	protected static final String AUTZ_APPARATE_URL = QNameUtil.qNameToUri(AUTZ_APPARATE_QNAME);
+	protected static final QName AUTZ_GAMBLE_QNAME = new QName(NS_TEST_AUTZ, "gamble");
+	protected static final String AUTZ_GAMBLE_URL = QNameUtil.qNameToUri(AUTZ_GAMBLE_QNAME);
+	protected static final QName AUTZ_CROUPIER_QNAME = new QName(NS_TEST_AUTZ, "croupier");
+	protected static final String AUTZ_CROUPIER_URL = QNameUtil.qNameToUri(AUTZ_CROUPIER_QNAME);
+	protected static final QName AUTZ_PIT_BOSS_QNAME = new QName(NS_TEST_AUTZ, "pitBoss");
+	protected static final String AUTZ_PIT_BOSS_URL = QNameUtil.qNameToUri(AUTZ_PIT_BOSS_QNAME);
 
 	protected static final String NOTIFIER_ACCOUNT_PASSWORD_NAME = "accountPasswordNotifier";
 	protected static final String NOTIFIER_USER_PASSWORD_NAME = "userPasswordNotifier";
@@ -547,16 +559,20 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 		ManualConnectorInstance.setRandomDelayRange(0);
 
 		// System Configuration
+		PrismObject<SystemConfigurationType> configuration;
 		try {
 			File systemConfigurationFile = getSystemConfigurationFile();
 			if (systemConfigurationFile != null) {
-				repoAddObjectFromFile(systemConfigurationFile, initResult);
+				configuration = repoAddObjectFromFile(systemConfigurationFile, initResult);
 			} else {
-				addSystemConfigurationObject(initResult);
+				configuration = addSystemConfigurationObject(initResult);
 			}
 		} catch (ObjectAlreadyExistsException e) {
 			throw new ObjectAlreadyExistsException("System configuration already exists in repository;" +
 					"looks like the previous test haven't cleaned it up", e);
+		}
+		if (configuration != null) {
+			relationRegistry.applyRelationsConfiguration(configuration.asObjectable());
 		}
 
 		// Users
@@ -578,8 +594,9 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 	}
 
 	// to be used in very specific cases only (it is invoked when getSystemConfigurationFile returns null).
-	protected void addSystemConfigurationObject(OperationResult initResult) throws IOException, CommonException,
+	protected PrismObject<SystemConfigurationType> addSystemConfigurationObject(OperationResult initResult) throws IOException, CommonException,
 			EncryptionException {
+		return null;
 	}
 
 	protected PrismObject<UserType> getDefaultActor() {
@@ -810,4 +827,7 @@ public class AbstractConfiguredModelIntegrationTest extends AbstractModelIntegra
 		return description + " -- " + fullName;
 	}
 
+	protected void loginAdministrator() throws SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
+		login(userAdministrator);
+	}
 }

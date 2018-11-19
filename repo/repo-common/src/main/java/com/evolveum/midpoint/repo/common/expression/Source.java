@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2015 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,18 @@ import com.evolveum.midpoint.prism.Item;
 import com.evolveum.midpoint.prism.ItemDefinition;
 import com.evolveum.midpoint.prism.PrismValue;
 import com.evolveum.midpoint.prism.delta.ItemDelta;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
 import com.evolveum.midpoint.util.DebugDumpable;
 import com.evolveum.midpoint.util.DebugUtil;
 import com.evolveum.midpoint.util.PrettyPrinter;
+import com.evolveum.midpoint.util.ShortDumpable;
 import com.evolveum.midpoint.util.exception.SchemaException;
 
 /**
  * @author semancik
  *
  */
-public class Source<V extends PrismValue,D extends ItemDefinition> extends ItemDeltaItem<V,D> implements DebugDumpable {
+public class Source<V extends PrismValue,D extends ItemDefinition> extends ItemDeltaItem<V,D> implements DebugDumpable, ShortDumpable {
 
 	private QName name;
 
@@ -62,16 +64,19 @@ public class Source<V extends PrismValue,D extends ItemDefinition> extends ItemD
 
 	@Override
 	public String toString() {
-		return "Source(" + shortDebugDump() + ")";
-	}
-
-	public String shortDebugDump() {
-		return PrettyPrinter.prettyPrint(name) + ": old=" + itemOld + ", delta=" + delta + ", new=" + itemNew;
+		return "Source(" + shortDump() + ")";
 	}
 
 	@Override
-	public String debugDump() {
-		return debugDump(0);
+	public void shortDump(StringBuilder sb) {
+		sb.append(PrettyPrinter.prettyPrint(name)).append(": old=").append(getItemOld()).append(", delta=").append(getDelta()).append(", new=").append(getItemNew());
+	}
+	
+	public void mediumDump(StringBuilder sb) {
+		sb.append("Source ").append(PrettyPrinter.prettyPrint(name)).append(":\n");
+		sb.append("  old: ").append(getItemOld()).append("\n");
+		sb.append("  delta: ").append(getDelta()).append("\n");
+		sb.append("  new: ").append(getItemNew());
 	}
 
 	@Override
@@ -80,11 +85,11 @@ public class Source<V extends PrismValue,D extends ItemDefinition> extends ItemD
 		DebugUtil.indentDebugDump(sb, indent);
 		sb.append("Source ").append(PrettyPrinter.prettyPrint(name));
 		sb.append("\n");
-		DebugUtil.debugDumpWithLabel(sb, "old", itemOld, indent +1);
+		DebugUtil.debugDumpWithLabel(sb, "old", getItemOld(), indent +1);
 		sb.append("\n");
-		DebugUtil.debugDumpWithLabel(sb, "delta", delta, indent +1);
+		DebugUtil.debugDumpWithLabel(sb, "delta", getDelta(), indent +1);
 		sb.append("\n");
-		DebugUtil.debugDumpWithLabel(sb, "new", itemNew, indent +1);
+		DebugUtil.debugDumpWithLabel(sb, "new", getItemNew(), indent +1);
 		return sb.toString();
 	}
 

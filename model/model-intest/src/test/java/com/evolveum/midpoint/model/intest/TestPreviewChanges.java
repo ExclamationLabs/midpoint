@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -724,7 +724,7 @@ public class TestPreviewChanges extends AbstractInitializedModelIntegrationTest 
 		displayWhen(TEST_NAME);
 		modifyUserReplace(USER_GUYBRUSH_OID, new ItemPath(UserType.F_EXTENSION, PIRACY_WEAPON), task, result,
 				"tongue");
-        assignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_OID, null, task, result);
+        assignAccountToUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -981,7 +981,7 @@ public class TestPreviewChanges extends AbstractInitializedModelIntegrationTest 
 
 		// WHEN
 		displayWhen(TEST_NAME);
-        unassignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_OID, null, task, result);
+        unassignAccountFromUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -1007,7 +1007,7 @@ public class TestPreviewChanges extends AbstractInitializedModelIntegrationTest 
 
 		// WHEN
 		displayWhen(TEST_NAME);
-        assignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_RELATIVE_OID, null, task, result);
+        assignAccountToUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_RELATIVE_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -1169,7 +1169,7 @@ public class TestPreviewChanges extends AbstractInitializedModelIntegrationTest 
 
 		// WHEN
 		displayWhen(TEST_NAME);
-        unassignAccount(USER_GUYBRUSH_OID, RESOURCE_DUMMY_RELATIVE_OID, null, task, result);
+        unassignAccountFromUser(USER_GUYBRUSH_OID, RESOURCE_DUMMY_RELATIVE_OID, null, task, result);
 
 		// THEN
         displayThen(TEST_NAME);
@@ -1344,19 +1344,14 @@ public class TestPreviewChanges extends AbstractInitializedModelIntegrationTest 
 		Collection<ObjectDelta<? extends ObjectType>> deltas = MiscSchemaUtil.createCollection(accountDelta);
 		display("Input deltas: ", deltas);
 
-		try {
-			// WHEN
-	        ModelContext<UserType> modelContext = modelInteractionService.previewChanges(deltas, new ModelExecuteOptions(), task, result);
-	        display("Preview context", modelContext);
-
-	        AssertJUnit.fail("Preview unexpectedly succeeded");
-		} catch (SchemaException e) {
-			// This is expected
-			display("Expected exception", e);
-		}
-
-		result.computeStatus();
-        TestUtil.assertFailure(result);
+		// WHEN
+		displayWhen(TEST_NAME);
+        ModelContext<UserType> modelContext = modelInteractionService.previewChanges(deltas, new ModelExecuteOptions(), task, result);
+        
+        // THEN
+ 		displayThen(TEST_NAME);
+        display("Preview context", modelContext);
+		assertPartialError(result);
 	}
 
 	/**
@@ -1382,19 +1377,14 @@ public class TestPreviewChanges extends AbstractInitializedModelIntegrationTest 
 		Collection<ObjectDelta<? extends ObjectType>> deltas = MiscSchemaUtil.createCollection(accountDelta);
 		display("Input deltas: ", deltas);
 
-		try {
-			// WHEN
-	        ModelContext<UserType> modelContext = modelInteractionService.previewChanges(deltas, new ModelExecuteOptions(), task, result);
-	        display("Preview context", modelContext);
+		// WHEN
+		displayWhen(TEST_NAME);
+        ModelContext<UserType> modelContext = modelInteractionService.previewChanges(deltas, new ModelExecuteOptions(), task, result);
+        display("Preview context", modelContext);
 
-	        AssertJUnit.fail("Preview unexpectedly succeeded");
-		} catch (PolicyViolationException e) {
-			// This is expected
-			display("Expected exception", e);
-		}
-
-		result.computeStatus();
-        TestUtil.assertFailure(result);
+        // THEN
+ 		displayThen(TEST_NAME);
+ 		assertPartialError(result);
 	}
 
 	// the test5xx is testing mappings with blue dummy resource. It has WEAK mappings.

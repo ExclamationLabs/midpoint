@@ -17,11 +17,9 @@
 <html xmlns:wicket="http://wicket.apache.org">
 <body>
 <wicket:panel>
-	<form wicket:id="mainForm" class="form-horizontal">
+	<form wicket:id="mainForm" class="col-xs-12 form-horizontal" style="padding:0px;">
 	
 		<div wicket:id="tabPanel" class="nav-tabs-custom" />
-   	    
-   	    <wicket:child />
 
       	<div class="options-container" wicket:id="executeOptions" />
 
@@ -31,6 +29,10 @@
             </span>
 			<a class="btn btn-info" wicket:id="previewChanges"/>
             <a class="btn btn-primary" wicket:id="save"/>
+
+			<wicket:child />
+
+			<a class="btn btn-default pull-right" wicket:id="editXml"/>
         </div>
 	</form>
 </wicket:panel>

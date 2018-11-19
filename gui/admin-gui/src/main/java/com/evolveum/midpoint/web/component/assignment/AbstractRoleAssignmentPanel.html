@@ -16,37 +16,18 @@
 
 <!DOCTYPE html>
 <html xmlns:wicket="http://wicket.apache.org">
-<wicket:panel>
-
-    <div wicket:id="assignments" class="main-form-panel">
-        <div class="row">
-            <div wicket:id="relationContainer" class="col-xs-6">
-                <label class="col-xs-2 prism-property" ><wicket:message key="AbstractRoleAssignmentPanel.relationLabel" /></label>
-                <div class="col-xs-3" wicket:id="relation" />
-            </div>
-            <div class="col-xs-3 pull-right">
-                <div class="btn btn-default pull-right" wicket:id="showAllAssignmentsButton" />
-            </div>
-        </div>
-
-        <div class="row" >
-            <div class="col-md-12" wicket:id="assignmentsTable"  style="margin: 5px 0;"/>
-        </div>
-        <div>
-            <div class="btn btn-success btn-sm" wicket:id="newAssignmentButton"/>
-        </div>
-    </div>
-    <div wicket:id="details">
-    	<div wicket:id="assignmentsDetails">
-    		<div wicket:id="assignmentDetails" />
-    	</div>
+	<wicket:panel>
+		<div wicket:id="assignments">
+		</div>
+    	<wicket:fragment wicket:id="specificContainersFragment">
+           <div class="top-level-prism-container" wicket:id="activationPanel" />
+           <div class="top-level-prism-container" wicket:id="specificContainers" />
+    	</wicket:fragment>
     	
-    	<div class="row">
-        <div class="container-fluid prism-container">
-        	<div class="btn btn-default" wicket:id="cancelButton"/>
-            <div class="btn btn-primary" wicket:id="doneButton"/>
-        </div>
-    </div>
-    </div>
-</wicket:panel>
+    	<wicket:fragment wicket:id="buttonToolbarFragment">
+           	<div wicket:id="newItemButton" />
+            <div class="btn btn-default btn-sm" wicket:id="showAllAssignmentsButton" />
+    	</wicket:fragment>
+	</wicket:panel>
+
 </html>

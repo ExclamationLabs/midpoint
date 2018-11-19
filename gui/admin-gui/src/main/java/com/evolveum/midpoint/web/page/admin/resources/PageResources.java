@@ -20,12 +20,15 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import com.evolveum.midpoint.model.api.util.ResourceUtils;
 import com.evolveum.midpoint.prism.PrismObject;
+import com.evolveum.midpoint.util.exception.*;
 import com.evolveum.midpoint.web.application.Url;
-import com.evolveum.midpoint.web.component.data.column.DoubleButtonColumn;
-import com.evolveum.midpoint.web.component.data.column.InlineMenuButtonColumn;
 import com.evolveum.midpoint.web.component.dialog.ConfirmationPanel;
+import com.evolveum.midpoint.web.component.menu.cog.ButtonInlineMenuItem;
+import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItemAction;
 import com.evolveum.midpoint.web.component.search.*;
+import com.evolveum.midpoint.web.page.admin.users.PageUsers;
 import com.evolveum.midpoint.web.session.PageStorage;
 import com.evolveum.midpoint.web.session.SessionStorage;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.SearchBoxModeType;
@@ -37,7 +40,6 @@ import org.apache.wicket.extensions.markup.html.repeater.data.table.PropertyColu
 import org.apache.wicket.markup.html.form.Form;
 import org.apache.wicket.model.AbstractReadOnlyModel;
 import org.apache.wicket.model.IModel;
-import org.apache.wicket.model.Model;
 import org.apache.wicket.request.mapper.parameter.PageParameters;
 
 import com.evolveum.midpoint.gui.api.GuiStyleConstants;
@@ -89,6 +91,7 @@ public class PageResources extends PageAdminResources {
 	private static final String DOT_CLASS = PageResources.class.getName() + ".";
 	private static final String OPERATION_TEST_RESOURCE = DOT_CLASS + "testResource";
 	private static final String OPERATION_DELETE_RESOURCES = DOT_CLASS + "deleteResources";
+	private static final String OPERATION_REFRESH_SCHEMA = DOT_CLASS + "refreshSchema";
 
 	private static final String ID_MAIN_FORM = "mainForm";
 	private static final String ID_TABLE = "table";
@@ -162,22 +165,12 @@ public class PageResources extends PageAdminResources {
 
 			@Override
 			protected List<InlineMenuItem> createInlineMenu() {
-				return PageResources.this.createRowMenuItems(false);
+				return PageResources.this.createRowMenuItems();
 			}
 
 			@Override
 			protected List<IColumn<SelectableBean<ResourceType>, String>> createColumns() {
 				return PageResources.this.initResourceColumns();
-			}
-
-			@Override
-			protected PrismObject<ResourceType> getNewObjectListObject(){
-				return (new ResourceType()).asPrismObject();
-			}
-
-			@Override
-			protected IColumn<SelectableBean<ResourceType>, String> createActionsColumn() {
-				return PageResources.this.createResourceActionsColumn();
 			}
 
 			@Override
@@ -199,47 +192,141 @@ public class PageResources extends PageAdminResources {
 
 	}
 
-	private List<InlineMenuItem> createRowMenuItems(boolean isHeader) {
+	private List<InlineMenuItem> createRowMenuItems() {
 
 		List<InlineMenuItem> menuItems = new ArrayList<>();
 
-		menuItems.add(new InlineMenuItem(createStringResource("PageResources.inlineMenuItem.test"),
-            new Model<>(false), new Model<>(false), false,
-				new ColumnMenuAction<SelectableBean<ResourceType>>() {
+		menuItems.add(new ButtonInlineMenuItem(createStringResource("PageResources.inlineMenuItem.test")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ResourceType>>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
-							SelectableBean<ResourceType> rowDto = getRowModel().getObject();
-							testResourcePerformed(target, rowDto.getValue());
+						SelectableBean<ResourceType> rowDto = getRowModel().getObject();
+						testResourcePerformed(target, rowDto.getValue());
 					}
-				}, isHeader ? InlineMenuItem.RESOURCE_INLINE_MENU_ITEM_ID.HEADER_TEST_CONNECTION.getMenuItemId()
-				: InlineMenuItem.RESOURCE_INLINE_MENU_ITEM_ID.TEST_CONNECTION.getMenuItemId(),
-				GuiStyleConstants.CLASS_TEST_CONNECTION_MENU_ITEM,
-				DoubleButtonColumn.BUTTON_COLOR_CLASS.INFO.toString()));
+				};
+			}
 
-		menuItems.add(new InlineMenuItem(createStringResource("PageBase.button.delete"),
-            new Model<>(true), new Model<>(true), false,
-				new ColumnMenuAction<SelectableBean<ResourceType>>() {
+			@Override
+			public boolean isHeaderMenuItem(){
+				return false;
+			}
+
+			@Override
+            public String getButtonIconCssClass() {
+				return GuiStyleConstants.CLASS_TEST_CONNECTION_MENU_ITEM;
+			}
+		});
+
+		menuItems.add(new ButtonInlineMenuItem(createStringResource("pageResources.button.editAsXml")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ResourceType>>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
-						if (getRowModel() == null){
+						SelectableBean<ResourceType> rowDto = getRowModel().getObject();
+						editAsXmlPerformed(rowDto.getValue());
+					}
+				};
+			}
+
+			@Override
+			public boolean isHeaderMenuItem(){
+				return false;
+			}
+
+			@Override
+            public String getButtonIconCssClass() {
+				return GuiStyleConstants.CLASS_EDIT_MENU_ITEM;
+			}
+		});
+
+		menuItems.add(new InlineMenuItem(createStringResource("pageResources.inlineMenuItem.editResource")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ResourceType>>() {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public void onClick(AjaxRequestTarget target) {
+						SelectableBean<ResourceType> rowDto = getRowModel().getObject();
+						editResourcePerformed(rowDto.getValue());
+					}
+				};
+			}
+
+			@Override
+			public boolean isHeaderMenuItem(){
+				return false;
+			}
+		});
+
+		menuItems.add(new InlineMenuItem(createStringResource("pageResource.button.refreshSchema")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ResourceType>>() {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public void onClick(AjaxRequestTarget target) {
+						SelectableBean<ResourceType> rowDto = getRowModel().getObject();
+						refreshSchemaPerformed(rowDto.getValue(), target);
+					}
+				};
+			}
+
+			@Override
+			public boolean isHeaderMenuItem(){
+				return false;
+			}
+		});
+
+		menuItems.add(new ButtonInlineMenuItem(createStringResource("PageBase.button.delete")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ResourceType>>() {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public void onClick(AjaxRequestTarget target) {
+						if (getRowModel() == null) {
 							deleteResourcePerformed(target, null);
 						} else {
 							SelectableBean<ResourceType> rowDto = getRowModel().getObject();
 							deleteResourcePerformed(target, rowDto.getValue());
 						}
 					}
-				}, isHeader ? InlineMenuItem.RESOURCE_INLINE_MENU_ITEM_ID.HEADER_DELETE.getMenuItemId()
-				: InlineMenuItem.RESOURCE_INLINE_MENU_ITEM_ID.DELETE_RESOURCE.getMenuItemId(),
-				GuiStyleConstants.CLASS_DELETE_MENU_ITEM,
-				DoubleButtonColumn.BUTTON_COLOR_CLASS.DANGER.toString()));
+				};
+			}
 
-		menuItems.add(new InlineMenuItem(createStringResource("pageResources.inlineMenuItem.deleteSyncToken"),
-				isHeader ? new Model<>(false) : new Model<>(true),
-				isHeader ? new Model<>(false) : new Model<>(true),
-				false,
-				new ColumnMenuAction<SelectableBean<ResourceType>>() {
+			@Override
+            public String getButtonIconCssClass() {
+				return GuiStyleConstants.CLASS_DELETE_MENU_ITEM;
+			}
+		});
+
+		menuItems.add(new InlineMenuItem(createStringResource("pageResources.inlineMenuItem.deleteSyncToken")) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public InlineMenuItemAction initAction() {
+				return new ColumnMenuAction<SelectableBean<ResourceType>>() {
+					private static final long serialVersionUID = 1L;
 
 					@Override
 					public void onClick(AjaxRequestTarget target) {
@@ -247,32 +334,15 @@ public class PageResources extends PageAdminResources {
 						deleteResourceSyncTokenPerformed(target, rowDto.getValue());
 					}
 
-				}));
+				};
+			}
 
-		menuItems.add(new InlineMenuItem(createStringResource("pageResources.inlineMenuItem.editResource"),
-				isHeader ? new Model<>(false) : new Model<>(true),
-				isHeader ? new Model<>(false) : new Model<>(true),
-				false,
-				new ColumnMenuAction<SelectableBean<ResourceType>>() {
+			@Override
+			public boolean isHeaderMenuItem(){
+				return false;
+			}
 
-					@Override
-					public void onClick(AjaxRequestTarget target) {
-						SelectableBean<ResourceType> rowDto = getRowModel().getObject();
-						editResourcePerformed(rowDto.getValue());
-					}
-				}));
-		menuItems.add(new InlineMenuItem(createStringResource("pageResources.button.editAsXml"),
-            new Model<>(false), new Model<>(false), false,
-				new ColumnMenuAction<SelectableBean<ResourceType>>() {
-
-					@Override
-					public void onClick(AjaxRequestTarget target) {
-						SelectableBean<ResourceType> rowDto = getRowModel().getObject();
-						editAsXmlPerformed(rowDto.getValue());
-					}
-				}, InlineMenuItem.RESOURCE_INLINE_MENU_ITEM_ID.EDIT_XML.getMenuItemId(),
-				GuiStyleConstants.CLASS_EDIT_MENU_ITEM,
-				DoubleButtonColumn.BUTTON_COLOR_CLASS.INFO.toString()));
+		});
 
 		return menuItems;
 	}
@@ -288,21 +358,7 @@ public class PageResources extends PageAdminResources {
 		return columns;
 	}
 
-	private IColumn<SelectableBean<ResourceType>, String> createResourceActionsColumn() {
-		return new InlineMenuButtonColumn<SelectableBean<ResourceType>>(createRowMenuItems(false), 2, PageResources.this){
-			@Override
-			protected int getHeaderNumberOfButtons() {
-				return 1;
-			}
-
-			@Override
-			protected List<InlineMenuItem> getHeaderMenuItems() {
-				return createRowMenuItems(true);
-			}
-		};
-	}
-
-		private void resourceDetailsPerformed(AjaxRequestTarget target, String oid) {
+	private void resourceDetailsPerformed(AjaxRequestTarget target, String oid) {
         clearSessionStorageForResourcePage();
 
         PageParameters parameters = new PageParameters();
@@ -318,15 +374,29 @@ public class PageResources extends PageAdminResources {
 			return selected;
 		}
 		selected = getResourceTable().getSelectedObjects();
-		if (selected.size() < 1) {
-			warn(createStringResource("pageResources.message.noResourceSelected"));
-		}
 		return selected;
 
 	}
 
+	private void refreshSchemaPerformed(ResourceType resource, AjaxRequestTarget target) {
+		ConfirmationPanel dialog = new ConfirmationPanel(((PageBase)getPage()).getMainPopupBodyId(),
+				createStringResource("pageResources.message.refreshResourceSchemaConfirm")){
+			@Override
+			public void yesPerformed(AjaxRequestTarget target) {
+				WebComponentUtil.refreshResourceSchema(resource.asPrismObject(), OPERATION_REFRESH_SCHEMA, target, PageResources.this);
+			}
+		};
+		((PageBase)getPage()).showMainPopup(dialog, target);
+	}
+
 	private void deleteResourcePerformed(AjaxRequestTarget target, ResourceType single) {
 		List<ResourceType> selected = isAnyResourceSelected(target, single);
+		if (selected.size() < 1) {
+			warn(createStringResource("pageResources.message.noResourceSelected").getString());
+			target.add(getFeedbackPanel());
+			return;
+		}
+
 		singleDelete = single;
 
 		if (selected.isEmpty()) {
@@ -338,7 +408,6 @@ public class PageResources extends PageAdminResources {
                         "pageResources.message.deleteResourcesConfirm", true)){
             @Override
             public void yesPerformed(AjaxRequestTarget target) {
-                ((PageBase)getPage()).hideMainPopup(target);
                 deleteResourceConfirmedPerformed(target);
             }
         };
@@ -405,15 +474,14 @@ public class PageResources extends PageAdminResources {
 				getModelService().executeChanges(WebComponentUtil.createDeltaCollection(delta), null, task,
 						result);
 			} catch (Exception ex) {
-				result.recordPartialError("Couldn't delete resource.", ex);
+				result.recordPartialError(createStringResource("PageResources.message.deleteResourceConfirmedPerformed.partialError").getString(), ex);
 				LoggingUtils.logUnexpectedException(LOGGER, "Couldn't delete resource", ex);
 			}
 		}
 
 		result.recomputeStatus();
 		if (result.isSuccess()) {
-			result.recordStatus(OperationResultStatus.SUCCESS,
-					"The resource(s) have been successfully deleted."); // todo i18n
+			result.recordStatus(OperationResultStatus.SUCCESS, createStringResource("PageResources.message.deleteResourceConfirmedPerformed.success").getString());
 		}
 
 		getResourceTable().clearCache();
@@ -429,7 +497,7 @@ public class PageResources extends PageAdminResources {
 		// SelectableBean<ResourceType> dto = rowModel.getObject();
 		// ResourceType resourceType = dto.getValue();
 		if (StringUtils.isEmpty(resourceType.getOid())) {
-			result.recordFatalError("Resource oid not defined in request");
+			result.recordFatalError(createStringResource("PageResources.message.testResourcePerformed.partialError").getString());
 		}
 
 		Task task = createSimpleTask(OPERATION_TEST_RESOURCE);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -174,12 +174,13 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
         assertSteadyResources();
 	}
 
-    @Test(enabled = true)
+    @Test
     public void test099ModifyUserAddAccountFailing() throws Exception {
-        TestUtil.displayTestTitle(this, "test099ModifyUserAddAccountFailing");
+    	final String TEST_NAME = "test099ModifyUserAddAccountFailing";
+        displayTestTitle(TEST_NAME);
 
         // GIVEN
-        Task task = taskManager.createTaskInstance(TestModelServiceContract.class.getName() + ".test099ModifyUserAddAccountFailing");
+        Task task = createTask(TEST_NAME);
         OperationResult result = task.getResult();
         preTestCleanup(AssignmentPolicyEnforcementType.POSITIVE);
 
@@ -197,12 +198,20 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
 
         getDummyResource().setAddBreakMode(BreakMode.UNSUPPORTED);       // hopefully this does not kick consistency mechanism
 
-        // WHEN
-        modelService.executeChanges(deltas, null, task, result);
-
-        // THEN
-        result.computeStatus();
-        TestUtil.assertFailure(result);
+        try {
+	        // WHEN
+	        displayWhen(TEST_NAME);
+	        modelService.executeChanges(deltas, null, task, result);
+	        
+	        assertNotReached();
+	        
+        } catch (UnsupportedOperationException e) {
+	        // THEN
+	        displayThen(TEST_NAME);
+	        display("Expected exception", e);
+        }
+        
+        assertFailure(result);
         assertCounterIncrement(InternalCounters.SHADOW_FETCH_OPERATION_COUNT, 0);
 
         // Check accountRef
@@ -231,10 +240,11 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
         checkDummyTransportMessages("simpleAccountNotifier-SUCCESS", 0);
         checkDummyTransportMessages("simpleAccountNotifier-FAILURE", 0);        // actually I don't know why provisioning does not report unsupported operation as a failure...
         checkDummyTransportMessages("simpleAccountNotifier-ADD-SUCCESS", 0);
-        checkDummyTransportMessages("simpleUserNotifier", 1);
+        checkDummyTransportMessages("simpleUserNotifier", 0);
         checkDummyTransportMessages("simpleUserNotifier-ADD", 0);
-        checkDummyTransportMessages("simpleUserNotifier-FAILURE", 1);
+        checkDummyTransportMessages("simpleUserNotifier-FAILURE", 0); // This should be called, but it is not implemented now
 
+        assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 0); // MID-4779
         assertSteadyResources();
     }
 
@@ -248,6 +258,7 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
         Task task = createTask(TEST_NAME);
         OperationResult result = task.getResult();
         preTestCleanup(AssignmentPolicyEnforcementType.POSITIVE);
+	    getDummyResource().resetBreakMode();
 
         XMLGregorianCalendar startTime = clock.currentTimeXMLGregorianCalendar();
 
@@ -1128,7 +1139,7 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
 
 		// WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
 
 		// THEN
 		displayThen(TEST_NAME);
@@ -1136,7 +1147,7 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
         TestUtil.assertSuccess("executeChanges result", result);
         XMLGregorianCalendar endTime = clock.currentTimeXMLGregorianCalendar();
         assertCounterIncrement(InternalCounters.SHADOW_FETCH_OPERATION_COUNT, 0);
-        assertCounterIncrement(InternalCounters.PRISM_OBJECT_CLONE_COUNT, 67);
+        assertCounterIncrement(InternalCounters.PRISM_OBJECT_CLONE_COUNT, 71);
 
 		PrismObject<UserType> userAfter = getUser(USER_JACK_OID);
 		display("User after change execution", userAfter);
@@ -1299,7 +1310,7 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
 
 		// WHEN
         displayWhen(TEST_NAME);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
 
 		// THEN
 		displayThen(TEST_NAME);
@@ -1643,6 +1654,7 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
         checkDummyTransportMessages("simpleUserNotifier-ADD", 0);
 
         assertCounterIncrement(InternalCounters.SCRIPT_COMPILE_COUNT, 0);
+        assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 0); // MID-4779
         assertSteadyResources();
 
         // return resource to the previous state..delete assignment enforcement to prevent next test to fail..
@@ -1722,6 +1734,7 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
         checkDummyTransportMessages("simpleUserNotifier-ADD", 0);
 
         assertCounterIncrement(InternalCounters.SCRIPT_COMPILE_COUNT, 0);
+        assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 0); // MID-4779
         assertSteadyResources();
     }
 
@@ -3304,6 +3317,7 @@ public class TestModelServiceContract extends AbstractInitializedModelIntegratio
         dummyAuditService.assertTarget(USER_JACK_OID);
         dummyAuditService.assertExecutionSuccess();
 
+        assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 0); // MID-4779
         assertSteadyResources();
     }
 

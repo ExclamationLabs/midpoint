@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,14 @@ package com.evolveum.midpoint.provisioning.impl.opendj;
 
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertNotNull;
+import static org.testng.AssertJUnit.assertTrue;
 
 import java.io.File;
 
+import com.evolveum.midpoint.schema.RepositoryQueryDiagRequest;
+import com.evolveum.midpoint.schema.RepositoryQueryDiagResponse;
+import com.evolveum.midpoint.schema.constants.SchemaConstants;
+import com.evolveum.midpoint.util.QNameUtil;
 import org.opends.server.core.AddOperation;
 import org.opends.server.types.Entry;
 import org.opends.server.types.LDIFImportConfig;
@@ -40,7 +45,7 @@ import com.evolveum.midpoint.provisioning.api.ProvisioningService;
 import com.evolveum.midpoint.provisioning.api.ResourceObjectChangeListener;
 import com.evolveum.midpoint.provisioning.api.ResourceObjectShadowChangeDescription;
 import com.evolveum.midpoint.provisioning.impl.ProvisioningTestUtil;
-import com.evolveum.midpoint.provisioning.impl.mock.SynchornizationServiceMock;
+import com.evolveum.midpoint.provisioning.impl.mock.SynchronizationServiceMock;
 import com.evolveum.midpoint.schema.ResourceShadowDiscriminator;
 import com.evolveum.midpoint.schema.internals.InternalsConfig;
 import com.evolveum.midpoint.schema.result.OperationResult;
@@ -57,7 +62,7 @@ public class TestSynchronization extends AbstractIntegrationTest {
 
 	private static final File TEST_DIR = new File("src/test/resources/synchronization/");
 	
-	private static final File RESOURCE_OPENDJ_FILE = ProvisioningTestUtil.RESOURCE_OPENDJ_FILE;
+	private static final File RESOURCE_OPENDJ_FILE = AbstractOpenDjTest.RESOURCE_OPENDJ_FILE;
 	
 	private static final File SYNC_TASK_FILE = new File(TEST_DIR, "sync-task-example.xml");
 	private static final String SYNC_TASK_OID = "91919191-76e0-59e2-86d6-3d4f02d3ffff";
@@ -144,7 +149,7 @@ public class TestSynchronization extends AbstractIntegrationTest {
 		Task syncTask = taskManager.getTask(SYNC_TASK_OID, result);
 		AssertJUnit.assertNotNull(syncTask);
 		assertSyncToken(syncTask, 0, result);
-		((SynchornizationServiceMock)syncServiceMock).reset();
+		((SynchronizationServiceMock)syncServiceMock).reset();
 
 		// create add change in embeded LDAP
 		LDIFImportConfig importConfig = new LDIFImportConfig(LDIF_WILL_FILE.getPath());
@@ -165,7 +170,7 @@ public class TestSynchronization extends AbstractIntegrationTest {
 				syncTask, result);
 		
 		// THEN
-		SynchornizationServiceMock mock = (SynchornizationServiceMock) syncServiceMock;
+		SynchronizationServiceMock mock = (SynchronizationServiceMock) syncServiceMock;
 		
 		assertEquals("Unexpected number of synchronization service calls", 1, mock.getCallCount());
 		
@@ -181,6 +186,19 @@ public class TestSynchronization extends AbstractIntegrationTest {
 		
 		assertSyncToken(SYNC_TASK_OID, 1, result);
 
+		// TODO fix this brittle code (depends on internal data representation within repository service)
+		RepositoryQueryDiagRequest valueRequest = new RepositoryQueryDiagRequest();
+		valueRequest.setImplementationLevelQuery("select l.value from ROExtLong l join RExtItem i on l.itemId = i.id where i.name='" + QNameUtil
+				.qNameToUri(SchemaConstants.SYNC_TOKEN) + "'");
+		RepositoryQueryDiagResponse valueResponse = repositoryService.executeQueryDiagnostics(valueRequest, result);
+		System.out.println(valueResponse.getQueryResult());
+		assertTrue("Unexpected repo query result on sync token: "+ valueResponse.getQueryResult(), valueResponse.getQueryResult().isEmpty());
+
+		RepositoryQueryDiagRequest dictionaryRequest = new RepositoryQueryDiagRequest();
+		dictionaryRequest.setImplementationLevelQuery("select RExtItem i where i.name='" + QNameUtil.qNameToUri(SchemaConstants.SYNC_TOKEN) + "'");
+		RepositoryQueryDiagResponse dictionaryResponse = repositoryService.executeQueryDiagnostics(valueRequest, result);
+		System.out.println(dictionaryResponse.getQueryResult());
+		assertTrue("Unexpected repo query result on sync token definition: "+ dictionaryResponse.getQueryResult(), dictionaryResponse.getQueryResult().isEmpty());
 	}
 
 	@Test
@@ -193,7 +211,7 @@ public class TestSynchronization extends AbstractIntegrationTest {
 		Task syncTask = taskManager.getTask(SYNC_TASK_OID, result);
 		AssertJUnit.assertNotNull(syncTask);
 		assertSyncToken(syncTask, 1, result);
-		((SynchornizationServiceMock)syncServiceMock).reset();
+		((SynchronizationServiceMock)syncServiceMock).reset();
 
 		// create add change in embedded LDAP
 		LDIFImportConfig importConfig = new LDIFImportConfig(LDIF_CALYPSO_FILE.getPath());
@@ -214,7 +232,7 @@ public class TestSynchronization extends AbstractIntegrationTest {
 				syncTask, result);
 		
 		// THEN
-		SynchornizationServiceMock mock = (SynchornizationServiceMock) syncServiceMock;
+		SynchronizationServiceMock mock = (SynchronizationServiceMock) syncServiceMock;
 		
 		assertEquals("Unexpected number of synchronization service calls", 0, mock.getCallCount());
 		

@@ -22,6 +22,7 @@ import com.evolveum.midpoint.repo.sql.data.RepositoryContext;
 import com.evolveum.midpoint.repo.sql.data.common.container.RAssignment;
 import com.evolveum.midpoint.repo.sql.data.common.id.RAssignmentExtensionId;
 import com.evolveum.midpoint.repo.sql.data.common.type.RAssignmentExtensionType;
+import com.evolveum.midpoint.repo.sql.data.common.type.RObjectExtensionType;
 import com.evolveum.midpoint.repo.sql.helpers.modify.DeltaUpdaterUtils;
 import com.evolveum.midpoint.repo.sql.helpers.modify.Ignore;
 import com.evolveum.midpoint.repo.sql.query2.definition.NotQueryable;
@@ -281,15 +282,15 @@ public class RAssignmentExtension implements Serializable, EntityState {
         return result;
     }
 
-    public static void copyFromJAXB(ExtensionType jaxb, RAssignmentExtension repo, RAssignmentExtensionType type,
-                                    RepositoryContext repositoryContext) throws DtoTranslationException {
+    public static void fromJaxb(ExtensionType jaxb, RAssignmentExtension repo, RAssignmentExtensionType type,
+            RepositoryContext repositoryContext) throws DtoTranslationException {
         Validate.notNull(repo, "Repo object must not be null.");
         Validate.notNull(jaxb, "JAXB object must not be null.");
 
-        copyFromJAXB(jaxb.asPrismContainerValue(), repo, type, repositoryContext);
+        fromJaxb(jaxb.asPrismContainerValue(), repo, type, repositoryContext);
     }
 
-    private static void copyFromJAXB(PrismContainerValue containerValue, RAssignmentExtension repo,
+    private static void fromJaxb(PrismContainerValue containerValue, RAssignmentExtension repo,
                                      RAssignmentExtensionType type, RepositoryContext repositoryContext) throws
             DtoTranslationException {
         RAnyConverter converter = new RAnyConverter(repositoryContext.prismContext, repositoryContext.extItemDictionary);
@@ -298,7 +299,7 @@ public class RAssignmentExtension implements Serializable, EntityState {
         try {
             List<Item<?,?>> items = containerValue.getItems();
             for (Item item : items) {
-                values.addAll(converter.convertToRValue(item, true));
+                values.addAll(converter.convertToRValue(item, true, RObjectExtensionType.EXTENSION));
             }
         } catch (Exception ex) {
             throw new DtoTranslationException(ex.getMessage(), ex);

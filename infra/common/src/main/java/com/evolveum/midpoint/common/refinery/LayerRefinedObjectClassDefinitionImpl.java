@@ -486,6 +486,11 @@ public class LayerRefinedObjectClassDefinitionImpl implements LayerRefinedObject
 	}
     
     @Override
+	public String getPlannedRemoval() {
+		return refinedObjectClassDefinition.getPlannedRemoval();
+	}
+    
+    @Override
 	public boolean isElaborate() {
 		return refinedObjectClassDefinition.isElaborate();
 	}
@@ -613,6 +618,11 @@ public class LayerRefinedObjectClassDefinitionImpl implements LayerRefinedObject
 	public ResourceObjectVolatilityType getVolatility() {
 		return refinedObjectClassDefinition.getVolatility();
 	}
+	
+	@Override
+	public ProjectionPolicyType getProjection() {
+		return refinedObjectClassDefinition.getProjection();
+	}
 
 	@Override
 	public Class getTypeClassIfKnown() {
@@ -672,9 +682,24 @@ public class LayerRefinedObjectClassDefinitionImpl implements LayerRefinedObject
 	public Collection<TypeDefinition> getStaticSubTypes() {
 		return emptySet();          // not supported for now (this type itself is not statically defined)
 	}
+	
+	@Override
+	public <A> A getAnnotation(QName qname) {
+		return refinedObjectClassDefinition.getAnnotation(qname);
+	}
+
+	@Override
+	public <A> void setAnnotation(QName qname, A value) {
+		refinedObjectClassDefinition.setAnnotation(qname, value);
+	}
 
 	@Override
 	public Integer getInstantiationOrder() {
 		return null;
+	}
+
+	@Override
+	public boolean canRepresent(QName specTypeQName) {
+		return refinedObjectClassDefinition.canRepresent(specTypeQName);
 	}
 }

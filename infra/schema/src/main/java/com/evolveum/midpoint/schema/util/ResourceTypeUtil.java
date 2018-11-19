@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,6 +61,7 @@ import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.ScriptCapabi
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.TestConnectionCapabilityType;
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.UpdateCapabilityType;
 import com.evolveum.prism.xml.ns._public.types_3.SchemaDefinitionType;
+import com.sun.tools.xjc.reader.RawTypeSet.Ref;
 
 /**
  * Methods that would belong to the ResourceType class but cannot go there
@@ -79,23 +80,6 @@ public class ResourceTypeUtil {
 			return resource.getConnectorRef().getOid();
 		} else if (resource.getConnector() != null) {
 			return resource.getConnector().getOid();
-		} else {
-			return null;
-		}
-	}
-
-	/**
-	 * The usage of "resolver" is experimental. Let's see if it will be
-	 * practical ...
-	 *
-	 * @see ObjectResolver
-	 */
-	public static ConnectorType getConnectorType(ResourceType resource, ObjectResolver resolver, OperationResult parentResult) throws ObjectNotFoundException, SchemaException {
-		if (resource.getConnector() != null) {
-			return resource.getConnector();
-		} else if (resource.getConnectorRef() != null) {
-			return resolver.resolve(resource.getConnectorRef(), ConnectorType.class,
-					null, "resolving connector in " + resource, null, parentResult);		// TODO task
 		} else {
 			return null;
 		}
@@ -346,11 +330,15 @@ public class ResourceTypeUtil {
 	}
 
 	public static boolean isPasswordCapabilityEnabled(ResourceType resource){
-		return getEffectivePasswordCapability(resource) != null;
+		return isPasswordCapabilityEnabled(resource, null);
 	}
 
-	public static PasswordCapabilityType getEffectivePasswordCapability(ResourceType resource) {
-		CredentialsCapabilityType cct = getEffectiveCapability(resource, CredentialsCapabilityType.class);
+	public static boolean isPasswordCapabilityEnabled(ResourceType resource, ResourceObjectTypeDefinitionType def){
+		return getEffectivePasswordCapability(resource, def) != null;
+	}
+
+	public static PasswordCapabilityType getEffectivePasswordCapability(ResourceType resource, ResourceObjectTypeDefinitionType def) {
+		CredentialsCapabilityType cct = getEffectiveCapability(resource, def, CredentialsCapabilityType.class);
 		if (cct == null || cct.getPassword() == null || Boolean.FALSE.equals(cct.getPassword().isEnabled())) {
 			return null;
 		} else {
@@ -364,6 +352,10 @@ public class ResourceTypeUtil {
 
 	public static boolean isScriptCapabilityEnabled(ResourceType resource) {
 		return getEffectiveCapability(resource, ScriptCapabilityType.class) != null;
+	}
+	
+	public static <C extends CapabilityType> boolean isCapabilityEnabled(ResourceType resource, Class<C> type) {
+		return getEffectiveCapability(resource, type) != null;
 	}
 
 	public static boolean isTestConnectionCapabilityEnabled(ResourceType resource) {
@@ -705,5 +697,25 @@ public class ResourceTypeUtil {
 			return RecordPendingOperationsType.ASYNCHRONOUS;
 		}
 		return recordPendingOperations;
+	}
+
+	public static boolean isRefreshOnRead(ResourceType resource) {
+		ResourceConsistencyType consistency = resource.getConsistency();
+		if (consistency == null) {
+			return false;
+		}
+		Boolean reshreshOnRead = consistency.isReshreshOnRead();
+		if (reshreshOnRead == null) {
+			return false;
+		}
+		return reshreshOnRead;
+	}
+	
+	public static ErrorSelectorType getConnectorErrorCriticality(ResourceType resourceType) {
+		ResourceConsistencyType consistency = resourceType.getConsistency();
+		if (consistency == null) {
+			return null;
+		}
+		return consistency.getConnectorErrorCriticality();
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,14 @@
 package com.evolveum.midpoint.model.impl.lens;
 
 import java.util.*;
+import java.util.function.Consumer;
 
 import com.evolveum.midpoint.prism.ConsistencyCheckScope;
 import com.evolveum.midpoint.prism.Objectable;
 import com.evolveum.midpoint.prism.delta.PlusMinusZero;
+import com.evolveum.midpoint.prism.delta.builder.DeltaBuilder;
+import com.evolveum.midpoint.prism.delta.builder.S_ItemEntry;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.schema.DeltaConvertor;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
@@ -35,7 +39,6 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.Validate;
 
 import com.evolveum.midpoint.common.crypto.CryptoUtil;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
 import com.evolveum.midpoint.model.api.context.EvaluatedPolicyRule;
 import com.evolveum.midpoint.model.api.context.EvaluatedPolicyRuleTrigger;
 import com.evolveum.midpoint.model.api.context.ModelElementContext;
@@ -71,6 +74,8 @@ public abstract class LensElementContext<O extends ObjectType> implements ModelE
 	private String oid = null;
 	private int iteration;
     private String iterationToken;
+    
+    transient private SecurityPolicyType securityPolicy;
 
 	/**
 	 * These are policy state modifications that should be applied.
@@ -107,8 +112,8 @@ public abstract class LensElementContext<O extends ObjectType> implements ModelE
 
 	private transient PrismObjectDefinition<O> objectDefinition = null;
 
-	transient private Collection<EvaluatedPolicyRule> policyRules = new ArrayList<>();
-    transient private Collection<String> policySituations = new ArrayList<>();
+	transient private final Collection<EvaluatedPolicyRule> policyRules = new ArrayList<>();
+    transient private final Collection<String> policySituations = new ArrayList<>();
 
 	public LensElementContext(Class<O> objectTypeClass, LensContext<? extends ObjectType> lensContext) {
 		super();
@@ -172,6 +177,7 @@ public abstract class LensElementContext<O extends ObjectType> implements ModelE
 		this.objectOld = objectOld;
 	}
 
+	@Override
 	public PrismObject<O> getObjectCurrent() {
 		return objectCurrent;
 	}
@@ -481,6 +487,7 @@ public abstract class LensElementContext<O extends ObjectType> implements ModelE
 		this.isFresh = isFresh;
 	}
 
+	@NotNull
 	public Collection<EvaluatedPolicyRule> getPolicyRules() {
 		return policyRules;
 	}
@@ -497,11 +504,25 @@ public abstract class LensElementContext<O extends ObjectType> implements ModelE
     	LensUtil.triggerRule(rule, triggers, policySituations);
 	}
 
+	@NotNull
 	public Collection<String> getPolicySituations() {
 		return policySituations;
 	}
+	
+	/**
+	 * Returns security policy applicable to the object. This means security policy
+	 * applicable directory to focus or projection. It will NOT return global
+	 * security policy.
+	 */
+	public SecurityPolicyType getSecurityPolicy() {
+		return securityPolicy;
+	}
 
-	public void recompute() throws SchemaException {
+	public void setSecurityPolicy(SecurityPolicyType securityPolicy) {
+		this.securityPolicy = securityPolicy;
+	}
+
+	public void recompute() throws SchemaException, ConfigurationException {
 		PrismObject<O> base = getObjectCurrentOrOld();
     	ObjectDelta<O> delta = getDelta();
         if (delta == null) {
@@ -617,6 +638,7 @@ public abstract class LensElementContext<O extends ObjectType> implements ModelE
 		clone.isFresh = this.isFresh;
 		clone.iteration = this.iteration;
 		clone.iterationToken = this.iterationToken;
+		clone.securityPolicy = this.securityPolicy;
 	}
 
 	protected ObjectDelta<O> cloneDelta(ObjectDelta<O> thisDelta) {
@@ -636,14 +658,14 @@ public abstract class LensElementContext<O extends ObjectType> implements ModelE
     void storeIntoLensElementContextType(LensElementContextType lensElementContextType, boolean reduced) throws SchemaException {
 		if (objectOld != null) {
 			if (reduced) {
-				lensElementContextType.setObjectOldRef(ObjectTypeUtil.createObjectRef(objectOld));
+				lensElementContextType.setObjectOldRef(ObjectTypeUtil.createObjectRef(objectOld, getPrismContext()));
 			} else {
 				lensElementContextType.setObjectOld(objectOld.asObjectable());
 			}
 		}
 		if (objectNew != null) {
 			if (reduced) {
-				lensElementContextType.setObjectNewRef(ObjectTypeUtil.createObjectRef(objectNew));
+				lensElementContextType.setObjectNewRef(ObjectTypeUtil.createObjectRef(objectNew, getPrismContext()));
 			} else {
 				lensElementContextType.setObjectNew(objectNew.asObjectable());
 			}
@@ -798,4 +820,20 @@ public abstract class LensElementContext<O extends ObjectType> implements ModelE
 	}
 
 	public abstract void deleteSecondaryDeltas();
+	
+	public S_ItemEntry deltaBuilder() throws SchemaException {
+		return DeltaBuilder.deltaFor(getObjectTypeClass(), getPrismContext());
+	}
+	
+	public void forEachObject(Consumer<PrismObject<O>> consumer) {
+		if (objectCurrent != null) {
+			consumer.accept(objectCurrent);
+		}
+		if (objectOld != null) {
+			consumer.accept(objectOld);
+		}
+		if (objectNew != null) {
+			consumer.accept(objectNew);
+		}
+	}
 }

@@ -153,7 +153,7 @@ public abstract class PageAdminFocus<F extends FocusType> extends PageAdminObjec
 
 		boolean canExitPage;
 		if (returningFromAsync) {
-			canExitPage = getProgressPanel().isAllSuccess();			// if there's at least a warning in the progress table, we would like to keep the table open
+			canExitPage = getProgressPanel().isAllSuccess() || result.isInProgress(); // if there's at least a warning in the progress table, we would like to keep the table open
 		} else {
 			canExitPage = !canContinueEditing;							// no point in staying on page if we cannot continue editing (in synchronous case i.e. no progress table present)
 		}
@@ -185,7 +185,16 @@ public abstract class PageAdminFocus<F extends FocusType> extends PageAdminObjec
 
 		showResult(result);
 		target.add(getFeedbackPanel());
-		navigateToNext(new PagePreviewChanges(getProgressPanel().getPreviewResult(), getModelInteractionService()));
+
+		Map<PrismObject<F>, ModelContext<? extends ObjectType>> modelContextMap = new LinkedHashMap<>();
+		modelContextMap.put(getObjectWrapper().getObject(), getProgressPanel().getPreviewResult());
+
+		processAdditionalFocalObjectsForPreview(modelContextMap);
+
+		navigateToNext(new PagePreviewChanges(modelContextMap, getModelInteractionService()));
+	}
+
+	protected void processAdditionalFocalObjectsForPreview(Map<PrismObject<F>, ModelContext<? extends ObjectType>> modelContextMap){
 	}
 
 	@Override
@@ -797,9 +806,11 @@ public abstract class PageAdminFocus<F extends FocusType> extends PageAdminObjec
 			}
 
 			DeltaSetTriple<? extends EvaluatedAssignment<?>> evaluatedAssignmentTriple = modelContext.getEvaluatedAssignmentTriple();
-			Collection<? extends EvaluatedAssignment<?>> evaluatedAssignments = evaluatedAssignmentTriple.getNonNegativeValues();
-
-			if (evaluatedAssignments.isEmpty()) {
+			Collection<? extends EvaluatedAssignment<?>> evaluatedAssignments = null;
+			if (evaluatedAssignmentTriple != null) {
+				evaluatedAssignments = evaluatedAssignmentTriple.getNonNegativeValues();
+			}
+			if (evaluatedAssignments == null || evaluatedAssignments.isEmpty()) {
 				info(getString("pageAdminFocus.message.noAssignmentsAvailable"));
 				ajaxRequestTarget.add(getFeedbackPanel());
 				return null;
@@ -813,7 +824,7 @@ public abstract class PageAdminFocus<F extends FocusType> extends PageAdminObjec
 				DeltaSetTriple<? extends EvaluatedAssignmentTarget> targetsTriple = evaluatedAssignment.getRoles();
 				Collection<? extends EvaluatedAssignmentTarget> targets = targetsTriple.getNonNegativeValues();
 				for (EvaluatedAssignmentTarget target : targets) {
-					if (target.appliesToFocusWithAnyRelation()) {
+					if (target.appliesToFocusWithAnyRelation(getRelationRegistry())) {
 						assignmentInfoDtoSet.add(createAssignmentsPreviewDto(target, task, result));
 					}
 				}
@@ -967,4 +978,7 @@ public abstract class PageAdminFocus<F extends FocusType> extends PageAdminObjec
 
 	}
 
+	protected boolean isFocusHistoryPage(){
+		return false;
+	}
 }

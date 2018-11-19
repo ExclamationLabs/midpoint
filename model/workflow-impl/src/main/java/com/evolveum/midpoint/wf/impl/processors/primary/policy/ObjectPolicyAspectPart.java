@@ -115,7 +115,7 @@ public class ObjectPolicyAspectPart {
 		} else if (baseConfigurationHelper.getUseDefaultApprovalPolicyRules(ctx.wfConfiguration) != DefaultApprovalPolicyRulesUsageType.NEVER) {
 			// default rule
 			ApprovalSchemaBuilder builder = new ApprovalSchemaBuilder(main, approvalSchemaHelper);
-			if (builder.addPredefined(object, SchemaConstants.ORG_OWNER, result)) {
+			if (builder.addPredefined(object, RelationKindType.OWNER, result)) {
 				LOGGER.trace("Added default approval action, as no explicit one was found");
 				generateObjectOidIfNeeded(focusDelta, ctx.modelContext);
 				List<ObjectDelta<T>> deltasToApprove = singletonList(focusDelta.clone());
@@ -197,8 +197,12 @@ public class ObjectPolicyAspectPart {
 
 			instruction.setObjectRef(modelContext, result);
 
-			String andExecuting = instruction.isExecuteApprovedChangeImmediately() ? "and execution " : "";
-			instruction.setTaskName("Approval " + andExecuting + "of: " + processNameInDefaultLocale);
+			String taskNameInDefaultLocale = localizationService.translate(
+					new LocalizableMessageBuilder()
+							.key(instruction.isExecuteApprovedChangeImmediately() ? "ApprovalAndExecutionOf" : "ApprovalOf")
+							.arg(processNameInDefaultLocale)
+							.build(), Locale.getDefault());
+			instruction.setTaskName(taskNameInDefaultLocale);
 			instruction.setProcessInstanceName(processNameInDefaultLocale);
 
 			itemApprovalProcessInterface.prepareStartInstruction(instruction);

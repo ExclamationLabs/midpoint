@@ -116,11 +116,15 @@ import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowKindType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.XmlSchemaType;
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.ActivationCapabilityType;
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.CountObjectsCapabilityType;
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.CountObjectsSimulateType;
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.CredentialsCapabilityType;
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.PasswordCapabilityType;
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.ReadCapabilityType;
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.RunAsCapabilityType;
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.ScriptCapabilityType;
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.TestConnectionCapabilityType;
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.UpdateCapabilityType;
 import com.evolveum.prism.xml.ns._public.types_3.ProtectedStringType;
 
 /**
@@ -393,9 +397,7 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		resourceType = resource.asObjectable();
 
 		// THEN
-		result.computeStatus();
-		display("getObject result", result);
-		TestUtil.assertSuccess(result);
+		assertSuccess(result);
 
 		// There may be one parse. Previous test have changed the resource version
 		// Schema for this version will not be re-parsed until getObject is tried
@@ -427,7 +429,6 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		resource.checkConsistence();
 
 		rememberSchemaMetadata(resource);
-		rememberConnectorInstance(resource);
 
 		assertSteadyResource();
 	}
@@ -594,12 +595,10 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		display("Resource", resourceType);
 		List<Object> nativeCapabilitiesList = nativeCapabilities.getAny();
 		assertFalse("Empty capabilities returned", nativeCapabilitiesList.isEmpty());
-		CredentialsCapabilityType capCred = CapabilityUtil.getCapability(nativeCapabilitiesList,
-				CredentialsCapabilityType.class);
+		CredentialsCapabilityType capCred = CapabilityUtil.getCapability(nativeCapabilitiesList, CredentialsCapabilityType.class);
 		assertNativeCredentialsCapability(capCred);
 
-		ActivationCapabilityType capAct = CapabilityUtil.getCapability(nativeCapabilitiesList,
-				ActivationCapabilityType.class);
+		ActivationCapabilityType capAct = CapabilityUtil.getCapability(nativeCapabilitiesList, ActivationCapabilityType.class);
 		if (supportsActivation()) {
 			assertNotNull("native activation capability not present", capAct);
 			assertNotNull("native activation status capability not present", capAct.getStatus());
@@ -607,21 +606,37 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 			assertNull("native activation capability sneaked in", capAct);
 		}
 
-		TestConnectionCapabilityType capTest = CapabilityUtil.getCapability(nativeCapabilitiesList,
-				TestConnectionCapabilityType.class);
+		TestConnectionCapabilityType capTest = CapabilityUtil.getCapability(nativeCapabilitiesList, TestConnectionCapabilityType.class);
 		assertNotNull("native test capability not present", capTest);
-		ScriptCapabilityType capScript = CapabilityUtil.getCapability(nativeCapabilitiesList,
-				ScriptCapabilityType.class);
+		ScriptCapabilityType capScript = CapabilityUtil.getCapability(nativeCapabilitiesList, ScriptCapabilityType.class);
 		assertNotNull("native script capability not present", capScript);
 		assertNotNull("No host in native script capability", capScript.getHost());
 		assertFalse("No host in native script capability", capScript.getHost().isEmpty());
 		// TODO: better look inside
 
+		UpdateCapabilityType capUpdate = CapabilityUtil.getCapability(nativeCapabilitiesList, UpdateCapabilityType.class);
+		assertUpdateCapability(capUpdate);
+		
+		RunAsCapabilityType capRunAs = CapabilityUtil.getCapability(nativeCapabilitiesList, RunAsCapabilityType.class);
+		assertRunAsCapability(capRunAs);
+		
 		capabilitiesCachingMetadataType = resourceType.getCapabilities().getCachingMetadata();
 		assertNotNull("No capabilities caching metadata", capabilitiesCachingMetadataType);
 		assertNotNull("No capabilities caching metadata timestamp", capabilitiesCachingMetadataType.getRetrievalTimestamp());
 		assertNotNull("No capabilities caching metadata serial number", capabilitiesCachingMetadataType.getSerialNumber());
 
+		// Configured capabilities
+		
+		CapabilityCollectionType configuredCapabilities = resourceType.getCapabilities().getConfigured();
+		if (configuredCapabilities == null) {
+			assertCountConfiguredCapability(null);
+		} else {
+			List<Object> configuredCapabilitiesList = configuredCapabilities.getAny();
+			CountObjectsCapabilityType capCount = CapabilityUtil.getCapability(configuredCapabilitiesList,
+					CountObjectsCapabilityType.class);
+			assertCountConfiguredCapability(capCount);
+		}
+		
 		// Check effective capabilites
 		capCred = ResourceTypeUtil.getEffectiveCapability(resourceType, CredentialsCapabilityType.class);
 		assertNotNull("password capability not found", capCred.getPassword());
@@ -638,6 +653,33 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		}
 
 		assertSteadyResource();
+	}
+	
+	protected void assertUpdateCapability(UpdateCapabilityType capUpdate) {
+		assertNotNull("native update capability not present", capUpdate);
+		assertNull("native update capability is manual", capUpdate.isManual());
+		assertNotNull("native update capability is null", capUpdate.isDelta());
+		assertTrue("native update capability is NOT delta", capUpdate.isDelta());
+	}
+	
+	protected void assertRunAsCapability(RunAsCapabilityType capRunAs) {
+		assertNotNull("native runAs capability not present", capRunAs);
+	}
+	
+	protected void assertCountConfiguredCapability(CountObjectsCapabilityType capCount) {
+		CountObjectsSimulateType expectedCountSimulation = getCountSimulationMode();
+		if (expectedCountSimulation == null) {
+			assertNull("Unexpected configured count capability", capCount);
+		} else {
+			assertNotNull("configured count capability not present", capCount);
+			CountObjectsSimulateType simulate = capCount.getSimulate();
+			assertNotNull("simulate not present in configured count capability", simulate);
+			assertEquals("Wrong similate in configured count capability", getCountSimulationMode(), simulate);
+		}
+	}
+
+	protected CountObjectsSimulateType getCountSimulationMode() {
+		return CountObjectsSimulateType.PAGED_SEARCH_ESTIMATE;
 	}
 
 	protected void assertNativeCredentialsCapability(CredentialsCapabilityType capCred) {
@@ -713,9 +755,48 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		assertSteadyResource();
 	}
 
+	/**
+	 * Create steady state of the system by invoking test connection again.
+	 * Previous operations may have modified the resource, which may have changed
+	 * resource version which might have interfered with caching.
+	 * @throws Exception
+	 */
 	@Test
-	public void test030ResourceAndConnectorCaching() throws Exception {
-		final String TEST_NAME = "test030ResourceAndConnectorCaching";
+	public void test030ResourceAndConnectorCachingTestConnection() throws Exception {
+		final String TEST_NAME = "test030ResourceAndConnectorCachingTestConnection";
+		displayTestTitle(TEST_NAME);
+		
+		Task task = createTask(TEST_NAME);
+		
+		// WHEN
+		OperationResult testResult = provisioningService.testResource(RESOURCE_DUMMY_OID, task);
+
+		// THEN
+		display("Test result", testResult);
+		assertSuccess(testResult);
+		
+		// Connector is re-initialized at this point. Test connection in previous test
+		// have updated resource availablility status, which have changed resource version
+		// which have forced connector re-inialization. But this is quite harmless.
+		assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 1);
+		// Test connection is forcing schema and capabilities fetch again. But the schema is not used.
+		assertCounterIncrement(InternalCounters.RESOURCE_SCHEMA_FETCH_COUNT, 1);
+		assertCounterIncrement(InternalCounters.CONNECTOR_SCHEMA_PARSE_COUNT, 0);
+		assertCounterIncrement(InternalCounters.CONNECTOR_CAPABILITIES_FETCH_COUNT, 1);
+		assertCounterIncrement(InternalCounters.RESOURCE_SCHEMA_PARSE_COUNT, 1);
+		
+		PrismObject<ResourceType> resourceRepoAfter = repositoryService.getObject(ResourceType.class,
+				RESOURCE_DUMMY_OID, null, task.getResult());
+		assertResourceVersionIncrement(resourceRepoAfter, 0);
+		
+		rememberConnectorInstance(resource);
+		
+		assertSteadyResource();
+	}
+	
+	@Test
+	public void test032ResourceAndConnectorCaching() throws Exception {
+		final String TEST_NAME = "test032ResourceAndConnectorCaching";
 		displayTestTitle(TEST_NAME);
 
 		// GIVEN
@@ -793,8 +874,8 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 	}
 
 	@Test
-	public void test031ResourceAndConnectorCachingForceFresh() throws Exception {
-		TestUtil.displayTestTitle("test031ResourceAndConnectorCachingForceFresh");
+	public void test034ResourceAndConnectorCachingForceFresh() throws Exception {
+		displayTestTitle("test034ResourceAndConnectorCachingForceFresh");
 
 		// GIVEN
 		OperationResult result = new OperationResult(AbstractBasicDummyTest.class.getName()
@@ -911,7 +992,7 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		Task task = createTask(TEST_NAME);
 		OperationResult result = task.getResult();
 
-		PrismObject<ResourceType> resource = PrismTestUtil.parseObject(RESOURCE_DUMMY_FILE);
+		PrismObject<ResourceType> resource = PrismTestUtil.parseObject(getResourceDummyFile());
 		// Transplant connector OID. The freshly-parsed resource does have only the fake one.
 		resource.asObjectable().getConnectorRef().setOid(this.resourceType.getConnectorRef().getOid());
 		// Make sure this object has a different OID than the one already loaded. This avoids caching
@@ -941,7 +1022,7 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		Task task = createTask(TEST_NAME);
 		OperationResult result = task.getResult();
 
-		PrismObject<ResourceType> resource = PrismTestUtil.parseObject(RESOURCE_DUMMY_FILE);
+		PrismObject<ResourceType> resource = PrismTestUtil.parseObject(getResourceDummyFile());
 		// Transplant connector OID. The freshly-parsed resource does have only the fake one.
 		resource.asObjectable().getConnectorRef().setOid(this.resourceType.getConnectorRef().getOid());
 		ObjectDelta<ResourceType> delta = resource.createAddDelta();
@@ -1037,7 +1118,7 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		assertEquals("Unexpected size of operational status", 1, operationalStatuses.size());
 		ConnectorOperationalStatus operationalStatus = operationalStatuses.get(0);
 
-		assertEquals("Wrong connectorClassName", DummyConnector.class.getName(), operationalStatus.getConnectorClassName());
+		assertEquals("Wrong connectorClassName", getDummyConnectorClass().getName(), operationalStatus.getConnectorClassName());
 		assertEquals("Wrong poolConfigMinSize", null, operationalStatus.getPoolConfigMinSize());
 		assertEquals("Wrong poolConfigMaxSize", (Integer)10, operationalStatus.getPoolConfigMaxSize());
 		assertEquals("Wrong poolConfigMinIdle", (Integer)1, operationalStatus.getPoolConfigMinIdle());
@@ -1096,6 +1177,7 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		} else {
 			assertNull("Activation sneaked in (repo)", activationRepo);
 		}
+		assertWillRepoShadowAfterCreate(accountRepo);
 
 		syncServiceMock.assertNotifySuccessOnly();
 
@@ -1150,8 +1232,12 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		lastPasswordModifyStart = start;
 		lastPasswordModifyEnd = end;
 
-		checkConsistency(accountProvisioning);
+		checkUniqueness(accountProvisioning);
 		assertSteadyResource();
+	}
+
+	protected void assertWillRepoShadowAfterCreate(PrismObject<ShadowType> repoShadow) {
+		// for the subclasses
 	}
 
 	protected void checkRepoAccountShadowWillBasic(PrismObject<ShadowType> accountRepo,
@@ -1216,7 +1302,7 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		PrismObject<ShadowType> shadowRepo = getShadowRepo(ACCOUNT_WILL_OID);
 		checkRepoAccountShadowWill(shadowRepo, startTs, endTs);
 
-		checkConsistency(shadow);
+		checkUniqueness(shadow);
 
 		assertCachingMetadata(shadow, false, startTs, endTs);
 
@@ -1259,7 +1345,7 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		// This is noFetch. Therefore the read should NOT update the caching timestamp
 		checkRepoAccountShadowWill(shadow, null, startTs);
 
-		checkConsistency(shadow);
+		checkUniqueness(shadow);
 
 		assertSteadyResource();
 	}
@@ -1341,7 +1427,7 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		assertRepoShadowCacheActivation(shadowRepo, ActivationStatusType.DISABLED);
 		assertRepoShadowCredentials(shadowRepo, ACCOUNT_WILL_PASSWORD);
 
-		checkConsistency(shadow);
+		checkUniqueness(shadow);
 
 		assertCachingMetadata(shadow, false, startTs, endTs);
 
@@ -1360,10 +1446,6 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		dummyResource.assertNoConnections();
 	}
 
-	protected void checkRepoAccountShadow(PrismObject<ShadowType> shadowFromRepo) {
-		ProvisioningTestUtil.checkRepoAccountShadow(shadowFromRepo);
-	}
-
 	protected void checkAccountWill(PrismObject<ShadowType> shadow, OperationResult result,
 			XMLGregorianCalendar startTs, XMLGregorianCalendar endTs) throws SchemaException, EncryptionException {
 		checkAccountShadow(shadow, result, true, startTs, endTs);
@@ -1373,7 +1455,6 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 		assertAttribute(shadow, DummyResourceContoller.DUMMY_ACCOUNT_ATTRIBUTE_LOOT_NAME, 42);
 		assertEquals("Unexpected number of attributes", 6, attributes.size());
 	}
-
 
 	/**
 	 * We do not know what the timestamp should be

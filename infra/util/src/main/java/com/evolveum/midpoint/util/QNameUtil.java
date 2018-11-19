@@ -272,20 +272,17 @@ public class QNameUtil {
 		return found;
 	}
 
-	public static boolean matchAny(QName a, Collection<QName> col) {
-		if (resolveNs(a, col) == null){
+	public static boolean matchAny(QName nameToFind, Collection<QName> names) {
+		// we no longer use resolveNs any more here, as the 'names' can contain duplicate qnames (resolveNs would complain on it)
+		if (names == null) {
 			return false;
 		}
-		return true;
-//		if (col == null) {
-//			return false;
-//		}
-//		for (QName b: col) {
-//			if (match(a, b)) {
-//				return true;
-//			}
-//		}
-//		return false;
+		for (QName name : names) {
+			if (match(nameToFind, name)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public static Collection<QName> createCollection(QName... qnames) {
@@ -296,8 +293,12 @@ public class QNameUtil {
 		return new QName(null, qname.getLocalPart(), qname.getPrefix());
 	}
 
-    public static boolean isUnqualified(QName targetTypeQName) {
-        return StringUtils.isBlank(targetTypeQName.getNamespaceURI());
+    public static boolean isUnqualified(QName name) {
+        return StringUtils.isBlank(name.getNamespaceURI());
+    }
+
+    public static boolean isQualified(QName name) {
+        return !isUnqualified(name);
     }
 
     public static boolean isTolerateUndeclaredPrefixes() {
@@ -351,6 +352,18 @@ public class QNameUtil {
 	public static boolean contains(Collection<QName> col, QName qname) {
 		return col != null && col.stream().anyMatch(e -> match(e, qname));
 	}
+	
+	public static boolean contains(QName[] array, QName qname) {
+		if (array == null) {
+			return false;
+		}
+		for (QName element: array) {
+			if (match(qname, element)) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	public static boolean remove(Collection<QName> col, QName qname) {
 		return col != null && col.removeIf(e -> match(e, qname));
@@ -379,4 +392,7 @@ public class QNameUtil {
 				|| (!atStart && (Character.isDigit(ch) || ch == '.' || ch == '-'));
 	}
 
+	public static String prettyPrint(QName... qnames) {
+		return PrettyPrinter.prettyPrint(Arrays.asList(qnames));
+	}
 }

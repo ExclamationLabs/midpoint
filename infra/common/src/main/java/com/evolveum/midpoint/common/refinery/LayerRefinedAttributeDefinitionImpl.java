@@ -593,6 +593,11 @@ public class LayerRefinedAttributeDefinitionImpl<T> implements LayerRefinedAttri
 	}
 	
 	@Override
+	public String getPlannedRemoval() {
+		return refinedAttributeDefinition.getPlannedRemoval();
+	}
+	
+	@Override
 	public boolean isElaborate() {
 		return refinedAttributeDefinition.isElaborate();
 	}
@@ -657,6 +662,16 @@ public class LayerRefinedAttributeDefinitionImpl<T> implements LayerRefinedAttri
 	@Override
 	public boolean canBeDefinitionOf(PrismValue pvalue) {
 		return refinedAttributeDefinition.canBeDefinitionOf(pvalue);
+	}
+	
+	@Override
+	public <A> A getAnnotation(QName qname) {
+		return refinedAttributeDefinition.getAnnotation(qname);
+	}
+
+	@Override
+	public <A> void setAnnotation(QName qname, A value) {
+		refinedAttributeDefinition.setAnnotation(qname, value);
 	}
 
 	@Override

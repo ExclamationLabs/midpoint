@@ -45,11 +45,13 @@ import com.evolveum.midpoint.prism.PrismReferenceValue;
 import com.evolveum.midpoint.prism.PrismValue;
 import com.evolveum.midpoint.prism.crypto.EncryptionException;
 import com.evolveum.midpoint.prism.crypto.Protector;
+import com.evolveum.midpoint.prism.delta.ContainerDelta;
 import com.evolveum.midpoint.prism.delta.ItemDelta;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.prism.delta.PropertyDelta;
 import com.evolveum.midpoint.prism.delta.ReferenceDelta;
 import com.evolveum.midpoint.prism.delta.builder.DeltaBuilder;
+import com.evolveum.midpoint.prism.delta.builder.S_ItemEntry;
 import com.evolveum.midpoint.prism.match.MatchingRule;
 import com.evolveum.midpoint.prism.match.MatchingRuleRegistry;
 import com.evolveum.midpoint.prism.path.ItemPath;
@@ -61,10 +63,12 @@ import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
 import com.evolveum.midpoint.prism.query.builder.S_FilterEntryOrEmpty;
 import com.evolveum.midpoint.prism.util.PrismAsserts;
 import com.evolveum.midpoint.prism.util.PrismTestUtil;
+import com.evolveum.midpoint.prism.xml.XmlTypeConverter;
 import com.evolveum.midpoint.repo.api.RepoAddOptions;
 import com.evolveum.midpoint.repo.api.RepositoryService;
 import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.ResultHandler;
+import com.evolveum.midpoint.schema.SearchResultMetadata;
 import com.evolveum.midpoint.schema.constants.ConnectorTestOperation;
 import com.evolveum.midpoint.schema.constants.MidPointConstants;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
@@ -81,8 +85,11 @@ import com.evolveum.midpoint.schema.util.MiscSchemaUtil;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.schema.util.ResourceTypeUtil;
 import com.evolveum.midpoint.schema.util.ShadowUtil;
+import com.evolveum.midpoint.schema.util.SimpleObjectResolver;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.task.api.TaskManager;
+import com.evolveum.midpoint.test.asserter.FocusAsserter;
+import com.evolveum.midpoint.test.asserter.ShadowAsserter;
 import com.evolveum.midpoint.test.ldap.OpenDJController;
 import com.evolveum.midpoint.test.util.DerbyController;
 import com.evolveum.midpoint.test.util.MidPointTestConstants;
@@ -106,7 +113,7 @@ import org.opends.server.types.Entry;
 import org.opends.server.types.SearchResultEntry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.security.authentication.encoding.LdapShaPasswordEncoder;
+import org.springframework.security.crypto.password.LdapShaPasswordEncoder;
 import org.springframework.test.context.testng.AbstractTestNGSpringContextTests;
 import org.testng.Assert;
 import org.testng.AssertJUnit;
@@ -119,6 +126,7 @@ import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 import javax.xml.bind.JAXBElement;
 import javax.xml.bind.JAXBException;
+import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.namespace.QName;
 
@@ -128,6 +136,7 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
+import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
@@ -141,6 +150,8 @@ import static org.testng.AssertJUnit.assertNotNull;
 @Listeners({ CurrentTestResultHolder.class })
 public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContextTests {
 
+	protected static final String USER_ADMINISTRATOR_USERNAME = "administrator";
+	
 	public static final String COMMON_DIR_NAME = "common";
 	@Deprecated
 	public static final String COMMON_DIR_PATH = MidPointTestConstants.TEST_RESOURCES_PATH + "/" + COMMON_DIR_NAME;
@@ -176,6 +187,10 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 	@Autowired protected PrismContext prismContext;
 	@Autowired protected MatchingRuleRegistry matchingRuleRegistry;
 	@Autowired protected LocalizationService localizationService;
+	
+	@Autowired(required = false)
+	@Qualifier("repoSimpleObjectResolver")
+	protected SimpleObjectResolver repoSimpleObjectResolver;
 
 	// Controllers for embedded OpenDJ and Derby. The abstract test will configure it, but
 	// it will not start
@@ -206,7 +221,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 			InternalMonitor.reset();
 			InternalsConfig.setPrismMonitoring(true);
 			prismContext.setMonitor(new InternalMonitor());
-
+			
 			initSystem(initTask, result);
 
 			postInitSystem(initTask, result);
@@ -240,6 +255,10 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 	protected void postInitSystem(Task initTask, OperationResult initResult) throws Exception {
 		// Nothing to do by default
 	};
+	
+	public <C extends Containerable> S_ItemEntry deltaFor(Class<C> objectClass) throws SchemaException {
+		return DeltaBuilder.deltaFor(objectClass, prismContext);
+	}
 
 	protected <T extends ObjectType> PrismObject<T> repoAddObjectFromFile(String filePath,
 			OperationResult parentResult) throws SchemaException, ObjectAlreadyExistsException, EncryptionException, IOException {
@@ -583,15 +602,12 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 	}
 
 	protected void deleteResourceAssigmentPolicy(String oid, AssignmentPolicyEnforcementType policy, boolean legalize) throws ObjectNotFoundException, SchemaException, ObjectAlreadyExistsException{
-		PrismObjectDefinition<ResourceType> objectDefinition = prismContext.getSchemaRegistry()
-				.findObjectDefinitionByCompileTimeClass(ResourceType.class);
-
 		ProjectionPolicyType syncSettings = new ProjectionPolicyType();
         syncSettings.setAssignmentPolicyEnforcement(policy);
         syncSettings.setLegalize(Boolean.valueOf(legalize));
-		ItemDelta deleteAssigmentEnforcement = PropertyDelta
-				.createModificationDeleteProperty(new ItemPath(ResourceType.F_PROJECTION),
-						objectDefinition.findPropertyDefinition(ResourceType.F_PROJECTION), syncSettings);
+		ContainerDelta<ProjectionPolicyType> deleteAssigmentEnforcement = ContainerDelta
+				.createModificationDelete(new ItemPath(ResourceType.F_PROJECTION), ResourceType.class, prismContext,
+						syncSettings.clone());
 
 		Collection<ItemDelta> modifications = new ArrayList<>();
 		modifications.add(deleteAssigmentEnforcement);
@@ -618,10 +634,10 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		PrismObjectDefinition<?> objectDefinition = prismContext.getSchemaRegistry()
 				.findObjectDefinitionByCompileTimeClass(clazz);
 
-		Collection<? extends ItemDelta> modifications = PropertyDelta
-				.createModificationReplacePropertyCollection(
+		Collection<? extends ItemDelta> modifications = ContainerDelta
+				.createModificationReplaceContainerCollection(
 						path,
-						objectDefinition, syncSettings);
+						objectDefinition, syncSettings.asPrismContainerValue());
 
 		OperationResult result = new OperationResult("Aplying sync settings");
 
@@ -1220,14 +1236,11 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 			if (actual > 20) {
 				AssertJUnit.fail("Unexpected number of (repository) shadows. Expected " + expected + " but was " + actual + " (too many to display)");
 			}
-			ResultHandler<ShadowType> handler = new ResultHandler<ShadowType>() {
-				@Override
-				public boolean handle(PrismObject<ShadowType> object, OperationResult parentResult) {
-					display("found shadow", object);
-					return true;
-				}
+			ResultHandler<ShadowType> handler = (object, parentResult) -> {
+				display("found shadow", object);
+				return true;
 			};
-			repositoryService.searchObjectsIterative(ShadowType.class, null, handler, null, false, result);
+			repositoryService.searchObjectsIterative(ShadowType.class, null, handler, null, true, result);
 			AssertJUnit.fail("Unexpected number of (repository) shadows. Expected " + expected + " but was " + actual);
 		}
 	}
@@ -1352,11 +1365,11 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		assertUserPassword(user, expectedClearPassword, CredentialsStorageTypeType.ENCRYPTION);
 	}
 
-	protected void assertUserPassword(PrismObject<UserType> user, String expectedClearPassword) throws EncryptionException, SchemaException {
-		assertUserPassword(user, expectedClearPassword, getPasswordStorageType());
+	protected PasswordType assertUserPassword(PrismObject<UserType> user, String expectedClearPassword) throws EncryptionException, SchemaException {
+		return assertUserPassword(user, expectedClearPassword, getPasswordStorageType());
 	}
 
-	protected void assertUserPassword(PrismObject<UserType> user, String expectedClearPassword, CredentialsStorageTypeType storageType) throws EncryptionException, SchemaException {
+	protected PasswordType assertUserPassword(PrismObject<UserType> user, String expectedClearPassword, CredentialsStorageTypeType storageType) throws EncryptionException, SchemaException {
 		UserType userType = user.asObjectable();
 		CredentialsType creds = userType.getCredentials();
 		assertNotNull("No credentials in "+user, creds);
@@ -1364,6 +1377,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		assertNotNull("No password in "+user, password);
 		ProtectedStringType protectedActualPassword = password.getValue();
 		assertProtectedString("Password for "+user, expectedClearPassword, protectedActualPassword, storageType);
+		return password;
 	}
 	
 	protected void assertUserNoPassword(PrismObject<UserType> user) throws EncryptionException, SchemaException {
@@ -1378,36 +1392,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 	}
 
 	protected void assertProtectedString(String message, String expectedClearValue, ProtectedStringType actualValue, CredentialsStorageTypeType storageType) throws EncryptionException, SchemaException {
-		switch (storageType) {
-
-			case NONE:
-				assertNull(message+": unexpected value: "+actualValue, actualValue);
-				break;
-
-			case ENCRYPTION:
-				assertNotNull(message+": no value", actualValue);
-				assertTrue(message+": unencrypted value: "+actualValue, actualValue.isEncrypted());
-				String actualClearPassword = protector.decryptString(actualValue);
-				assertEquals(message+": wrong value", expectedClearValue, actualClearPassword);
-				assertFalse(message+": unexpected hashed value: "+actualValue, actualValue.isHashed());
-				assertNull(message+": unexpected clear value: "+actualValue, actualValue.getClearValue());
-				break;
-
-			case HASHING:
-				assertNotNull(message+": no value", actualValue);
-				assertTrue(message+": value not hashed: "+actualValue, actualValue.isHashed());
-				ProtectedStringType expectedPs = new ProtectedStringType();
-				expectedPs.setClearValue(expectedClearValue);
-				assertTrue(message+": hash does not match, expected "+expectedClearValue+", but was "+actualValue,
-						protector.compare(actualValue, expectedPs));
-				assertFalse(message+": unexpected encrypted value: "+actualValue, actualValue.isEncrypted());
-				assertNull(message+": unexpected clear value: "+actualValue, actualValue.getClearValue());
-				break;
-
-			default:
-				throw new IllegalArgumentException("Unknown storage "+storageType);
-		}
-
+		IntegrationTestTools.assertProtectedString(message, expectedClearValue, actualValue, storageType, protector);
 	}
 
 	protected boolean compareProtectedString(String expectedClearValue, ProtectedStringType actualValue, CredentialsStorageTypeType storageType) throws EncryptionException, SchemaException {
@@ -1761,6 +1746,22 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		display("Operation result status", result.getStatus());
 		TestUtil.assertSuccess(result);
 	}
+	
+	protected void assertHadnledError(OperationResult result) {
+		if (result.isUnknown()) {
+			result.computeStatus();
+		}
+		display("Operation result status", result.getStatus());
+		TestUtil.assertResultStatus(result, OperationResultStatus.HANDLED_ERROR);
+	}
+	
+	protected void assertSuccess(OperationResult result, int depth) {
+		if (result.isUnknown()) {
+			result.computeStatus();
+		}
+		display("Operation result status", result.getStatus());
+		TestUtil.assertSuccess(result, depth);
+	}
 
 	protected void assertSuccess(String message, OperationResult result) {
 		if (result.isUnknown()) {
@@ -1938,12 +1939,12 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		assertNotLinked(user, accountOid);
 	}
 
-	protected void assertNotLinked(PrismObject<UserType> user, PrismObject<ShadowType> account) throws ObjectNotFoundException, SchemaException {
+	protected <F extends FocusType> void assertNotLinked(PrismObject<F> user, PrismObject<ShadowType> account) throws ObjectNotFoundException, SchemaException {
 		assertNotLinked(user, account.getOid());
 	}
 
-	protected void assertNotLinked(PrismObject<UserType> user, String accountOid) throws ObjectNotFoundException, SchemaException {
-		PrismReference linkRef = user.findReference(UserType.F_LINK_REF);
+	protected <F extends FocusType> void assertNotLinked(PrismObject<F> user, String accountOid) throws ObjectNotFoundException, SchemaException {
+		PrismReference linkRef = user.findReference(FocusType.F_LINK_REF);
 		if (linkRef == null) {
 			return;
 		}
@@ -1956,7 +1957,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		assertFalse("User " + user + " IS linked to account " + accountOid + " but not expecting it", found);
 	}
 
-	protected void assertNoLinkedAccount(PrismObject<UserType> user) {
+	protected <F extends FocusType> void assertNoLinkedAccount(PrismObject<F> user) {
 		PrismReference accountRef = user.findReference(UserType.F_LINK_REF);
 		if (accountRef == null) {
 			return;
@@ -2056,7 +2057,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 					if (!expectedOid.equals(hasRef.getOid())) {
 						return false;
 					}
-					if (!ObjectTypeUtil.relationMatches(relation, hasRef.getRelation())) {
+					if (!prismContext.relationMatches(relation, hasRef.getRelation())) {
 						return false;
 					}
 					return true;
@@ -2328,17 +2329,28 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		return new ItemPath(ShadowType.F_ATTRIBUTES, getAttributeQName(resource, attributeLocalName));
 	}
 	
-	protected ObjectDelta<ShadowType> createAccountPaswordDelta(String shadowOid, String newPassword) {
-		ProtectedStringType userPasswordPs = new ProtectedStringType();
-        userPasswordPs.setClearValue(newPassword);
-        return ObjectDelta.createModificationReplaceProperty(ShadowType.class, shadowOid, SchemaConstants.PATH_PASSWORD_VALUE, prismContext, userPasswordPs);
+	protected ObjectDelta<ShadowType> createAccountPaswordDelta(String shadowOid, String newPassword, String oldPassword) throws SchemaException {
+		ProtectedStringType newPasswordPs = new ProtectedStringType();
+        newPasswordPs.setClearValue(newPassword);
+        ProtectedStringType oldPasswordPs = null;
+        if (oldPassword != null) {
+        	oldPasswordPs = new ProtectedStringType();
+        	oldPasswordPs.setClearValue(oldPassword);
+        }
+        return deltaFor(ShadowType.class)
+        	.item(SchemaConstants.PATH_PASSWORD_VALUE)
+        		.oldRealValue(oldPasswordPs)
+        		.replace(newPasswordPs)
+        		.asObjectDelta(shadowOid);
 	}
 	
 	protected PrismObject<ShadowType> getShadowRepo(String shadowOid) throws ObjectNotFoundException, SchemaException {
 		OperationResult result = new OperationResult("getShadowRepo");
 		// We need to read the shadow as raw, so repo will look for some kind of rudimentary attribute
 		// definitions here. Otherwise we will end up with raw values for non-indexed (cached) attributes
+		LOGGER.info("Getting repo shadow {}", shadowOid);
 		PrismObject<ShadowType> shadow = repositoryService.getObject(ShadowType.class, shadowOid, GetOperationOptions.createRawCollection(), result);
+		LOGGER.info("Got repo shadow\n{}", shadow.debugDumpLazily(1));
 		assertSuccess(result);
 		return shadow;
 	}
@@ -2369,5 +2381,88 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		}
 		fail("Expected that attribute "+attrName+" is "+expectedClass+", but it was "+value.getClass()+": "+value);
 		return null; // not reached
+	}
+	
+	protected void assertApproxNumberOfAllResults(SearchResultMetadata searchMetadata, Integer expectedNumber) {
+		if (expectedNumber == null) {
+			if (searchMetadata == null) {
+				return;
+			}
+			assertNull("Unexpected approximate number of search results in search metadata, expected null but was "+searchMetadata.getApproxNumberOfAllResults(), searchMetadata.getApproxNumberOfAllResults());
+		} else {
+			assertEquals("Wrong approximate number of search results in search metadata", expectedNumber, searchMetadata.getApproxNumberOfAllResults());
+		}
+	}
+	
+	protected void assertEqualTime(String message, String isoTime, ZonedDateTime actualTime) {
+		assertEqualTime(message, ZonedDateTime.parse(isoTime), actualTime);
+	}
+	
+	protected void assertEqualTime(String message, ZonedDateTime expectedTime, ZonedDateTime actualTime) {
+		assertTrue(message+"; expected "+expectedTime+", but was "+actualTime, expectedTime.isEqual(actualTime));
+	}
+
+	protected XMLGregorianCalendar getTimestamp(String duration) {
+		return XmlTypeConverter.addDuration(clock.currentTimeXMLGregorianCalendar(), duration);
+	}
+
+	protected void clockForward(String duration) {
+		XMLGregorianCalendar before = clock.currentTimeXMLGregorianCalendar();
+		clock.overrideDuration(duration);
+		XMLGregorianCalendar after = clock.currentTimeXMLGregorianCalendar();
+		display("Clock going forward", before + " --[" + duration + "]--> " + after);
+	}
+	
+	protected void assertRelationDef(List<RelationDefinitionType> relations, QName qname, String expectedLabel) {
+    	RelationDefinitionType relDef = ObjectTypeUtil.findRelationDefinition(relations, qname);
+    	assertNotNull("No definition for relation "+qname, relDef);
+    	assertEquals("Wrong relation "+qname+" label", expectedLabel, relDef.getDisplay().getLabel());
+	}
+	
+	protected ShadowAsserter<Void> assertRepoShadow(String oid) throws ObjectNotFoundException, SchemaException {
+		PrismObject<ShadowType> repoShadow = getShadowRepo(oid);
+		ShadowAsserter<Void> asserter = ShadowAsserter.forShadow(repoShadow, "repository");
+		asserter
+			.display()
+			.assertBasicRepoProperties();
+		return asserter;
+	}
+	
+	protected void assertNoRepoShadow(String oid) throws SchemaException {
+		OperationResult result = new OperationResult("assertNoRepoShadow");
+		try {
+			PrismObject<ShadowType> shadow = repositoryService.getObject(ShadowType.class, oid, GetOperationOptions.createRawCollection(), result);
+			fail("Expected that shadow "+oid+" will not be in the repo. But it was: "+shadow);
+		} catch (ObjectNotFoundException e) {
+			// Expected
+			assertFailure(result);
+		}
+	}
+	
+	protected <T> RawType rawize(QName attrName, T value) {
+		return new RawType(new PrismPropertyValue(value), attrName, prismContext);
+	}
+	
+	protected void markShadowTombstone(String oid) throws ObjectNotFoundException, SchemaException, ObjectAlreadyExistsException {
+		Task task = createTask("markShadowTombstone");
+        OperationResult result = task.getResult();
+        List<ItemDelta<?, ?>> deadModifications = deltaFor(ShadowType.class)
+            	.item(ShadowType.F_DEAD).replace(true)
+            	.item(ShadowType.F_EXISTS).replace(false)
+            	.asItemDeltas();
+        repositoryService.modifyObject(ShadowType.class, oid, deadModifications, result);
+        assertSuccess(result);
+	}
+	
+	protected XMLGregorianCalendar addDuration(XMLGregorianCalendar time, Duration duration) {
+		return XmlTypeConverter.addDuration(time, duration);
+	}
+	
+	protected XMLGregorianCalendar addDuration(XMLGregorianCalendar time, String duration) {
+		return XmlTypeConverter.addDuration(time, duration);
+	}
+	
+	protected void displayCurrentTime() {
+		display("Current time", clock.currentTimeXMLGregorianCalendar());
 	}
 }

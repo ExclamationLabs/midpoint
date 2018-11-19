@@ -16,6 +16,8 @@
 package com.evolveum.midpoint.repo.common.expression;
 
 import com.evolveum.midpoint.prism.PrismObject;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.schema.util.SchemaDebugUtil;
 import com.evolveum.midpoint.util.DOMUtil;
 import com.evolveum.midpoint.util.DebugDumpable;
@@ -28,14 +30,14 @@ import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
 
 import org.apache.commons.lang.StringUtils;
+import org.jetbrains.annotations.NotNull;
 import org.w3c.dom.Element;
 
 import javax.xml.namespace.QName;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Set;
+
+import static java.util.Collections.emptySet;
 
 /**
  * @author Radovan Semancik
@@ -52,7 +54,14 @@ public class ExpressionVariables implements DebugDumpable {
      * it cannot decide which version to use.
      */
     public void addVariableDefinitions(Map<QName, Object> extraVariables) {
+    	addVariableDefinitions(extraVariables, emptySet());
+    }
+
+    public void addVariableDefinitions(Map<QName, Object> extraVariables, @NotNull Collection<QName> exceptFor) {
         for (Entry<QName, Object> entry : extraVariables.entrySet()) {
+        	if (QNameUtil.matchAny(entry.getKey(), exceptFor)) {
+        		continue;
+	        }
         	Object value = entry.getValue();
         	if (!areDeltasAllowed() && value instanceof ObjectDeltaObject<?>) {
         		ObjectDeltaObject<?> odo = (ObjectDeltaObject<?>)value;
@@ -74,7 +83,11 @@ public class ExpressionVariables implements DebugDumpable {
 	}
 
 	public void addVariableDefinitions(ExpressionVariables extraVariables) {
-    	addVariableDefinitions(extraVariables.getMap());
+    	addVariableDefinitions(extraVariables, emptySet());
+    }
+
+	public void addVariableDefinitions(ExpressionVariables extraVariables, @NotNull Collection<QName> exceptFor) {
+    	addVariableDefinitions(extraVariables.getMap(), exceptFor);
     }
 
     /**

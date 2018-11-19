@@ -124,7 +124,7 @@ public class ContainerValueWrapper<C extends Containerable> extends PrismWrapper
 	}
 
 	@Nullable
-	ContainerWrapper<C> getContainer() {
+	public ContainerWrapper<C> getContainer() {
 		return containerWrapper;
 	}
 
@@ -279,7 +279,25 @@ public class ContainerValueWrapper<C extends Containerable> extends PrismWrapper
 	}
 
 	public void setReadonly(boolean readonly) {
+		setReadonly(readonly, false);
+	}
+
+	public void setReadonly(boolean readonly, boolean recursive) {
 		this.readonly = readonly;
+		if (recursive) {
+			getItems().forEach(item -> {
+				if (item instanceof PropertyOrReferenceWrapper) {
+					((PropertyOrReferenceWrapper) item).setReadonly(readonly);
+					return;
+				}
+				if (item instanceof ContainerWrapper){
+					List<ContainerValueWrapper> itemWrapperValues = ((ContainerWrapper) item).getValues();
+					itemWrapperValues.forEach(containerValueWrapper -> {
+						containerValueWrapper.setReadonly(readonly, recursive);
+					});
+				}
+			});
+		}
 	}
 
 	public boolean isSelected() {
@@ -411,7 +429,6 @@ public class ContainerValueWrapper<C extends Containerable> extends PrismWrapper
 			} else {
 
 				PropertyOrReferenceWrapper propOrRef = (PropertyOrReferenceWrapper) item;
-				ItemPath path = propOrRef.getPath();
 				ItemDelta itemDelta = collectAddModifications(propOrRef);
 				
 				ItemPath itemPath = itemDelta.getParentPath().remainder(getContainer().getPath());
@@ -786,19 +803,31 @@ public class ContainerValueWrapper<C extends Containerable> extends PrismWrapper
 		return null;
 	}
 
-	public boolean containsMultivalueContainer(){
+	public boolean containsMultipleMultivalueContainer(ItemVisibilityHandler isPanelVisible){
+		int count = 0;
 		for (ItemWrapper wrapper : getItems()) {
 			if (!(wrapper instanceof ContainerWrapper)) {
 				continue;
 			}
 			if (!((ContainerWrapper<C>) wrapper).getItemDefinition().isSingleValue()){
+				if(isPanelVisible != null) {
+					if(isPanelVisible.isVisible(wrapper).equals(ItemVisibility.VISIBLE)
+							|| (isPanelVisible.isVisible(wrapper).equals(ItemVisibility.AUTO) && ((ContainerWrapper<C>)wrapper).isVisible())) {
+						count++;
+					}
+				} else if(((ContainerWrapper<C>)wrapper).isVisible()) {
+					count++;
+				}
+			}
+			
+			if (count > 1) {
 				return true;
 			}
 		}
 		return false;
 	}
 
-	public List<QName> getChildMultivalueContainersToBeAdded(){
+	public List<QName> getChildMultivalueContainersToBeAdded(ItemVisibilityHandler isPanelVisible){
 		List<QName> pathList = new ArrayList<>();
 		for (ItemWrapper wrapper : getItems()) {
 			if (!(wrapper instanceof ContainerWrapper)) {
@@ -808,9 +837,20 @@ public class ContainerValueWrapper<C extends Containerable> extends PrismWrapper
 					!((ContainerWrapper<C>)wrapper).getItemDefinition().canModify()){
 				continue;
 			}
+			if(isPanelVisible != null) {
+				if(isPanelVisible.isVisible(wrapper).equals(ItemVisibility.HIDDEN)) {
+					continue;
+				}
+				if(isPanelVisible.isVisible(wrapper).equals(ItemVisibility.AUTO) && !((ContainerWrapper<C>)wrapper).isVisible()) {
+					continue;
+				}
+			} else if(!((ContainerWrapper<C>)wrapper).isVisible()) {
+					continue;
+			}
 			if (!((ContainerWrapper<C>) wrapper).getItemDefinition().isSingleValue()){
 				pathList.add(((ContainerWrapper<C>) wrapper).getName());
 			}
+
 		}
 		return pathList;
 	}
@@ -830,5 +870,4 @@ public class ContainerValueWrapper<C extends Containerable> extends PrismWrapper
 		}
 		return WebComponentUtil.getDisplayName(containerValue);
 	}
-
 }

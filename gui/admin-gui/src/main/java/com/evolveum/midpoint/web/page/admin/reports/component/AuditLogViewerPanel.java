@@ -51,7 +51,6 @@ import org.apache.wicket.model.util.ListModel;
 import com.evolveum.midpoint.audit.api.AuditEventRecord;
 import com.evolveum.midpoint.gui.api.component.BasePanel;
 import com.evolveum.midpoint.gui.api.component.button.CsvDownloadButtonPanel;
-import com.evolveum.midpoint.gui.api.component.path.ItemPathDto;
 import com.evolveum.midpoint.gui.api.component.path.ItemPathPanel;
 import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.gui.api.util.WebModelServiceUtils;
@@ -183,7 +182,7 @@ public abstract class AuditLogViewerPanel extends BasePanel<AuditSearchDto> {
         parametersPanel.add(to);
 
         ItemPathPanel changedItemPanel = new ItemPathPanel(ID_CHANGED_ITEM, new PropertyModel<>(getModel(),
-            AuditSearchDto.F_CHANGED_ITEM), getPageBase());
+            AuditSearchDto.F_CHANGED_ITEM));
         changedItemPanel.setOutputMarkupId(true);
         parametersPanel.add(changedItemPanel);
 
@@ -363,66 +362,67 @@ public abstract class AuditLogViewerPanel extends BasePanel<AuditSearchDto> {
 	// Serializable as it becomes part of panel which is serialized
     private Function<ObjectType, ObjectReferenceType> objectReferenceTransformer =
     		(Function<ObjectType, ObjectReferenceType> & Serializable) (ObjectType o) ->
-        		ObjectTypeUtil.createObjectRef(o);
+        		ObjectTypeUtil.createObjectRef(o, getPageBase().getPrismContext());
 
 	// Serializable as it becomes part of panel which is serialized
     private Function<ObjectType, String> stringTransformer =
     		(Function<ObjectType, String> & Serializable) (ObjectType o) ->
         		o.getName().getOrig();
 
-	private void initAuditLogViewerTable(Form mainForm) {
-        AuditEventRecordProvider provider = new AuditEventRecordProvider(AuditLogViewerPanel.this) {
+    private Map<String, Object> getAuditEventProviderParameters() {
+        Map<String, Object> parameters = new HashMap<>();
+
+        AuditSearchDto search = AuditLogViewerPanel.this.getModelObject();
+        parameters.put(AuditEventRecordProvider.PARAMETER_FROM, search.getFrom());
+        parameters.put(AuditEventRecordProvider.PARAMETER_TO, search.getTo());
+
+        if (search.getChannel() != null) {
+            parameters.put(AuditEventRecordProvider.PARAMETER_CHANNEL, QNameUtil.qNameToUri(search.getChannel()));
+        }
+        parameters.put(AuditEventRecordProvider.PARAMETER_HOST_IDENTIFIER, search.getHostIdentifier());
+
+        if (search.getInitiatorName() != null) {
+            parameters.put(AuditEventRecordProvider.PARAMETER_INITIATOR_NAME, search.getInitiatorName().getOid());
+        }
+
+        if (search.getTargetOwnerName() != null) {
+            parameters.put(AuditEventRecordProvider.PARAMETER_TARGET_OWNER_NAME, search.getTargetOwnerName().getOid());
+        }
+        List<String> targetOids = new ArrayList<>();
+        if (isNotEmpty(search.getTargetNamesObjects())) {
+            targetOids.addAll(search.getTargetNamesObjects().stream()
+                    .map(ObjectType::getOid)
+                    .collect(toList()));
+        }
+        if (isNotEmpty(search.getTargetNames())) {
+            targetOids.addAll(search.getTargetNames().stream()
+                    .map(ObjectReferenceType::getOid)
+                    .collect(toList()));
+        }
+        if (!targetOids.isEmpty()) {
+            parameters.put(AuditEventRecordProvider.PARAMETER_TARGET_NAMES, targetOids);
+        }
+        if (search.getChangedItem().toItemPath() != null) {
+            ItemPath itemPath = search.getChangedItem().toItemPath();
+            parameters.put(AuditEventRecordProvider.PARAMETER_CHANGED_ITEM, CanonicalItemPath.create(itemPath).asString());
+        }
+        parameters.put(AuditEventRecordProvider.PARAMETER_EVENT_TYPE, search.getEventType());
+        parameters.put(AuditEventRecordProvider.PARAMETER_EVENT_STAGE, search.getEventStage());
+        parameters.put(AuditEventRecordProvider.PARAMETER_OUTCOME, search.getOutcome());
+        if (isNotEmpty(search.getvalueRefTargetNames())) {
+            parameters.put(AuditEventRecordProvider.PARAMETER_VALUE_REF_TARGET_NAMES,
+                    search.getvalueRefTargetNames().stream()
+                            .map(ObjectType::getName)
+                            .map(PolyStringType::getOrig)
+                            .collect(toList()));
+        }
+        return parameters;
+    }
+
+    private void initAuditLogViewerTable(Form mainForm) {
+        AuditEventRecordProvider provider = new AuditEventRecordProvider(AuditLogViewerPanel.this, null,
+                this::getAuditEventProviderParameters) {
             private static final long serialVersionUID = 1L;
-
-            public Map<String, Object> getParameters() {
-                Map<String, Object> parameters = new HashMap<>();
-
-                AuditSearchDto search = AuditLogViewerPanel.this.getModelObject();
-                parameters.put(AuditEventRecordProvider.PARAMETER_FROM, search.getFrom());
-                parameters.put(AuditEventRecordProvider.PARAMETER_TO, search.getTo());
-
-                if (search.getChannel() != null) {
-                    parameters.put(AuditEventRecordProvider.PARAMETER_CHANNEL, QNameUtil.qNameToUri(search.getChannel()));
-                }
-                parameters.put(AuditEventRecordProvider.PARAMETER_HOST_IDENTIFIER, search.getHostIdentifier());
-
-                if (search.getInitiatorName() != null) {
-                    parameters.put(AuditEventRecordProvider.PARAMETER_INITIATOR_NAME, search.getInitiatorName().getOid());
-                }
-
-                if (search.getTargetOwnerName() != null) {
-                    parameters.put(AuditEventRecordProvider.PARAMETER_TARGET_OWNER_NAME, search.getTargetOwnerName().getOid());
-                }
-                List<String> targetOids = new ArrayList<>();
-                if (isNotEmpty(search.getTargetNamesObjects())) {
-                    targetOids.addAll(search.getTargetNamesObjects().stream()
-                    		.map(ObjectType::getOid)
-                    		.collect(toList()));
-                }
-                if (isNotEmpty(search.getTargetNames())) {
-                    targetOids.addAll(search.getTargetNames().stream()
-                    		.map(ObjectReferenceType::getOid)
-                    		.collect(toList()));
-                }
-                if (!targetOids.isEmpty()) {
-    				parameters.put(AuditEventRecordProvider.PARAMETER_TARGET_NAMES, targetOids);
-                }
-                if (search.getChangedItem().toItemPath() != null) {
-                	ItemPath itemPath = search.getChangedItem().toItemPath();
-                	parameters.put(AuditEventRecordProvider.PARAMETER_CHANGED_ITEM, CanonicalItemPath.create(itemPath).asString());
-                }
-                parameters.put(AuditEventRecordProvider.PARAMETER_EVENT_TYPE, search.getEventType());
-                parameters.put(AuditEventRecordProvider.PARAMETER_EVENT_STAGE, search.getEventStage());
-                parameters.put(AuditEventRecordProvider.PARAMETER_OUTCOME, search.getOutcome());
-                if (isNotEmpty(search.getvalueRefTargetNames())) {
-	                parameters.put(AuditEventRecordProvider.PARAMETER_VALUE_REF_TARGET_NAMES,
-	                		search.getvalueRefTargetNames().stream()
-	                		.map(ObjectType::getName)
-	                		.map(PolyStringType::getOrig)
-	                		.collect(toList()));
-                }
-                return parameters;
-            }
 
             @Override
             protected void saveCurrentPage(long from, long count) {

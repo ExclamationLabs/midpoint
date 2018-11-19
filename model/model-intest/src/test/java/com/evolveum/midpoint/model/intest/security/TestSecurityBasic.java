@@ -630,9 +630,29 @@ public class TestSecurityBasic extends AbstractSecurityTest {
 		assignRole(USER_JACK_OID, ROLE_PROP_READ_SOME_MODIFY_SOME_USER_OID);
 		login(USER_JACK_USERNAME);
 
+		doReadSomeModifySomeUser(TEST_NAME);
+    }
+    
+    /**
+     * Same as test216AutzJackPropReadSomeModifySomeUser, but with get+search instead of read.
+     */
+    @Test
+    public void test217AutzJackPropGetSearchSomeModifySomeUser() throws Exception {
+		final String TEST_NAME = "test217AutzJackPropGetSearchSomeModifySomeUser";
+		displayTestTitle(TEST_NAME);
+		// GIVEN
+		cleanupAutzTest(USER_JACK_OID);
+		assignRole(USER_JACK_OID, ROLE_PROP_GET_SEARCH_SOME_MODIFY_SOME_USER_OID);
+		login(USER_JACK_USERNAME);
+
+		doReadSomeModifySomeUser(TEST_NAME);
+	}
+    
+    private void doReadSomeModifySomeUser(final String TEST_NAME) throws Exception {
+		
 		// WHEN
 		displayWhen(TEST_NAME);
-
+		
 		PrismObject<UserType> userJack = getUser(USER_JACK_OID);
 		display("Jack", userJack);
 		assertUserJackReadSomeModifySome(userJack, 1);
@@ -889,7 +909,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         cleanupAutzTest(USER_JACK_OID);
 
         assignRole(USER_JACK_OID, ROLE_MANAGER_FULL_CONTROL_OID);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         PrismObject<UserType> user = getUser(USER_JACK_OID);
         String accountOid = getSingleLinkOid(user);
@@ -941,7 +961,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
 
         assignRole(USER_JACK_OID, ROLE_MANAGER_FULL_CONTROL_OID);
         assignOrg(USER_JACK_OID, ORG_MINISTRY_OF_RUM_OID, null);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         PrismObject<UserType> user = getUser(USER_JACK_OID);
         String accountOid = getSingleLinkOid(user);
@@ -968,7 +988,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
 
         assignRole(USER_JACK_OID, ROLE_MANAGER_FULL_CONTROL_OID);
         assignOrg(USER_JACK_OID, ORG_MINISTRY_OF_RUM_OID, SchemaConstants.ORG_MANAGER);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         // precondition
         PrismObject<ShadowType> elaineShadow = getObject(ShadowType.class, ACCOUNT_SHADOW_ELAINE_DUMMY_OID);
@@ -998,7 +1018,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         assignRole(USER_JACK_OID, ROLE_MANAGER_FULL_CONTROL_OID);
         assignOrg(USER_JACK_OID, ORG_MINISTRY_OF_RUM_OID, SchemaConstants.ORG_MANAGER);
         assignOrg(USER_JACK_OID, ORG_MINISTRY_OF_DEFENSE_OID, SchemaConstants.ORG_MANAGER);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
         
         dumpOrgTreeAndUsers();
 
@@ -1029,7 +1049,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
 
         assignRole(USER_JACK_OID, ROLE_MANAGER_USER_ADMIN_OID);
         assignOrg(USER_JACK_OID, ORG_MINISTRY_OF_RUM_OID, null);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         PrismObject<UserType> user = getUser(USER_JACK_OID);
         String accountOid = getSingleLinkOid(user);
@@ -1056,7 +1076,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
 
         assignRole(USER_JACK_OID, ROLE_MANAGER_USER_ADMIN_OID);
         assignOrg(USER_JACK_OID, ORG_MINISTRY_OF_RUM_OID, SchemaConstants.ORG_MANAGER);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         // precondition
         PrismObject<ShadowType> elaineShadow = getObject(ShadowType.class, ACCOUNT_SHADOW_ELAINE_DUMMY_OID);
@@ -1086,7 +1106,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         assignRole(USER_JACK_OID, ROLE_MANAGER_USER_ADMIN_OID);
         assignOrg(USER_JACK_OID, ORG_MINISTRY_OF_RUM_OID, SchemaConstants.ORG_MANAGER);
         assignOrg(USER_JACK_OID, ORG_MINISTRY_OF_DEFENSE_OID, SchemaConstants.ORG_MANAGER);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         // precondition
         PrismObject<ShadowType> elaineShadow = getObject(ShadowType.class, ACCOUNT_SHADOW_ELAINE_DUMMY_OID);
@@ -1188,7 +1208,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         	assertModifyDeny(OrgType.class, ORG_SCUMM_BAR_OID, OrgType.F_DESCRIPTION, "Hosting the worst scumm of the World.");
         }
 
-        assignAccount(USER_ESTEVAN_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_ESTEVAN_OID, RESOURCE_DUMMY_OID, null);
 
         PrismObject<UserType> userEstevan = getUser(USER_ESTEVAN_OID);
         String accountEstevanOid = getSingleLinkOid(userEstevan);
@@ -1272,7 +1292,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         	assertModifyDeny(OrgType.class, ORG_SCUMM_BAR_OID, OrgType.F_DESCRIPTION, "Hosting the worst scumm of the World.");
         }
 
-        assignAccount(USER_ESTEVAN_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_ESTEVAN_OID, RESOURCE_DUMMY_OID, null);
 
         PrismObject<UserType> userEstevan = getUser(USER_ESTEVAN_OID);
         String accountEstevanOid = getSingleLinkOid(userEstevan);
@@ -1336,7 +1356,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         assumeAssignmentPolicy(AssignmentPolicyEnforcementType.RELATIVE);
 
         assignRole(USER_JACK_OID, ROLE_SELF_ACCOUNTS_READ_OID);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         assumeAssignmentPolicy(AssignmentPolicyEnforcementType.NONE);
 
@@ -1405,7 +1425,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         // GIVEN
         cleanupAutzTest(USER_JACK_OID);
         assignRole(USER_JACK_OID, ROLE_SELF_ACCOUNTS_READ_WRITE_OID);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         assumeAssignmentPolicy(AssignmentPolicyEnforcementType.NONE);
 
@@ -1471,7 +1491,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         // GIVEN
         cleanupAutzTest(USER_JACK_OID);
         assignRole(USER_JACK_OID, ROLE_SELF_ACCOUNTS_PARTIAL_CONTROL_OID);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         assumeAssignmentPolicy(AssignmentPolicyEnforcementType.NONE);
 
@@ -1554,7 +1574,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         // GIVEN
         cleanupAutzTest(USER_JACK_OID);
         assignRole(USER_JACK_OID, ROLE_SELF_ACCOUNTS_PARTIAL_CONTROL_PASSWORD_OID);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         assumeAssignmentPolicy(AssignmentPolicyEnforcementType.NONE);
 
@@ -2252,12 +2272,8 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         assertAssignments(user, 2);
         assertAssignedRole(user, ROLE_BUSINESS_1_OID);
 
-        assertDeny("assign application role to jack", new Attempt() {
-			@Override
-			public void run(Task task, OperationResult result) throws Exception {
-				assignRole(USER_JACK_OID, ROLE_BUSINESS_2_OID, task, result);
-			}
-		});
+        assertDeny("assign application role to jack", (task, result) -> 
+				assignRole(USER_JACK_OID, ROLE_BUSINESS_2_OID, task, result));
 
         assertAllow("unassign business role from jack",
         	(task, result) ->
@@ -2402,12 +2418,8 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         assertAssignments(user, 3);
         assertAssignedRole(user, ROLE_BUSINESS_1_OID);
 
-        assertDeny("assign application role to jack", new Attempt() {
-			@Override
-			public void run(Task task, OperationResult result) throws Exception {
-				assignRole(USER_JACK_OID, ROLE_BUSINESS_2_OID, task, result);
-			}
-		});
+        assertDeny("assign application role to jack", 
+        		(task, result) -> assignRole(USER_JACK_OID, ROLE_BUSINESS_2_OID, task, result));
 
         // End-user role has authorization to assign, but not to unassign
         assertDeny("unassign business role from jack",
@@ -2422,7 +2434,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         assertCredentialsPolicy(user);
 	}
 
-	private void assertCredentialsPolicy(PrismObject<UserType> user) throws ObjectNotFoundException, SchemaException {
+	private void assertCredentialsPolicy(PrismObject<UserType> user) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 		OperationResult result = new OperationResult("assertCredentialsPolicy");
 		CredentialsPolicyType credentialsPolicy = modelInteractionService.getCredentialsPolicy(user, null, result);
 		result.computeStatus();
@@ -2509,7 +2521,7 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         // GIVEN
         cleanupAutzTest(USER_JACK_OID);
         assignRole(USER_JACK_OID, ROLE_ROLE_OWNER_ASSIGN_OID);
-        unassignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
+        unassignAccountFromUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null);
 
         PrismObject<UserType> user = getUser(USER_JACK_OID);
         assertAssignments(user, 1);
@@ -2538,12 +2550,8 @@ public class TestSecurityBasic extends AbstractSecurityTest {
         assertAssignments(user, 2);
         assertAssignedRole(user, ROLE_APPLICATION_1_OID);
 
-        assertDeny("assign application role 2 to jack", new Attempt() {
-			@Override
-			public void run(Task task, OperationResult result) throws Exception {
-				assignRole(USER_JACK_OID, ROLE_APPLICATION_2_OID, task, result);
-			}
-		});
+        assertDeny("assign application role 2 to jack", 
+        		(task, result) -> assignRole(USER_JACK_OID, ROLE_APPLICATION_2_OID, task, result));
 
         assertAllow("unassign application role 1 from jack",
         		(task,result) -> unassignRole(USER_JACK_OID, ROLE_APPLICATION_1_OID, task, result));

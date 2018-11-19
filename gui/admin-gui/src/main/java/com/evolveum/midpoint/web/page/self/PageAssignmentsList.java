@@ -18,6 +18,7 @@ import com.evolveum.midpoint.schema.result.OperationResultStatus;
 import com.evolveum.midpoint.security.api.AuthorizationConstants;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.task.api.TaskCategory;
+import com.evolveum.midpoint.util.exception.CommonException;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.logging.LoggingUtils;
 import com.evolveum.midpoint.util.logging.Trace;
@@ -33,6 +34,8 @@ import com.evolveum.midpoint.web.component.form.Form;
 import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItem;
 import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItemAction;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
+import com.evolveum.midpoint.web.page.admin.configuration.component.HeaderMenuAction;
+import com.evolveum.midpoint.web.page.admin.reports.PageCreatedReports;
 import com.evolveum.midpoint.web.page.admin.users.component.ExecuteChangeOptionsDto;
 import com.evolveum.midpoint.web.page.admin.users.dto.UserDtoStatus;
 import com.evolveum.midpoint.web.page.self.dto.AssignmentConflictDto;
@@ -64,8 +67,8 @@ import static com.evolveum.midpoint.xml.ns._public.common.common_3.PartialProces
                 label = PageSelf.AUTH_SELF_ALL_LABEL,
                 description = PageSelf.AUTH_SELF_ALL_DESCRIPTION),
         @AuthorizationAction(actionUri = AuthorizationConstants.AUTZ_UI_SELF_REQUESTS_ASSIGNMENTS_URL,
-                label = "PageAssignmentShoppingKart.auth.requestAssignments.label",
-                description = "PageAssignmentShoppingKart.auth.requestAssignments.description")})
+                label = "PageAssignmentShoppingCart.auth.requestAssignments.label",
+                description = "PageAssignmentShoppingCart.auth.requestAssignments.description")})
 public class PageAssignmentsList<F extends FocusType> extends PageBase{
     private static final String ID_ASSIGNMENT_TABLE_PANEL = "assignmentTablePanel";
     private static final String ID_FORM = "mainForm";
@@ -114,15 +117,21 @@ public class PageAssignmentsList<F extends FocusType> extends PageBase{
             @Override
             protected List<InlineMenuItem> createAssignmentMenu() {
                 List<InlineMenuItem> items = new ArrayList<>();
-                InlineMenuItem item = new InlineMenuItem(createStringResource("AssignmentTablePanel.menu.unassign"),
-                        new InlineMenuItemAction() {
+                InlineMenuItem item = new InlineMenuItem(createStringResource("AssignmentTablePanel.menu.unassign")) {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public InlineMenuItemAction initAction() {
+                        return new InlineMenuItemAction() {
                             private static final long serialVersionUID = 1L;
 
                             @Override
                             public void onClick(AjaxRequestTarget target) {
                                 deleteAssignmentPerformed(target, null);
                             }
-                        });
+                        };
+                    }
+                };
                 items.add(item);
                 return items;
             }
@@ -259,9 +268,8 @@ public class PageAssignmentsList<F extends FocusType> extends PageBase{
             SessionStorage storage = getSessionStorage();
             storage.getRoleCatalog().getAssignmentShoppingCart().clear();
         } catch (Exception e) {
+            result.recordFatalError(e);
             LoggingUtils.logUnexpectedException(LOGGER, "Could not save assignments ", e);
-            error(createStringResource("PageAssignmentsList.saveAssignmentsError").getString() + e.getLocalizedMessage());
-            target.add(getFeedbackPanel());
         } finally {
             result.recomputeStatus();
         }
@@ -272,7 +280,7 @@ public class PageAssignmentsList<F extends FocusType> extends PageBase{
             result.setMessage(createStringResource("operation.com.evolveum.midpoint.web.page.self.PageRequestRole.taskCreated").getString());
             showResult(result);
             clearStorage();
-            setResponsePage(PageAssignmentShoppingKart.class);
+            setResponsePage(PageAssignmentShoppingCart.class);
             return;
         }
         showResult(result);
@@ -281,7 +289,7 @@ public class PageAssignmentsList<F extends FocusType> extends PageBase{
             target.add(PageAssignmentsList.this.get(ID_FORM));
         } else {
             clearStorage();
-            setResponsePage(PageAssignmentShoppingKart.class);
+            setResponsePage(PageAssignmentShoppingCart.class);
         }
     }
 
@@ -322,13 +330,13 @@ public class PageAssignmentsList<F extends FocusType> extends PageBase{
                 result.setMessage(createStringResource("operation.com.evolveum.midpoint.web.page.self.PageRequestRole.taskCreated").getString());
                 showResult(result);
                 clearStorage();
-                setResponsePage(PageAssignmentShoppingKart.class);
+                setResponsePage(PageAssignmentShoppingCart.class);
                 return;
             }
             if (WebComponentUtil.isSuccessOrHandledError(result)
                     || OperationResultStatus.IN_PROGRESS.equals(result.getStatus())) {
                 clearStorage();
-                setResponsePage(PageAssignmentShoppingKart.class);
+                setResponsePage(PageAssignmentShoppingCart.class);
             } else {
                 showResult(result);
                 target.add(getFeedbackPanel());
@@ -450,7 +458,7 @@ public class PageAssignmentsList<F extends FocusType> extends PageBase{
                     .getEvaluatedAssignmentTriple();
             Collection<? extends EvaluatedAssignment> addedAssignments = evaluatedAssignmentTriple.getPlusSet();
             for (EvaluatedAssignment<UserType> evaluatedAssignment : addedAssignments) {
-            	
+
                 for (EvaluatedPolicyRule policyRule : evaluatedAssignment.getAllTargetsPolicyRules()) {
                     if (!policyRule.containsEnabledAction()) {
                         continue;

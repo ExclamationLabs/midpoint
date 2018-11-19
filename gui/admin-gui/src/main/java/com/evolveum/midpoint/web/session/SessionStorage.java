@@ -21,6 +21,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import com.evolveum.midpoint.gui.impl.session.ObjectTabStorage;
+import com.evolveum.midpoint.gui.impl.session.WorkItemsStorage;
 import com.evolveum.midpoint.util.DebugDumpable;
 import com.evolveum.midpoint.util.DebugUtil;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ShadowKindType;
@@ -51,6 +53,15 @@ public class SessionStorage implements Serializable, DebugDumpable {
     public static final String KEY_ASSIGNMENTS_TAB = "assignmentsTab";
     public static final String KEY_INDUCEMENTS_TAB = "inducementsTab";
     public static final String KEY_INDUCED_ENTITLEMENTS_TAB = "inducedEntitlementsTab";
+    public static final String KEY_OBJECT_POLICIES_TAB = "objectPoliciesTab";
+    public static final String KEY_GLOBAL_POLICY_RULES_TAB = "globalPolicyRulesTab";
+    public static final String KEY_LOGGING_TAB_APPENDER_TABLE = "loggingTabAppenderTable";
+    public static final String KEY_LOGGING_TAB_LOGGER_TABLE = "loggingTabLoggerTable";
+    public static final String KEY_NOTIFICATION_TAB_MAIL_SERVER_TABLE = "notificationTabMailServerTable";
+    public static final String KEY_ROLE_MEMEBER_PANEL = "roleMemberPanel";
+    public static final String KEY_ORG_MEMEBER_PANEL = "orgMemberPanel";
+    public static final String KEY_SERVICE_MEMEBER_PANEL = "serviceMemberPanel";
+    public static final String KEY_WORK_ITEMS = "workItems";
 
     private static final String KEY_TASKS = "tasks";
     private static final String KEY_CERT_CAMPAIGNS = "certCampaigns";
@@ -143,13 +154,6 @@ public class SessionStorage implements Serializable, DebugDumpable {
         return (ServicesStorage)pageStorageMap.get(KEY_SERVICES);
     }
 
-    public RoleMembersStorage getRoleMembers() {
-    	if (pageStorageMap.get(KEY_ROLE_MEMBERS) == null) {
-            pageStorageMap.put(KEY_ROLE_MEMBERS, new RoleMembersStorage());
-        }
-        return (RoleMembersStorage)pageStorageMap.get(KEY_ROLE_MEMBERS);
-    }
-
     public ResourceContentStorage getResourceContentStorage(ShadowKindType kind, String searchMode) {
     	String key = getContentStorageKey(kind, searchMode);
     	if (pageStorageMap.get(key) == null) {
@@ -158,26 +162,44 @@ public class SessionStorage implements Serializable, DebugDumpable {
         return (ResourceContentStorage)pageStorageMap.get(key);
 
 	}
-
-    public AssignmentsTabStorage getAssignmentsTabStorage() {
-        if (pageStorageMap.get(KEY_ASSIGNMENTS_TAB) == null) {
-            pageStorageMap.put(KEY_ASSIGNMENTS_TAB, new AssignmentsTabStorage());
+    
+    private ObjectTabStorage getObjectTabStorage(String key) {
+    	if (pageStorageMap.get(key) == null) {
+            pageStorageMap.put(key, new ObjectTabStorage());
         }
-        return (AssignmentsTabStorage)pageStorageMap.get(KEY_ASSIGNMENTS_TAB);
+        return (ObjectTabStorage)pageStorageMap.get(key);
+    }
+
+    public ObjectTabStorage getAssignmentsTabStorage() {
+        return getObjectTabStorage(KEY_ASSIGNMENTS_TAB);
 	}
 
-    public AssignmentsTabStorage getInducementsTabStorage() {
-        if (pageStorageMap.get(KEY_INDUCEMENTS_TAB) == null) {
-            pageStorageMap.put(KEY_INDUCEMENTS_TAB, new AssignmentsTabStorage());
-        }
-        return (AssignmentsTabStorage)pageStorageMap.get(KEY_INDUCEMENTS_TAB);
+    public ObjectTabStorage getInducementsTabStorage() {
+        return getObjectTabStorage(KEY_INDUCEMENTS_TAB);
 	}
 
-    public AssignmentsTabStorage getInducedEntitlementsTabStorage() {
-        if (pageStorageMap.get(KEY_INDUCED_ENTITLEMENTS_TAB) == null) {
-            pageStorageMap.put(KEY_INDUCED_ENTITLEMENTS_TAB, new AssignmentsTabStorage());
-        }
-        return (AssignmentsTabStorage)pageStorageMap.get(KEY_INDUCED_ENTITLEMENTS_TAB);
+    public ObjectTabStorage getInducedEntitlementsTabStorage() {
+        return getObjectTabStorage(KEY_INDUCED_ENTITLEMENTS_TAB);
+	}
+    
+    public ObjectTabStorage getObjectPoliciesConfigurationTabStorage() {
+        return getObjectTabStorage(KEY_OBJECT_POLICIES_TAB);
+	}
+    
+    public ObjectTabStorage getGlobalPolicyRulesTabStorage() {
+        return getObjectTabStorage(KEY_GLOBAL_POLICY_RULES_TAB);
+	}
+    
+    public ObjectTabStorage getLoggingConfigurationTabAppenderTableStorage() {
+        return getObjectTabStorage(KEY_LOGGING_TAB_APPENDER_TABLE);
+	}
+    
+    public ObjectTabStorage getLoggingConfigurationTabLoggerTableStorage() {
+        return getObjectTabStorage(KEY_LOGGING_TAB_LOGGER_TABLE);
+	}
+    
+    public ObjectTabStorage getNotificationConfigurationTabMailServerTableStorage() {
+        return getObjectTabStorage(KEY_NOTIFICATION_TAB_MAIL_SERVER_TABLE);
 	}
 
     private String getContentStorageKey(ShadowKindType kind, String searchMode) {
@@ -200,6 +222,12 @@ public class SessionStorage implements Serializable, DebugDumpable {
 		}
     }
 
+    public WorkItemsStorage getWorkItemStorage() {
+    	if (pageStorageMap.get(KEY_WORK_ITEMS) == null) {
+            pageStorageMap.put(KEY_WORK_ITEMS, new WorkItemsStorage());
+        }
+        return (WorkItemsStorage)pageStorageMap.get(KEY_WORK_ITEMS);
+    }
 
     public TasksStorage getTasks() {
         if (pageStorageMap.get(KEY_TASKS) == null) {
@@ -244,6 +272,15 @@ public class SessionStorage implements Serializable, DebugDumpable {
     	} else if (KEY_RESOURCES.equals(key)) {
     		pageStorage = new ResourcesStorage();
     		pageStorageMap.put(KEY_RESOURCES, pageStorage);
+    	} else if (KEY_ORG_MEMEBER_PANEL.equals(key)) {
+    		pageStorage = new MemberPanelStorage();
+    		pageStorageMap.put(KEY_ORG_MEMEBER_PANEL, pageStorage);
+    	} else if (KEY_ROLE_MEMEBER_PANEL.equals(key)) {
+    		pageStorage = new MemberPanelStorage();
+    		pageStorageMap.put(KEY_ROLE_MEMEBER_PANEL, pageStorage);
+    	} else if (KEY_SERVICE_MEMEBER_PANEL.equals(key)) {
+    		pageStorage = new MemberPanelStorage();
+    		pageStorageMap.put(KEY_SERVICE_MEMEBER_PANEL, pageStorage);
     	}
     	return pageStorage;
     	//TODO: fixme

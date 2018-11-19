@@ -18,6 +18,7 @@ package com.evolveum.midpoint.web.page.admin.server;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 
@@ -149,6 +150,7 @@ public class PageTaskAdd extends PageAdminTasks {
     private static final String OPERATION_SAVE_TASK = DOT_CLASS + "saveTask";
 
     private static final StringChoiceRenderer CATEGORY_RENDERER = StringChoiceRenderer.prefixed("pageTask.category.");
+    private static final String MEDIUM_NOTIME_STYLE = "M-";
 
     private IModel<TaskAddDto> model;
 
@@ -199,7 +201,7 @@ public class PageTaskAdd extends PageAdminTasks {
 
     	PrismProperty<QName> pObjectClass;
 		try {
-			pObjectClass = taskType.asPrismObject().findOrCreateProperty(new ItemPath(TaskType.F_EXTENSION, SchemaConstants.OBJECTCLASS_PROPERTY_NAME));
+			pObjectClass = taskType.asPrismObject().findOrCreateProperty(new ItemPath(TaskType.F_EXTENSION, SchemaConstants.MODEL_EXTENSION_OBJECTCLASS));
 			QName objectClass = pObjectClass.getRealValue();
 			if (objectClass != null){
 	    		taskAdd.setObjectClass(objectClass.getLocalPart());
@@ -503,7 +505,7 @@ public class PageTaskAdd extends PageAdminTasks {
             new PropertyModel<>(model, TaskAddDto.F_NOT_START_BEFORE)) {
             @Override
             protected DateTextField newDateTextField(String id, PropertyModel dateFieldModel) {
-                return DateTextField.forDatePattern(id, dateFieldModel, "dd/MMM/yyyy"); // todo i18n
+                return DateTextField.forDatePattern(id, dateFieldModel, WebComponentUtil.getLocalizedDatePattern(MEDIUM_NOTIME_STYLE));
             }
         };
         notStartBefore.setOutputMarkupId(true);
@@ -513,7 +515,7 @@ public class PageTaskAdd extends PageAdminTasks {
             model, TaskAddDto.F_NOT_START_AFTER)) {
             @Override
             protected DateTextField newDateTextField(String id, PropertyModel dateFieldModel) {
-                return DateTextField.forDatePattern(id, dateFieldModel, "dd/MMM/yyyy"); // todo i18n
+                return DateTextField.forDatePattern(id, dateFieldModel, WebComponentUtil.getLocalizedDatePattern(MEDIUM_NOTIME_STYLE));
             }
         };
         notStartAfter.setOutputMarkupId(true);
@@ -772,7 +774,7 @@ public class PageTaskAdd extends PageAdminTasks {
 
         if(dto.getObjectClass() != null && StringUtils.isNotEmpty(dto.getObjectClass())){
             PrismObject<TaskType> prismTask = task.asPrismObject();
-            ItemPath path = new ItemPath(TaskType.F_EXTENSION, SchemaConstants.OBJECTCLASS_PROPERTY_NAME);
+            ItemPath path = new ItemPath(TaskType.F_EXTENSION, SchemaConstants.MODEL_EXTENSION_OBJECTCLASS);
             PrismProperty objectClassProperty = prismTask.findOrCreateProperty(path);
 
             QName objectClass = null;
@@ -783,7 +785,7 @@ public class PageTaskAdd extends PageAdminTasks {
             }
 
             SchemaRegistry registry = getPrismContext().getSchemaRegistry();
-            PrismPropertyDefinition def = registry.findPropertyDefinitionByElementName(SchemaConstants.OBJECTCLASS_PROPERTY_NAME);
+            PrismPropertyDefinition def = registry.findPropertyDefinitionByElementName(SchemaConstants.MODEL_EXTENSION_OBJECTCLASS);
             objectClassProperty.setDefinition(def);
             objectClassProperty.setRealValue(objectClass);
         }

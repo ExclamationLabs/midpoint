@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -171,7 +171,6 @@ public class ConnectorFactoryConnIdImpl implements ConnectorFactory {
 	// by the parent classloader so we can correctly adjust the log levels from the main code
 	static final java.util.logging.Logger JUL_LOGGER = java.util.logging.Logger.getLogger(ConnectorFactoryConnIdImpl.class.getName());
 
-
 	private ConnectorInfoManagerFactory connectorInfoManagerFactory;
 	private ConnectorInfoManager localConnectorInfoManager;
 	private Set<URI> bundleURIs;
@@ -195,7 +194,7 @@ public class ConnectorFactoryConnIdImpl implements ConnectorFactory {
 		// bundleURIs = listBundleJars();
 		bundleURIs = new HashSet<>();
 
-		Configuration config = midpointConfiguration.getConfiguration("midpoint.icf");
+		Configuration config = midpointConfiguration.getConfiguration(MidpointConfiguration.ICF_CONFIGURATION);
 
 		// Is classpath scan enabled
 		if (config.getBoolean("scanClasspath")) {
@@ -230,7 +229,7 @@ public class ConnectorFactoryConnIdImpl implements ConnectorFactory {
 	 *
 	 */
 	@Override
-	public ConnectorInstance createConnectorInstance(ConnectorType connectorType, String namespace, String desc)
+	public ConnectorInstance createConnectorInstance(ConnectorType connectorType, String namespace, String instanceName, String instanceDescription)
 			throws ObjectNotFoundException, SchemaException {
 
 		ConnectorInfo cinfo = getConnectorInfo(connectorType);
@@ -252,7 +251,8 @@ public class ConnectorFactoryConnIdImpl implements ConnectorFactory {
 
 		ConnectorInstanceConnIdImpl connectorImpl = new ConnectorInstanceConnIdImpl(cinfo, connectorType, namespace,
 				connectorSchema, protector, prismContext);
-		connectorImpl.setDescription(desc);
+		connectorImpl.setDescription(instanceDescription);
+		connectorImpl.setInstanceName(instanceName);
 
 		return connectorImpl;
 	}
@@ -402,6 +402,9 @@ public class ConnectorFactoryConnIdImpl implements ConnectorFactory {
 	@Override
 	public PrismSchema generateConnectorConfigurationSchema(ConnectorType connectorType) throws ObjectNotFoundException {
 		ConnectorInfo cinfo = getConnectorInfo(connectorType);
+		if (cinfo == null) {
+			throw new ObjectNotFoundException("Connector "+connectorType+" cannot be found by ConnId framework");
+		}
 		return generateConnectorConfigurationSchema(cinfo, connectorType);
 	}
 

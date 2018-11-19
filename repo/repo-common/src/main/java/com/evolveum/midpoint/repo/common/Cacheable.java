@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright (c) 2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,11 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.evolveum.midpoint.repo.common;
 
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
 
 public interface Cacheable {
 
-	public void clearCache();
+	void clearCache();
+	
+	default <O extends ObjectType> boolean supports(Class<O> type, String oid) {
+		return true;
+	}
+
 }

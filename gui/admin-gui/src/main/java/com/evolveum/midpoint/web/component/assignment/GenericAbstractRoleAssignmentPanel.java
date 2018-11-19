@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import com.evolveum.midpoint.schema.util.FocusTypeUtil;
 import org.apache.wicket.model.IModel;
 
 import com.evolveum.midpoint.gui.api.util.WebModelServiceUtils;
@@ -50,7 +51,11 @@ public class GenericAbstractRoleAssignmentPanel extends AbstractRoleAssignmentPa
 //	}
 	
 	@Override
-	protected List<ContainerValueWrapper<AssignmentType>> postSearch(List<ContainerValueWrapper<AssignmentType>> assignments) {
+	protected List<ContainerValueWrapper<AssignmentType>> customPostSearch(List<ContainerValueWrapper<AssignmentType>> assignments) {
+		
+		if(assignments == null) {
+			return null;
+		}
 		
 		List<ContainerValueWrapper<AssignmentType>> resultList = new ArrayList<>();
 		Task task = getPageBase().createSimpleTask("load assignment targets");
@@ -58,10 +63,13 @@ public class GenericAbstractRoleAssignmentPanel extends AbstractRoleAssignmentPa
 		while (assignmentIterator.hasNext()) {
 			ContainerValueWrapper<AssignmentType> ass = assignmentIterator.next();
 			AssignmentType assignment = ass.getContainerValue().asContainerable();
+			if (assignment == null || assignment.getTargetRef() == null) {
+				continue;
+			}
 			if (QNameUtil.match(assignment.getTargetRef().getType(), OrgType.COMPLEX_TYPE)) {
 				PrismObject<OrgType> org = WebModelServiceUtils.loadObject(assignment.getTargetRef(), getPageBase(), task, task.getResult());
 				if (org != null) {
-					if (org.asObjectable().getOrgType().contains("access")) {
+					if (FocusTypeUtil.determineSubTypes(org).contains("access")) {
 						resultList.add(ass);
 					}
 				}

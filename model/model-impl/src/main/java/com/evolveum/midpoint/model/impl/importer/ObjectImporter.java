@@ -19,11 +19,11 @@ import com.evolveum.midpoint.common.Clock;
 import com.evolveum.midpoint.common.crypto.CryptoUtil;
 import com.evolveum.midpoint.common.validator.EventHandler;
 import com.evolveum.midpoint.common.validator.EventResult;
-import com.evolveum.midpoint.common.validator.Validator;
+import com.evolveum.midpoint.common.validator.LegacyValidator;
 import com.evolveum.midpoint.model.api.ModelExecuteOptions;
 import com.evolveum.midpoint.model.api.ModelService;
 import com.evolveum.midpoint.model.impl.migrator.Migrator;
-import com.evolveum.midpoint.model.impl.util.Utils;
+import com.evolveum.midpoint.model.impl.util.ModelImplUtils;
 import com.evolveum.midpoint.prism.*;
 import com.evolveum.midpoint.prism.crypto.EncryptionException;
 import com.evolveum.midpoint.prism.crypto.Protector;
@@ -170,7 +170,7 @@ public class ObjectImporter {
 			    }
 		    };
 
-		    Validator validator = new Validator(prismContext, handler);
+		    LegacyValidator validator = new LegacyValidator(prismContext, handler);
 		    validator.setVerbose(true);
 		    if (options != null) {
 			    validator.setValidateSchema(isTrue(options.isValidateStaticSchema()));
@@ -204,7 +204,7 @@ public class ObjectImporter {
 
 		object = migrator.migrate(object);
 
-		Utils.resolveReferences(object, repository,
+		ModelImplUtils.resolveReferences(object, repository,
 				(options == null || options.isReferentialIntegrity() == null) ? false : options.isReferentialIntegrity(),
 		        false, EvaluationTimeType.IMPORT, false, prismContext, objectResult);
 
@@ -245,7 +245,7 @@ public class ObjectImporter {
 				metaData.setCreateChannel(channel);
 				metaData.setCreateTimestamp(clock.currentTimeXMLGregorianCalendar());
 				if (task.getOwner() != null) {
-					metaData.setCreatorRef(ObjectTypeUtil.createObjectRef(task.getOwner()));
+					metaData.setCreatorRef(ObjectTypeUtil.createObjectRef(task.getOwner(), prismContext));
 				}
 				object.asObjectable().setMetadata(metaData);
 		}

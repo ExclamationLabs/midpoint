@@ -43,6 +43,7 @@ import com.evolveum.midpoint.prism.path.NameItemPathSegment;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.prism.query.QueryJaxbConvertor;
 import com.evolveum.midpoint.prism.util.CloneUtil;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.repo.common.expression.Expression;
 import com.evolveum.midpoint.repo.common.expression.ExpressionEvaluationContext;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
@@ -54,7 +55,6 @@ import com.evolveum.midpoint.schema.SelectorOptions;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.MiscSchemaUtil;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.security.api.SecurityContextManager;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.QNameUtil;
@@ -309,18 +309,15 @@ public abstract class AbstractSearchExpressionEvaluator<V extends PrismValue,D e
 		}
 		extendOptions(options, searchOnResource);
 
-		ResultHandler<O> handler = new ResultHandler<O>() {
-			@Override
-			public boolean handle(PrismObject<O> object, OperationResult parentResult) {
-				if (rawResult != null) {
-					rawResult.add(object);
-				}
-				list.add(createPrismValue(object.getOid(), targetTypeQName, additionalAttributeDeltas, params));
-
-				// TODO: we should count results and stop after some reasonably high number?
-
-				return true;
+		ResultHandler<O> handler = (object, parentResult) -> {
+			if (rawResult != null) {
+				rawResult.add(object);
 			}
+			list.add(createPrismValue(object.getOid(), targetTypeQName, additionalAttributeDeltas, params));
+
+			// TODO: we should count results and stop after some reasonably high number?
+
+			return true;
 		};
 
 		try {

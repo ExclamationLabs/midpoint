@@ -25,6 +25,7 @@ import com.evolveum.midpoint.web.component.prism.ContainerValueWrapper;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.apache.wicket.ajax.AjaxRequestTarget;
 import org.apache.wicket.behavior.AttributeAppender;
+import org.apache.wicket.markup.html.form.Form;
 import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.PropertyModel;
 
@@ -78,10 +79,10 @@ public class AssociationDetailsPanel extends BasePanel<ContainerValueWrapper<Res
 
             @Override
             public void onClick(AjaxRequestTarget target) {
-//                isChildContainersSelectorPanelVisible = true;
-//                target.add(PrismContainerValueHeaderPanel.this);
+//              isChildContainersSelectorPanelVisible = true;
+//              target.add(PrismContainerValueHeaderPanel.this);            			
             }
-
+            
             @Override
             public boolean isOn() {
                 return true;

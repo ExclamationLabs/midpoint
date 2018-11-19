@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014-2017 Evolveum
+ * Copyright (c) 2014-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.evolveum.midpoint.testing.conntest;
 import java.io.File;
 
 import org.testng.annotations.AfterClass;
+import org.testng.annotations.Listeners;
 
 import com.evolveum.midpoint.test.util.MidPointTestConstants;
 import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
@@ -27,6 +28,7 @@ import com.evolveum.midpoint.util.exception.SchemaException;
  * @author semancik
  *
  */
+@Listeners({ com.evolveum.midpoint.tools.testng.AlphabeticalMethodInterceptor.class })
 public class TestOpenDj extends AbstractLdapConnTest {
 
 	private static final String OPENDJ_TEMPLATE_NAME = "opendj-4000.template";

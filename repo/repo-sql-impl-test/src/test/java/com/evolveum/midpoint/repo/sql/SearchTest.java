@@ -22,6 +22,7 @@ import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.PrismReferenceValue;
 import com.evolveum.midpoint.prism.delta.builder.DeltaBuilder;
 import com.evolveum.midpoint.prism.path.ItemPath;
+import com.evolveum.midpoint.prism.polystring.PolyString;
 import com.evolveum.midpoint.prism.query.ObjectPaging;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.prism.query.OrderDirection;
@@ -45,6 +46,8 @@ import javax.xml.namespace.QName;
 import java.io.File;
 import java.util.*;
 
+import static com.evolveum.midpoint.repo.api.RepoModifyOptions.createExecuteIfNoChanges;
+import static java.util.Collections.emptySet;
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertTrue;
 import static org.testng.AssertJUnit.fail;
@@ -57,12 +60,22 @@ import static org.testng.AssertJUnit.fail;
 public class SearchTest extends BaseSQLRepoTest {
 
     private static final Trace LOGGER = TraceManager.getTrace(SearchTest.class);
+    private static final String DESCRIPTION_TO_FIND = "tralala";
+
+    private String beforeConfigOid;
 
     @BeforeClass
     public void beforeClass() throws Exception {
         super.beforeClass();
 
         PrismTestUtil.resetPrismContext(MidPointPrismContextFactory.FACTORY);
+
+        OperationResult result = new OperationResult("add objects");
+        PrismObject<UserType> beforeConfig = prismContext.createObjectable(UserType.class)
+                .name("before-config")
+                .description(DESCRIPTION_TO_FIND)
+                .asPrismObject();
+        beforeConfigOid = repositoryService.addObject(beforeConfig, null, result);
 
 		FullTextSearchConfigurationType fullTextConfig = new FullTextSearchConfigurationType();
 		FullTextSearchIndexedItemsConfigurationType entry = new FullTextSearchIndexedItemsConfigurationType();
@@ -75,7 +88,6 @@ public class SearchTest extends BaseSQLRepoTest {
 		List<PrismObject<? extends Objectable>> objects = prismContext.parserFor(new File(FOLDER_BASIC, "objects.xml")).parseObjects();
         objects.addAll(prismContext.parserFor(new File(FOLDER_BASIC, "objects-2.xml")).parseObjects());
 
-        OperationResult result = new OperationResult("add objects");
         for (PrismObject object : objects) {
             repositoryService.addObject(object, null, result);
         }
@@ -118,7 +130,7 @@ public class SearchTest extends BaseSQLRepoTest {
         result.recomputeStatus();
 
         assertTrue(result.isSuccess());
-        assertEquals(3, objects.size());
+        assertEquals(4, objects.size());
     }
 
     @Test
@@ -771,9 +783,42 @@ public class SearchTest extends BaseSQLRepoTest {
 						.maxSize(100)
 						.build(),
 				distinct, 1);
-	}
+    }
 
-	private Collection<SelectorOptions<GetOperationOptions>> distinct() {
+    @Test // MID-4932
+    public void fullTextSearchModify() throws Exception {
+
+        OperationResult result = new OperationResult("fullTextSearchModify");
+        repositoryService.modifyObject(TaskType.class, "777",
+                DeltaBuilder.deltaFor(UserType.class, prismContext)
+                        .item(TaskType.F_NAME).replace(PolyString.fromOrig("TASK with no owner"))
+                        .asItemDeltas(),
+                result);
+
+        repositoryService.modifyObject(TaskType.class, "777",
+                DeltaBuilder.deltaFor(UserType.class, prismContext)
+                        .item(TaskType.F_NAME).replace(PolyString.fromOrig("Task with no owner"))
+                        .asItemDeltas(),
+                result);
+    }
+
+    @Test
+    public void reindex() throws Exception {
+
+        OperationResult result = new OperationResult("reindex");
+
+        assertUsersFound(QueryBuilder.queryFor(UserType.class, prismContext)
+                        .fullText(DESCRIPTION_TO_FIND)
+                        .build(),
+                false, 0);
+        repositoryService.modifyObject(UserType.class, beforeConfigOid, emptySet(), createExecuteIfNoChanges(), result);
+        assertUsersFound(QueryBuilder.queryFor(UserType.class, prismContext)
+                        .fullText(DESCRIPTION_TO_FIND)
+                        .build(),
+                false, 1);
+    }
+
+    private Collection<SelectorOptions<GetOperationOptions>> distinct() {
 		return SelectorOptions.createCollection(GetOperationOptions.createDistinct());
 	}
 
@@ -911,4 +956,36 @@ public class SearchTest extends BaseSQLRepoTest {
 		assertEquals("Should find 1 object", 1, cases.size());
 	}
 
+	@Test
+	public void testObjectCollection() throws SchemaException {
+		ObjectQuery query = QueryBuilder.queryFor(ObjectCollectionType.class, prismContext)
+				.item(ObjectType.F_NAME).eqPoly("collection1", "collection1").matchingOrig()
+				.build();
+		OperationResult result = new OperationResult("search");
+		List<PrismObject<ObjectCollectionType>> collections = repositoryService.searchObjects(ObjectCollectionType.class, query, null, result);
+		result.recomputeStatus();
+		assertTrue(result.isSuccess());
+		assertEquals("Should find 1 object", 1, collections.size());
+	}
+
+	@Test
+	public void testAllObjectCollections() throws SchemaException {
+		OperationResult result = new OperationResult("search");
+		List<PrismObject<ObjectCollectionType>> collections = repositoryService.searchObjects(ObjectCollectionType.class, null, null, result);
+		result.recomputeStatus();
+		assertTrue(result.isSuccess());
+		assertEquals("Should find 1 object", 1, collections.size());
+	}
+
+    @Test
+    public void testFunctionLibrary() throws SchemaException {
+        ObjectQuery query = QueryBuilder.queryFor(FunctionLibraryType.class, prismContext)
+                .item(ObjectType.F_NAME).eqPoly("fl1", "fl1").matchingOrig()
+                .build();
+        OperationResult result = new OperationResult("search");
+        List<PrismObject<FunctionLibraryType>> collections = repositoryService.searchObjects(FunctionLibraryType.class, query, null, result);
+        result.recomputeStatus();
+        assertTrue(result.isSuccess());
+        assertEquals("Should find 1 object", 1, collections.size());
+    }
 }

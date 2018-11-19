@@ -59,7 +59,7 @@ public class GdprAssignmentPanel extends AbstractRoleAssignmentPanel {
 				}
 		});
 
-		columns.add(new CheckBoxColumn<ContainerValueWrapper<AssignmentType>>(createStringResource("AssignmnetType.accepted")) {
+		columns.add(new CheckBoxColumn<ContainerValueWrapper<AssignmentType>>(createStringResource("AssignmentType.accepted")) {
 
 			private static final long serialVersionUID = 1L;
 
@@ -95,16 +95,11 @@ public class GdprAssignmentPanel extends AbstractRoleAssignmentPanel {
 		return columns;
 	}
 
-	@Override
-	protected boolean isRelationVisible() {
-		return false;
-	}
-
-	@Override
-	protected <T extends ObjectType> void addSelectedAssignmentsPerformed(AjaxRequestTarget target, List<T> assignmentsList,
-			QName relation, ShadowKindType kind, String intent) {
-		super.addSelectedAssignmentsPerformed(target, assignmentsList, SchemaConstants.ORG_CONSENT, kind, intent);
-	}
+//	@Override
+//	protected <T extends ObjectType> void addSelectedAssignmentsPerformed(AjaxRequestTarget target, List<T> assignmentsList,
+//			QName relation, ShadowKindType kind, String intent) {
+//		super.addSelectedAssignmentsPerformed(target, assignmentsList, SchemaConstants.ORG_CONSENT, kind, intent);
+//	}
 
 	protected ObjectQuery createObjectQuery() {
 		return QueryBuilder.queryFor(AssignmentType.class, getParentPage().getPrismContext())

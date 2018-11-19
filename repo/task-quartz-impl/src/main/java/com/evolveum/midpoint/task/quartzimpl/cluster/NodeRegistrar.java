@@ -16,6 +16,7 @@
 
 package com.evolveum.midpoint.task.quartzimpl.cluster;
 
+import com.evolveum.midpoint.common.LocalizationService;
 import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.delta.ItemDelta;
@@ -24,13 +25,13 @@ import com.evolveum.midpoint.prism.delta.builder.DeltaBuilder;
 import com.evolveum.midpoint.prism.polystring.PolyString;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.repo.api.RepositoryService;
-import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.ObjectQueryUtil;
 import com.evolveum.midpoint.task.api.TaskConstants;
 import com.evolveum.midpoint.task.api.TaskManagerInitializationException;
 import com.evolveum.midpoint.task.quartzimpl.TaskManagerConfiguration;
 import com.evolveum.midpoint.task.quartzimpl.TaskManagerQuartzImpl;
+import com.evolveum.midpoint.util.LocalizableMessageBuilder;
 import com.evolveum.midpoint.util.exception.ObjectAlreadyExistsException;
 import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
 import com.evolveum.midpoint.util.exception.SchemaException;
@@ -101,6 +102,7 @@ public class NodeRegistrar {
             PrismObject<NodeType> nodeInRepo = nodesInRepo.get(0);
             // copy all information that need to be preserved from the repository
             nodeToBe.setTaskExecutionLimitations(nodeInRepo.asObjectable().getTaskExecutionLimitations());
+            nodeToBe.setUrl(nodeInRepo.asObjectable().getUrl());
             ObjectDelta<NodeType> nodeDelta = nodeInRepo.diff(nodeToBe.asPrismObject(), false, true);
             LOGGER.debug("Applying delta to existing node object:\n{}", nodeDelta.debugDumpLazily());
             try {
@@ -170,9 +172,9 @@ public class NodeRegistrar {
 
     private BuildInformationType getBuildInformation() {
         BuildInformationType info = new BuildInformationType();
-        ResourceBundle bundle = ResourceBundle.getBundle(SchemaConstants.SCHEMA_LOCALIZATION_PROPERTIES_RESOURCE_BASE_PATH, Locale.getDefault());
-        info.setVersion(bundle.getString("midPointVersion"));
-        info.setRevision(bundle.getString("midPointRevision"));
+        LocalizationService localizationService = taskManager.getLocalizationService();
+        info.setVersion(localizationService.translate(LocalizableMessageBuilder.buildKey("midPointVersion"), Locale.getDefault()));
+        info.setRevision(localizationService.translate(LocalizableMessageBuilder.buildKey("midPointRevision"), Locale.getDefault()));
         return info;
     }
 
@@ -434,7 +436,7 @@ public class NodeRegistrar {
 				for (InetAddress inetAddress: Collections.list(netint.getInetAddresses())) {
 					String hostAddress = inetAddress.getHostAddress();
 					String normalizedAddress = normalizeAddress(hostAddress);
-					if (!isLocalAddress(normalizedAddress)) {
+					if (!isLocalAddress(normalizedAddress) || taskManager.isLocalNodeClusteringEnabled()) {
 						addresses.add(normalizedAddress);
 					}
 				}

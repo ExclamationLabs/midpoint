@@ -15,12 +15,7 @@
  */
 package com.evolveum.midpoint.model.impl.lens;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -34,9 +29,14 @@ import com.evolveum.midpoint.model.api.ModelExecuteOptions;
 import com.evolveum.midpoint.model.api.context.EvaluatedPolicyRule;
 import com.evolveum.midpoint.model.api.context.EvaluatedPolicyRuleTrigger;
 import com.evolveum.midpoint.model.common.mapping.PrismValueDeltaSetTripleProducer;
-import com.evolveum.midpoint.model.impl.util.Utils;
 import com.evolveum.midpoint.prism.polystring.PolyString;
+import com.evolveum.midpoint.prism.query.ObjectFilter;
+import com.evolveum.midpoint.prism.query.ObjectQuery;
+import com.evolveum.midpoint.prism.query.RefFilter;
+import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
 import com.evolveum.midpoint.prism.polystring.AlphanumericPolyStringNormalizer;
+import com.evolveum.midpoint.repo.api.RepositoryService;
 import com.evolveum.midpoint.schema.SchemaConstantsGenerated;
 import com.evolveum.midpoint.schema.util.*;
 import com.evolveum.midpoint.util.DebugUtil;
@@ -56,24 +56,28 @@ import com.evolveum.midpoint.common.refinery.RefinedResourceSchema;
 import com.evolveum.midpoint.model.common.mapping.MappingImpl;
 import com.evolveum.midpoint.model.impl.expr.ExpressionEnvironment;
 import com.evolveum.midpoint.model.impl.expr.ModelExpressionThreadLocalHolder;
+import com.evolveum.midpoint.model.impl.util.ModelImplUtils;
 import com.evolveum.midpoint.prism.*;
 import com.evolveum.midpoint.prism.delta.ItemDelta;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.prism.delta.PrismValueDeltaSetTriple;
 import com.evolveum.midpoint.prism.delta.PropertyDelta;
+import com.evolveum.midpoint.prism.marshaller.QueryConvertor;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.provisioning.api.ProvisioningService;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.repo.common.expression.Expression;
 import com.evolveum.midpoint.repo.common.expression.ExpressionEvaluationContext;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
 import com.evolveum.midpoint.repo.common.expression.ExpressionUtil;
 import com.evolveum.midpoint.repo.common.expression.ExpressionVariables;
-import com.evolveum.midpoint.repo.common.expression.ItemDeltaItem;
 import com.evolveum.midpoint.repo.common.expression.Source;
 import com.evolveum.midpoint.schema.CapabilityUtil;
 import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.ResourceShadowDiscriminator;
+import com.evolveum.midpoint.schema.ResultHandler;
 import com.evolveum.midpoint.schema.SelectorOptions;
+import com.evolveum.midpoint.schema.VirtualAssignmenetSpecification;
 import com.evolveum.midpoint.schema.constants.ExpressionConstants;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
@@ -81,6 +85,7 @@ import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.DOMUtil;
 import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
+import com.evolveum.prism.xml.ns._public.query_3.SearchFilterType;
 import com.evolveum.prism.xml.ns._public.types_3.PolyStringType;
 import org.jetbrains.annotations.NotNull;
 
@@ -112,14 +117,11 @@ public class LensUtil {
 
 	public static <F extends ObjectType> ResourceType getResourceReadOnly(LensContext<F> context, String resourceOid, ObjectResolver objectResolver,
 																  Task task, OperationResult result) throws ObjectNotFoundException,
-			CommunicationException, SchemaException, ConfigurationException, SecurityViolationException {
+			CommunicationException, SchemaException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 		ResourceType resourceType = context.getResource(resourceOid);
 		if (resourceType == null) {
-			ObjectReferenceType ref = new ObjectReferenceType();
-			ref.setType(ResourceType.COMPLEX_TYPE);
-			ref.setOid(resourceOid);
 			Collection<SelectorOptions<GetOperationOptions>> options = SelectorOptions.createCollection(GetOperationOptions.createReadOnly());
-			resourceType = objectResolver.resolve(ref, ResourceType.class, options, "resource fetch in lens", task, result);
+			resourceType = objectResolver.getObject(ResourceType.class, resourceOid, options, task, result);
 			context.rememberResource(resourceType);
 		}
 		return resourceType;
@@ -555,21 +557,44 @@ public class LensUtil {
     /**
      * Used for assignments and similar objects that do not have separate lifecycle.
      */
-    public static boolean isAssignmentValid(FocusType focus, AssignmentType assignmentType, XMLGregorianCalendar now, ActivationComputer activationComputer) {
+    public static boolean isAssignmentValid(FocusType focus, AssignmentType assignmentType, XMLGregorianCalendar now, 
+    		ActivationComputer activationComputer, LifecycleStateModelType focusStateModel) {
     	String focusLifecycleState = focus.getLifecycleState();
-		if (!activationComputer.lifecycleHasActiveAssignments(focusLifecycleState)) {
+    
+    	if (!activationComputer.lifecycleHasActiveAssignments(focusLifecycleState, focusStateModel)) {
 			return false;
 		}
-		return isValid(assignmentType.getLifecycleState(), assignmentType.getActivation(), now, activationComputer);
+		return isValid(assignmentType.getLifecycleState(), assignmentType.getActivation(), now, activationComputer, focusStateModel);
+	}
+    
+    public static <R extends AbstractRoleType> Collection<AssignmentType> getForcedAssignments(LifecycleStateModelType lifecycleModel, String targetLifecycle, 
+    		ObjectResolver objectResolver, PrismContext prismContext, Task task, OperationResult result) throws SchemaException, 
+    ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
+    	VirtualAssignmenetSpecification<R> virtualAssignmenetSpecification = LifecycleUtil.getForcedAssignmentSpecification(lifecycleModel, targetLifecycle, prismContext);
+        
+        Collection<AssignmentType> forcedAssignments = new HashSet<>();
+        if (virtualAssignmenetSpecification != null) {
+        
+	        ResultHandler<R> handler = (object, parentResult)  -> {
+	        	AssignmentType assignment = ObjectTypeUtil.createAssignmentTo(object, prismContext);
+				return forcedAssignments.add(assignment);
+	        };
+				
+	        objectResolver.searchIterative(virtualAssignmenetSpecification.getType(), 
+	       		ObjectQuery.createObjectQuery(virtualAssignmenetSpecification.getFilter()), null, handler, task, result);
+	        
+        }
+        
+        return forcedAssignments;
+    }
+    
+	public static boolean isFocusValid(FocusType focus, XMLGregorianCalendar now, ActivationComputer activationComputer, LifecycleStateModelType focusStateModel) {
+		return isValid(focus.getLifecycleState(), focus.getActivation(), now, activationComputer, focusStateModel);
 	}
 
-	public static boolean isFocusValid(FocusType focus, XMLGregorianCalendar now, ActivationComputer activationComputer) {
-		return isValid(focus.getLifecycleState(), focus.getActivation(), now, activationComputer);
-	}
-
-	private static boolean isValid(String lifecycleState, ActivationType activationType, XMLGregorianCalendar now, ActivationComputer activationComputer) {
+	private static boolean isValid(String lifecycleState, ActivationType activationType, XMLGregorianCalendar now, ActivationComputer activationComputer, LifecycleStateModelType focusStateModel) {
 		TimeIntervalStatusType validityStatus = activationComputer.getValidityStatus(activationType, now);
-		ActivationStatusType effectiveStatus = activationComputer.getEffectiveStatus(lifecycleState, activationType, validityStatus);
+		ActivationStatusType effectiveStatus = activationComputer.getEffectiveStatus(lifecycleState, activationType, validityStatus, focusStateModel);
 		return effectiveStatus == ActivationStatusType.ENABLED;
 	}
 
@@ -688,7 +713,7 @@ public class LensUtil {
 
 	public static <V extends PrismValue,D extends ItemDefinition> MappingImpl.Builder<V,D> addAssignmentPathVariables(MappingImpl.Builder<V,D> builder, AssignmentPathVariables assignmentPathVariables) {
     	ExpressionVariables expressionVariables = new ExpressionVariables();
-		Utils.addAssignmentPathVariables(assignmentPathVariables, expressionVariables);
+		ModelImplUtils.addAssignmentPathVariables(assignmentPathVariables, expressionVariables);
 		return builder.addVariableDefinitions(expressionVariables.getMap());
     }
 
@@ -881,11 +906,6 @@ public class LensUtil {
 		return objectDeltaOp;
 	}
 
-	@Deprecated
-	public static boolean isDelegationRelation(QName relation) {
-		return ObjectTypeUtil.isDelegationRelation(relation);
-	}
-
 	public static void triggerRule(@NotNull EvaluatedPolicyRule rule, Collection<EvaluatedPolicyRuleTrigger<?>> triggers,
 			Collection<String> policySituations) {
 
@@ -1055,5 +1075,25 @@ public class LensUtil {
 					"localizable message fallback expression", expressionFactory, prismContext, task, result));
 		}
 		return rv;
+	}
+
+	public static <F extends ObjectType> void reclaimSequences(LensContext<F> context, RepositoryService repositoryService, Task task, OperationResult result) throws SchemaException {
+    	if (context == null) {
+    		return;
+		}
+
+    	Map<String, Long> sequenceMap = context.getSequences();
+		LOGGER.trace("Context sequence map: {}", sequenceMap);
+		for (Map.Entry<String, Long> sequenceMapEntry: sequenceMap.entrySet()) {
+			Collection<Long> unusedValues = new ArrayList<>(1);
+			unusedValues.add(sequenceMapEntry.getValue());
+			try {
+				LOGGER.trace("Returning value {} to sequence {}", sequenceMapEntry.getValue(), sequenceMapEntry.getKey());
+				repositoryService.returnUnusedValuesToSequence(sequenceMapEntry.getKey(), unusedValues, result);
+			} catch (ObjectNotFoundException e) {
+				LOGGER.error("Cannot return unused value to sequence {}: it does not exist", sequenceMapEntry.getKey(), e);
+				// ... but otherwise ignore it and go on
+			}
+		}
 	}
 }

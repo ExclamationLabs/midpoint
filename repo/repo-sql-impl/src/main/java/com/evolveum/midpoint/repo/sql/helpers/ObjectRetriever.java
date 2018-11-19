@@ -31,7 +31,6 @@ import com.evolveum.midpoint.repo.sql.data.common.any.RAnyValue;
 import com.evolveum.midpoint.repo.sql.data.common.any.RExtItem;
 import com.evolveum.midpoint.repo.sql.data.common.any.RItemKind;
 import com.evolveum.midpoint.repo.sql.data.common.dictionary.ExtItemDictionary;
-import com.evolveum.midpoint.repo.sql.data.common.enums.ROperationResultStatus;
 import com.evolveum.midpoint.repo.sql.data.common.type.RObjectExtensionType;
 import com.evolveum.midpoint.repo.sql.query.QueryException;
 import com.evolveum.midpoint.repo.sql.query.RQuery;
@@ -66,6 +65,7 @@ import javax.xml.namespace.QName;
 import java.util.*;
 
 import static org.apache.commons.lang3.ArrayUtils.getLength;
+import static org.apache.commons.lang3.ObjectUtils.defaultIfNull;
 
 /**
  * @author lazyman, mederly
@@ -85,6 +85,7 @@ public class ObjectRetriever {
 	@Autowired private BaseHelper baseHelper;
 	@Autowired private NameResolutionHelper nameResolutionHelper;
 	@Autowired private PrismContext prismContext;
+	@Autowired private RelationRegistry relationRegistry;
 	@Autowired private ExtItemDictionary extItemDictionary;
 	@Autowired
 	@Qualifier("repositoryService")
@@ -320,7 +321,7 @@ public class ObjectRetriever {
                 longCount = (Number) sqlQuery.uniqueResult();
             } else {
                 RQuery rQuery;
-				QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext);
+				QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext, relationRegistry);
 				rQuery = engine.interpret(query, type, options, true, session);
 
                 longCount = (Number) rQuery.uniqueResult();
@@ -352,7 +353,7 @@ public class ObjectRetriever {
 		try {
 			session = baseHelper.beginReadOnlyTransaction();
 
-			QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext);
+			QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext, relationRegistry);
 			RQuery rQuery = engine.interpret(query, type, options, true, session);
 			Number longCount = (Number) rQuery.uniqueResult();
 			LOGGER.trace("Found {} objects.", longCount);
@@ -376,7 +377,7 @@ public class ObjectRetriever {
             session = baseHelper.beginReadOnlyTransaction();
             RQuery rQuery;
 
-			QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext);
+			QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext, relationRegistry);
 			rQuery = engine.interpret(query, type, options, false, session);
 
 			@SuppressWarnings({"unchecked", "raw"})
@@ -440,7 +441,7 @@ public class ObjectRetriever {
         try {
             session = baseHelper.beginReadOnlyTransaction();
 
-            QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext);
+            QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext, relationRegistry);
             RQuery rQuery = engine.interpret(query, type, options, false, session);
 
             if (cases) {
@@ -492,7 +493,7 @@ public class ObjectRetriever {
             baseHelper.cleanupSessionAndResult(session, result);
         }
 
-        list.forEach(c -> ObjectTypeUtil.normalizeAllRelations(c.asPrismContainerValue()));
+        list.forEach(c -> ObjectTypeUtil.normalizeAllRelations(c.asPrismContainerValue(), relationRegistry));
         return new SearchResultList<>(list);
     }
 
@@ -594,7 +595,7 @@ public class ObjectRetriever {
         nameResolutionHelper.resolveNamesIfRequested(session, prismObject.getValue(), options);
         validateObjectType(prismObject, type);
 
-        ObjectTypeUtil.normalizeAllRelations(prismObject);
+        ObjectTypeUtil.normalizeAllRelations(prismObject, relationRegistry);
 		return prismObject;
     }
 
@@ -739,7 +740,7 @@ public class ObjectRetriever {
         try {
             session = baseHelper.beginReadOnlyTransaction();
             RQuery rQuery;
-			QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext);
+			QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext, relationRegistry);
 			rQuery = engine.interpret(query, type, options, false, session);
 
             ScrollableResults results = rQuery.scroll(ScrollMode.FORWARD_ONLY);
@@ -786,9 +787,7 @@ public class ObjectRetriever {
     }
 
     public <T extends ObjectType> void searchObjectsIterativeByPaging(Class<T> type, ObjectQuery query,
-                                                                      ResultHandler<T> handler,
-                                                                      Collection<SelectorOptions<GetOperationOptions>> options,
-                                                                      OperationResult result)
+		    ResultHandler<T> handler, Collection<SelectorOptions<GetOperationOptions>> options, OperationResult result)
             throws SchemaException {
 
         try {
@@ -851,7 +850,7 @@ main:       while (remaining > 0) {
      *
      * Constraints:
      *  - There can be no ordering prescribed. We use our own ordering.
-     *  - Moreover, for simplicity we disallow any explicit paging.
+     *  - We also disallow any explicit paging - except for maxSize setting.
      *
      *  Implementation is very simple - we fetch objects ordered by OID, and remember last OID fetched.
      *  Obviously no object will be present in output more than once.
@@ -863,20 +862,28 @@ main:       while (remaining > 0) {
             throws SchemaException {
 
         try {
-            ObjectQuery pagedQuery = query != null ? query.clone() : new ObjectQuery();
+	        if (!SqlRepositoryServiceImpl.isCustomPagingOkWithPagedSeqIteration(query)) {
+		        throw new IllegalArgumentException("Externally specified paging is not supported on strictly sequential "
+				        + "iterative search. Query = " + query);
+	        }
+	        Integer maxSize;
+	        ObjectQuery pagedQuery;
+	        if (query != null) {
+		        maxSize = query.getPaging() != null ? query.getPaging().getMaxSize() : null;
+		        pagedQuery = query.clone();
+	        } else {
+		        maxSize = null;
+	        	pagedQuery = new ObjectQuery();
+	        }
 
-            String lastOid = "";
+            String lastOid = null;
             final int batchSize = getConfiguration().getIterativeSearchByPagingBatchSize();
-
-            if (pagedQuery.getPaging() != null) {
-                throw new IllegalArgumentException("Externally specified paging is not supported on strictly sequential iterative search.");
-            }
 
             ObjectPagingAfterOid paging = new ObjectPagingAfterOid();
             pagedQuery.setPaging(paging);
 main:       for (;;) {
                 paging.setOidGreaterThan(lastOid);
-                paging.setMaxSize(batchSize);
+                paging.setMaxSize(Math.min(batchSize, defaultIfNull(maxSize, Integer.MAX_VALUE)));
 
                 List<PrismObject<T>> objects = repositoryService.searchObjects(type, pagedQuery, options, result);
 
@@ -886,9 +893,14 @@ main:       for (;;) {
                         break main;
                     }
                 }
-
-                if (objects.size() == 0) {
+				if (objects.size() == 0) {
                     break;
+                }
+                if (maxSize != null) {
+                	maxSize -= objects.size();
+	                if (maxSize <= 0) {
+	                	break;
+	                }
                 }
             }
         } finally {
@@ -898,7 +910,26 @@ main:       for (;;) {
         }
     }
 
-    public boolean isAnySubordinateAttempt(String upperOrgOid, Collection<String> lowerObjectOids) {
+	public <T extends ObjectType> void searchObjectsIterativeByFetchAll(Class<T> type, ObjectQuery query,
+			ResultHandler<T> handler, Collection<SelectorOptions<GetOperationOptions>> options, OperationResult result)
+			throws SchemaException {
+		try {
+			SearchResultList<PrismObject<T>> objects = repositoryService.searchObjects(type, query, options, result);
+			for (PrismObject<T> object : objects) {
+				if (!handler.handle(object, result)) {
+					break;
+				}
+			}
+		} finally {
+			if (result.isUnknown()) {
+				result.computeStatus();
+			}
+			result.setSummarizeSuccesses(true);
+			result.summarize();
+		}
+	}
+
+	public boolean isAnySubordinateAttempt(String upperOrgOid, Collection<String> lowerObjectOids) {
         Session session = null;
         try {
             session = baseHelper.beginReadOnlyTransaction();
@@ -938,8 +969,8 @@ main:       for (;;) {
 			final org.hibernate.Query query;
 			final boolean isMidpointQuery = request.getImplementationLevelQuery() == null;
 			if (isMidpointQuery) {
-				QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext);
-				RQueryImpl rQuery = (RQueryImpl) engine.interpret(request.getQuery(), request.getType(), null, false, session);
+				QueryEngine2 engine = new QueryEngine2(getConfiguration(), extItemDictionary, prismContext, relationRegistry);
+				RQueryImpl rQuery = (RQueryImpl) engine.interpret(request.getQuery(), request.getType(), request.getOptions(), false, session);
 				query = rQuery.getQuery();
 				implementationLevelQuery = query.getQueryString();
 				implementationLevelQueryParameters = new HashMap<>();

@@ -38,13 +38,15 @@ import com.evolveum.midpoint.prism.path.ItemPathSegment;
 import com.evolveum.midpoint.prism.path.NameItemPathSegment;
 import com.evolveum.midpoint.prism.polystring.PolyString;
 import com.evolveum.midpoint.prism.query.*;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
 import com.evolveum.midpoint.prism.util.JavaTypeConverter;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.prism.util.PrismUtil;
 import com.evolveum.midpoint.prism.xml.XmlTypeConverter;
 import com.evolveum.midpoint.prism.xml.XsdTypeMapper;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.schema.constants.ExpressionConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.security.api.MidPointPrincipal;
 import com.evolveum.midpoint.security.api.SecurityContextManager;
 import com.evolveum.midpoint.task.api.Task;
@@ -170,9 +172,16 @@ public class ExpressionUtil {
 		return convertedVal;
 	}
 
-	public static Object resolvePath(ItemPath path, ExpressionVariables variables, Object defaultContext,
-			ObjectResolver objectResolver, String shortDesc, Task task, OperationResult result)
-					throws SchemaException, ObjectNotFoundException {
+	/**
+	 * normalizeValuesToDelete: Whether to normalize container values that are to be deleted, i.e. convert them
+	 * from id-only to full data (MID-4863).
+	 * TODO:
+	 * 1. consider setting this parameter to true at some other places where it might be relevant
+	 * 2. consider normalizing delete deltas earlier in the clockwork, probably at the very beginning of the operation
+	 */
+	public static Object resolvePath(ItemPath path, ExpressionVariables variables, boolean normalizeValuesToDelete,
+			Object defaultContext, ObjectResolver objectResolver, String shortDesc, Task task, OperationResult result)
+					throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 
 		Object root = defaultContext;
 		ItemPath relativePath = path;
@@ -193,6 +202,10 @@ public class ExpressionUtil {
 		}
 		if (relativePath.isEmpty()) {
 			return root;
+		}
+
+		if (normalizeValuesToDelete) {
+			root = normalizeValuesToDelete(root);
 		}
 
 		if (root instanceof ObjectReferenceType) {
@@ -222,10 +235,21 @@ public class ExpressionUtil {
 					"Unexpected root " + root + " (relative path:" + relativePath + ") in " + shortDesc);
 		}
 	}
-	
+
+	private static Object normalizeValuesToDelete(Object root) {
+		if (root instanceof ObjectDeltaObject<?>) {
+			return ((ObjectDeltaObject<?>) root).normalizeValuesToDelete(true);
+		} else if (root instanceof ItemDeltaItem<?, ?>) {
+			// TODO normalize as well
+			return root;
+		} else {
+			return root;
+		}
+	}
+
 	public static <V extends PrismValue, F extends FocusType> Collection<V> computeTargetValues(VariableBindingDefinitionType target,
 			Object defaultTargetContext, ExpressionVariables variables, ObjectResolver objectResolver, String contextDesc,
-			Task task, OperationResult result) throws SchemaException, ObjectNotFoundException {
+			Task task, OperationResult result) throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 		if (target == null) {
 			// Is this correct? What about default targets?
 			return null;
@@ -238,7 +262,7 @@ public class ExpressionUtil {
 		}
 		ItemPath path = itemPathType.getItemPath();
 
-		Object object = resolvePath(path, variables, defaultTargetContext, objectResolver, contextDesc, task, result);
+		Object object = resolvePath(path, variables, false, defaultTargetContext, objectResolver, contextDesc, task, result);
 		if (object == null) {
 			return new ArrayList<>();
 		} else if (object instanceof Item) {
@@ -256,7 +280,7 @@ public class ExpressionUtil {
 
 	// TODO what about collections of values?
 	public static Object convertVariableValue(Object originalValue, String variableName, ObjectResolver objectResolver,
-			String contextDescription, PrismContext prismContext, Task task, OperationResult result) throws ExpressionSyntaxException, ObjectNotFoundException {
+			String contextDescription, PrismContext prismContext, Task task, OperationResult result) throws ExpressionSyntaxException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 		if (originalValue instanceof PrismValue) {
 			((PrismValue) originalValue).setPrismContext(prismContext);			// TODO - or revive? Or make sure prismContext is set here?
 		} else if (originalValue instanceof Item) {
@@ -330,7 +354,7 @@ public class ExpressionUtil {
 
 	private static PrismObject<?> resolveReference(ObjectReferenceType ref, ObjectResolver objectResolver,
 			String varDesc, String contextDescription, Task task, OperationResult result)
-					throws SchemaException, ObjectNotFoundException {
+					throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 		if (ref.getOid() == null) {
 			throw new SchemaException(
 					"Null OID in reference in variable " + varDesc + " in " + contextDescription);
@@ -351,6 +375,18 @@ public class ExpressionUtil {
 			} catch (SchemaException e) {
 				throw new SchemaException("Schema error during variable " + varDesc + " resolution in "
 						+ contextDescription + ": " + e.getMessage(), e);
+			} catch (CommunicationException e) {
+				throw new CommunicationException("Communication error during variable " + varDesc
+						+ " resolution in " + contextDescription + ": " + e.getMessage(), e);
+			} catch (ConfigurationException e) {
+				throw new ConfigurationException("Configuration error during variable " + varDesc
+						+ " resolution in " + contextDescription + ": " + e.getMessage(), e);
+			} catch (SecurityViolationException e) {
+				throw new SecurityViolationException("Security violation during variable " + varDesc
+						+ " resolution in " + contextDescription + ": " + e.getMessage(), e);
+			} catch (ExpressionEvaluationException e) {
+				throw new ExpressionEvaluationException("Expression evaluation error during variable " + varDesc
+						+ " resolution in " + contextDescription + ": " + e.getMessage(), e);
 			}
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.ZonedDateTime;
 import java.util.*;
 
 /**
@@ -143,6 +144,8 @@ public class XmlTypeConverter {
             return (T) getDatatypeFactory().newXMLGregorianCalendar(stringContent).toGregorianCalendar();
         } else if (XMLGregorianCalendar.class.isAssignableFrom(type)) {
         	return (T) getDatatypeFactory().newXMLGregorianCalendar(stringContent);
+        } else if (type.equals(ZonedDateTime.class)) {
+            return (T) ZonedDateTime.parse(stringContent);
         } else if (Duration.class.isAssignableFrom(type)) {
         	return (T) getDatatypeFactory().newDuration(stringContent);
         } else if (type.equals(PolyString.class)) {
@@ -302,6 +305,10 @@ public class XmlTypeConverter {
             return ((BigDecimal) val).toString();
         } else if (type.equals(GregorianCalendar.class)) {
             XMLGregorianCalendar xmlCal = createXMLGregorianCalendar((GregorianCalendar) val);
+            return xmlCal.toXMLFormat();
+        } else if (type.equals(ZonedDateTime.class)) {
+        	GregorianCalendar gregorianCalendar = GregorianCalendar.from((ZonedDateTime)val);
+            XMLGregorianCalendar xmlCal = createXMLGregorianCalendar(gregorianCalendar);
             return xmlCal.toXMLFormat();
         } else if (XMLGregorianCalendar.class.isAssignableFrom(type)) {
         	return ((XMLGregorianCalendar) val).toXMLFormat();
@@ -484,15 +491,27 @@ public class XmlTypeConverter {
 		gregorianCalendar.setTime(date);
 		return createXMLGregorianCalendar(gregorianCalendar);
 	}
-
+	
 	public static XMLGregorianCalendar createXMLGregorianCalendar(String string) {
 		return getDatatypeFactory().newXMLGregorianCalendar(string);
+	}
+	
+	public static XMLGregorianCalendar createXMLGregorianCalendarFromIso8601(String iso8601string) {
+		return createXMLGregorianCalendar(ZonedDateTime.parse(iso8601string));
 	}
 
     public static XMLGregorianCalendar createXMLGregorianCalendar(GregorianCalendar cal) {
         return getDatatypeFactory().newXMLGregorianCalendar(cal);
     }
 
+    public static XMLGregorianCalendar createXMLGregorianCalendar(ZonedDateTime zdt) {
+    	return createXMLGregorianCalendar(GregorianCalendar.from(zdt));
+    }
+    
+    public static ZonedDateTime toZonedDateTime(XMLGregorianCalendar xcal) {
+    	return xcal.toGregorianCalendar().toZonedDateTime();
+    }
+    
     // in some environments, XMLGregorianCalendar.clone does not work
     public static XMLGregorianCalendar createXMLGregorianCalendar(XMLGregorianCalendar cal) {
         if (cal == null) {
@@ -656,5 +675,43 @@ public class XmlTypeConverter {
 	public static boolean isAfterInterval(XMLGregorianCalendar reference, Duration interval, XMLGregorianCalendar now) {
 		XMLGregorianCalendar endOfInterval = addDuration(reference, interval);
 		return endOfInterval.compare(now) == DatatypeConstants.LESSER;
+	}
+
+	public static Duration longerDuration(Duration a, Duration b) {
+		if (a == null) {
+			return b;
+		}
+		if (b == null) {
+			return a;
+		}
+		if (a.compare(b) == DatatypeConstants.GREATER) {
+			return a;
+		} else {
+			return b;
+		}
+	}
+
+	public static XMLGregorianCalendar laterTimestamp(XMLGregorianCalendar a, XMLGregorianCalendar b) {
+		if (a == null) {
+			return b;
+		}
+		if (b == null) {
+			return a;
+		}
+		if (a.compare(b) == DatatypeConstants.GREATER) {
+			return a;
+		} else {
+			return b;
+		}
+	}
+
+	public static boolean isFresher(XMLGregorianCalendar theTimestamp, XMLGregorianCalendar refTimestamp) {
+		if (theTimestamp == null) {
+			return false;
+		}
+		if (refTimestamp == null) {
+			return true;
+		}
+		return theTimestamp.compare(refTimestamp) == DatatypeConstants.GREATER;
 	}
 }

@@ -22,6 +22,7 @@ import java.util.function.Consumer;
 
 import javax.xml.namespace.QName;
 
+import com.evolveum.midpoint.schema.RelationRegistry;
 import org.apache.commons.lang.BooleanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -56,6 +57,8 @@ import com.evolveum.midpoint.prism.query.TypeFilter;
 import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
 import com.evolveum.midpoint.prism.query.builder.S_AtomicFilterExit;
 import com.evolveum.midpoint.prism.query.builder.S_FilterEntryOrEmpty;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
+import com.evolveum.midpoint.prism.xml.XsdTypeMapper;
 import com.evolveum.midpoint.repo.api.RepositoryService;
 import com.evolveum.midpoint.repo.api.query.ObjectFilterExpressionEvaluator;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
@@ -65,9 +68,8 @@ import com.evolveum.midpoint.schema.constants.ExpressionConstants;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.internals.InternalsConfig;
 import com.evolveum.midpoint.schema.result.OperationResult;
-import com.evolveum.midpoint.schema.util.MiscSchemaUtil;
 import com.evolveum.midpoint.schema.util.ObjectQueryUtil;
-import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
+import com.evolveum.midpoint.schema.util.SchemaDebugUtil;
 import com.evolveum.midpoint.security.api.Authorization;
 import com.evolveum.midpoint.security.api.AuthorizationConstants;
 import com.evolveum.midpoint.security.api.MidPointPrincipal;
@@ -99,13 +101,16 @@ import com.evolveum.midpoint.xml.ns._public.common.common_3.AuthorizationPhaseTy
 import com.evolveum.midpoint.xml.ns._public.common.common_3.FocusType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.OrderConstraintsType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgRelationObjectSpecificationType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgScopeType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.OwnedObjectSelectorType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.RoleRelationObjectSpecificationType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.SpecialObjectSpecificationType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.SubjectedObjectSelectorType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.TaskType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.TenantSelectorType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
 import com.evolveum.prism.xml.ns._public.query_3.SearchFilterType;
 import com.evolveum.prism.xml.ns._public.types_3.ItemPathType;
@@ -128,7 +133,8 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 	@Autowired private TaskManager taskManager;
 	@Autowired private ExpressionFactory expressionFactory;
 	@Autowired private PrismContext prismContext;
-	
+	@Autowired private RelationRegistry relationRegistry;
+
 	@Autowired
 	@Qualifier("securityContextManager")
 	private SecurityContextManager securityContextManager;
@@ -207,22 +213,30 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 						LOGGER.trace("    {} not applicable for relation {}", autzHumanReadableDesc, params.getRelation());
 						continue;
 					}
+					
+					// orderConstraints
+					if (!isApplicableOrderConstraints(autz, params.getOrderConstraints())) {
+						if (LOGGER.isTraceEnabled()) {
+							LOGGER.trace("    {} not applicable for orderConstraints {}", autzHumanReadableDesc, SchemaDebugUtil.shortDumpOrderConstraintsList(params.getOrderConstraints()));
+						}
+						continue;
+					}
 
 					// object
-					if (isApplicable(autz.getObject(), params.getObject(), midPointPrincipal, ownerResolver, "object", autzHumanReadableDesc, task, result)) {
-						LOGGER.trace("    {} applicable for object {} (continuing evaluation)", autzHumanReadableDesc, params.getObject());
+					if (isApplicableObject(autz, params.getOdo(), midPointPrincipal, ownerResolver, autzHumanReadableDesc, task, result)) {
+						LOGGER.trace("    {} applicable for object {} (continuing evaluation)", autzHumanReadableDesc, params.getAnyObject());
 					} else {
 						LOGGER.trace("    {} not applicable for object {}, none of the object specifications match (breaking evaluation)",
-								autzHumanReadableDesc, params.getObject());
+								autzHumanReadableDesc, params.getAnyObject());
 						continue;
 					}
 
 					// target
 					if (isApplicable(autz.getTarget(), params.getTarget(), midPointPrincipal, ownerResolver, "target", autzHumanReadableDesc, task, result)) {
-						LOGGER.trace("    {} applicable for target {} (continuing evaluation)", autzHumanReadableDesc, params.getObject());
+						LOGGER.trace("    {} applicable for target {} (continuing evaluation)", autzHumanReadableDesc, params.getAnyObject());
 					} else {
 						LOGGER.trace("    {} not applicable for target {}, none of the target specifications match (breaking evaluation)",
-								autzHumanReadableDesc, params.getObject());
+								autzHumanReadableDesc, params.getAnyObject());
 						continue;
 					}
 					
@@ -239,7 +253,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 						// Do NOT break here. Other authorization statements may still deny the operation
 					} else {
 						// item
-						if (isApplicableItem(autz, params.getObject(), params.getDelta())) {
+						if (isApplicableItem(autz, params.getOldObject(), params.getDelta())) {
 							LOGGER.trace("    {}: Deny authorization applicable for items (continuing evaluation)", autzHumanReadableDesc);
 						} else {
 							LOGGER.trace("    {} not applicable for items (breaking evaluation)", autzHumanReadableDesc);
@@ -269,9 +283,12 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 				ItemDecisionFunction itemDecisionFunction = (itemPath, removingContainer) -> decideAllowedItems(itemPath,  allowedItems, phase, removingContainer);
 				AccessDecision itemsDecision = null;
 				if (params.hasDelta()) {
-					itemsDecision = determineDeltaDecision(params.getDelta(), params.getObject(), itemDecisionFunction);
+					// Behave as if this is execution phase for delete delta authorizations. We do not want to avoid deleting objects just because there
+					// are automatic/operational items that were generated by midPoint. Otherwise we won't be really able to delete any object.
+					ItemDecisionFunction itemDecisionFunctionDelete = (itemPath, removingContainer) -> decideAllowedItems(itemPath,  allowedItems, AuthorizationPhaseType.EXECUTION, removingContainer);
+					itemsDecision = determineDeltaDecision(params.getDelta(), params.getOldObject(), itemDecisionFunction, itemDecisionFunctionDelete);
 				} else if (params.hasObject()) {
-					itemsDecision = determineObjectDecision(params.getObject(), itemDecisionFunction);
+					itemsDecision = determineObjectDecision(params.getAnyObject(), itemDecisionFunction);
 				}
 				if (itemsDecision != AccessDecision.ALLOW) {
 					LOGGER.trace("    NOT ALLOWED operation because the item decision is {}", itemsDecision);
@@ -453,9 +470,12 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 	 * The currentObject parameter is the state of the object as we have seen it (the more recent the better).
 	 * This is used to check authorization for id-only delete deltas and replace deltas for containers.
 	 */
-	private <O extends ObjectType> AccessDecision determineDeltaDecision(ObjectDelta<O> delta, PrismObject<O> currentObject, ItemDecisionFunction itemDecisionFunction) {
+	private <O extends ObjectType> AccessDecision determineDeltaDecision(ObjectDelta<O> delta, PrismObject<O> currentObject,
+			ItemDecisionFunction itemDecisionFunction, ItemDecisionFunction itemDecisionFunctionDelete) {
 		if (delta.isAdd()) {
 			return determineObjectDecision(delta.getObjectToAdd(), itemDecisionFunction);
+		} else if (delta.isDelete()) {
+			return determineObjectDecision(currentObject, itemDecisionFunctionDelete);
 		} else {
 			AccessDecision decision = null;
 			for (ItemDelta<?,?> itemDelta: delta.getModifications()) {
@@ -518,12 +538,12 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		MidPointPrincipal principal = securityContextManager.getPrincipal();
 		String username = getQuotedUsername(principal);
 		String message;
-		if (params.getTarget() == null && params.getObject() == null) {
+		if (params.getTarget() == null && params.getAnyObject() == null) {
 			message = "User '"+username+"' not authorized for operation "+ operationUrl;
 		} else if (params.getTarget() == null) {
-			message = "User '"+username+"' not authorized for operation "+ operationUrl + " on " + params.getObject();
+			message = "User '"+username+"' not authorized for operation "+ operationUrl + " on " + params.getAnyObject();
 		} else {
-			message = "User '"+username+"' not authorized for operation "+ operationUrl + " on " + params.getObject() + " with target " + params.getTarget();
+			message = "User '"+username+"' not authorized for operation "+ operationUrl + " on " + params.getAnyObject() + " with target " + params.getTarget();
 		}
 		LOGGER.error("{}", message);
 		AuthorizationException e = new AuthorizationException(message);
@@ -531,6 +551,49 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		throw e;
 	}
 
+	private <O extends ObjectType> boolean isApplicableObject(Authorization autz, ObjectDeltaObject<O> odo,
+			MidPointPrincipal midPointPrincipal, OwnerResolver ownerResolver, String autzHumanReadableDesc, Task task, OperationResult result) throws SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException, SecurityViolationException {
+		List<OwnedObjectSelectorType> objectSpecTypes = autz.getObject();
+		if (objectSpecTypes != null && !objectSpecTypes.isEmpty()) {
+			if (odo == null) {
+				LOGGER.trace("  object not applicable for null {}", autzHumanReadableDesc);
+				return false;
+			}
+			if (odo.getObjectDelta() != null && odo.getObjectDelta().isModify()) {
+				if (autz.keepZoneOfControl()) {
+					PrismObject<O> oldObject = odo.getOldObject();
+					if (oldObject == null) {
+						throw new IllegalStateException("No old object in odo "+odo);
+					}
+					if (!isApplicable(objectSpecTypes, oldObject, midPointPrincipal, ownerResolver, "object(old)", autzHumanReadableDesc, task, result)) {
+						return false;
+					}
+					PrismObject<O> newObject = odo.getNewObject();
+					if (newObject == null) {
+						throw new IllegalStateException("No new object in odo "+odo);
+					}
+					return isApplicable(objectSpecTypes, newObject, midPointPrincipal, ownerResolver, "object(new)", autzHumanReadableDesc, task, result);
+				} else {
+					PrismObject<O> object = odo.getOldObject();
+					if (object == null) {
+						throw new IllegalStateException("No old object in odo "+odo);
+					}
+					return isApplicable(objectSpecTypes, object, midPointPrincipal, ownerResolver, "object(old)", autzHumanReadableDesc, task, result);
+				}
+			} else {
+				// Old and new object should be the same. Or there is just one of them. Any one of them will do.
+				PrismObject<O> object = odo.getAnyObject();
+				if (object == null) {
+					throw new IllegalStateException("No object in odo "+odo);
+				}
+				return isApplicable(objectSpecTypes, object, midPointPrincipal, ownerResolver, "object", autzHumanReadableDesc, task, result);
+			}
+		} else {
+			LOGGER.trace("    {}: No object specification in authorization (authorization is applicable)", autzHumanReadableDesc);
+			return true;
+		}
+	}
+	
 	private <O extends ObjectType> boolean isApplicable(List<OwnedObjectSelectorType> objectSpecTypes, PrismObject<O> object,
 			MidPointPrincipal midPointPrincipal, OwnerResolver ownerResolver, String desc, String autzHumanReadableDesc, Task task, OperationResult result) throws SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException, SecurityViolationException {
 		if (objectSpecTypes != null && !objectSpecTypes.isEmpty()) {
@@ -554,6 +617,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 			MidPointPrincipal principal, OwnerResolver ownerResolver, String desc, String autzHumanReadableDesc, Task task, OperationResult result) throws SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException, SecurityViolationException {
 		ObjectFilterExpressionEvaluator filterExpressionEvaluator = createFilterEvaluator(principal, desc, autzHumanReadableDesc, task, result);
 		if (!repositoryService.selectorMatches(objectSelector, object, filterExpressionEvaluator, LOGGER, "    " + autzHumanReadableDesc + " not applicable for " + desc + " because of")) {
+			// No need to log inapplicability here. It should be logged inside repositoryService.selectorMatches()
 			return false;
 		}
 
@@ -585,6 +649,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 					throw new SchemaException("Unsupported special "+desc+" specification specified in "+autzHumanReadableDesc+": "+special);
 				}
 			}
+			LOGGER.trace("    {}: special authorization not applicable for {}", autzHumanReadableDesc, desc);
 			return false;
 		} else {
 			LOGGER.trace("    {}: specials empty: {}", autzHumanReadableDesc, specSpecial);
@@ -678,7 +743,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 								continue;
 							}
 							if (principal.getOid().equals(objectAssignmentTargetRef.getOid())) {
-								if (QNameUtil.match(SchemaConstants.ORG_DEPUTY, objectAssignmentTargetRef.getRelation())) {
+								if (relationRegistry.isDelegation(objectAssignmentTargetRef.getRelation())) {
 									found = true;
 									break;
 								}
@@ -692,7 +757,44 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 						return false;
 					}
 				}
+			}
 				
+			// Tenant
+			TenantSelectorType tenantSpec = ((OwnedObjectSelectorType)objectSelector).getTenant();
+			if (tenantSpec != null) {
+				if (BooleanUtils.isTrue(tenantSpec.isSameAsSubject())) {
+					ObjectReferenceType subjectTenantRef = principal.getUser().getTenantRef();
+					if (subjectTenantRef == null || subjectTenantRef.getOid() == null) {
+						LOGGER.trace("    {}: tenant object spec not applicable for {}, object OID {} because subject does not have tenantRef",
+								autzHumanReadableDesc, desc, object.getOid());
+						return false;
+					}
+					ObjectReferenceType objectTenantRef = object.asObjectable().getTenantRef();
+					if (objectTenantRef == null || objectTenantRef.getOid() == null) {
+						LOGGER.trace("    {}: tenant object spec not applicable for {}, object OID {} because object does not have tenantRef",
+								autzHumanReadableDesc, desc, object.getOid());
+						return false;
+					}
+					if (!subjectTenantRef.getOid().equals(objectTenantRef.getOid())) {
+						LOGGER.trace("    {}: tenant object spec not applicable for {}, object OID {} because of tenant mismatch",
+								autzHumanReadableDesc, desc, object.getOid());
+						return false;
+					}
+					if (!BooleanUtils.isTrue(tenantSpec.isIncludeTenantOrg())) {
+						O objectType = object.asObjectable();
+						if (objectType instanceof OrgType) {
+							if (BooleanUtils.isTrue(((OrgType)objectType).isTenant())) {
+								LOGGER.trace("    {}: tenant object spec not applicable for {}, object OID {} because it is a tenant org and it is not included",
+										autzHumanReadableDesc, desc, object.getOid());
+								return false;
+							}
+						}
+					}
+				} else {
+					LOGGER.trace("    {}: tenant object spec not applicable for {}, object OID {} because there is a strange tenant specificaiton in authorization",
+							autzHumanReadableDesc, desc, object.getOid());
+					return false;
+				}
 			}
 		}
 
@@ -749,7 +851,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 
 	private <O extends ObjectType> boolean matchesOrgRelation(PrismObject<O> object, ObjectReferenceType subjectParentOrgRef,
 			OrgRelationObjectSpecificationType specOrgRelation, String autzHumanReadableDesc, String desc) throws SchemaException {
-		if (!MiscSchemaUtil.compareRelation(specOrgRelation.getSubjectRelation(), subjectParentOrgRef.getRelation())) {
+		if (!prismContext.relationMatches(specOrgRelation.getSubjectRelation(), subjectParentOrgRef.getRelation())) {
 			return false;
 		}
 		if (BooleanUtils.isTrue(specOrgRelation.isIncludeReferenceOrg()) && subjectParentOrgRef.getOid().equals(object.getOid())) {
@@ -782,7 +884,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 
 	private <O extends ObjectType> boolean matchesRoleRelation(PrismObject<O> object, ObjectReferenceType subjectRoleMembershipRef,
 			RoleRelationObjectSpecificationType specRoleRelation, String autzHumanReadableDesc, String desc) throws SchemaException {
-		if (!MiscSchemaUtil.compareRelation(specRoleRelation.getSubjectRelation(), subjectRoleMembershipRef.getRelation())) {
+		if (!prismContext.relationMatches(specRoleRelation.getSubjectRelation(), subjectRoleMembershipRef.getRelation())) {
 			return false;
 		}
 		if (BooleanUtils.isTrue(specRoleRelation.isIncludeReferenceRole()) && subjectRoleMembershipRef.getOid().equals(object.getOid())) {
@@ -796,7 +898,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 				if (!subjectRoleMembershipRef.getOid().equals(objectRoleMembershipRef.getOid())) {
 					continue;
 				}
-				if (!MiscSchemaUtil.compareRelation(specRoleRelation.getObjectRelation(), objectRoleMembershipRef.getRelation())) {
+				if (!prismContext.relationMatches(specRoleRelation.getObjectRelation(), objectRoleMembershipRef.getRelation())) {
 					continue;
 				}
 				return true;
@@ -985,7 +1087,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 	}
 
 	@Override
-	public <T extends ObjectType, O extends ObjectType> ObjectFilter preProcessObjectFilter(String operationUrl, AuthorizationPhaseType phase,
+	public <T extends ObjectType, O extends ObjectType> ObjectFilter preProcessObjectFilter(String[] operationUrls, AuthorizationPhaseType phase,
 			Class<T> searchResultType, PrismObject<O> object, ObjectFilter origFilter, String limitAuthorizationAction, Task task, OperationResult result) throws SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException, SecurityViolationException {
 		MidPointPrincipal principal = getMidPointPrincipal();
 		if (LOGGER.isTraceEnabled()) {
@@ -997,14 +1099,14 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		}
 		ObjectFilter finalFilter;
 		if (phase != null) {
-			finalFilter = preProcessObjectFilterInternal(principal, operationUrl, phase,
+			finalFilter = preProcessObjectFilterInternal(principal, operationUrls, phase,
 					true, searchResultType, object, true, origFilter, limitAuthorizationAction, "search pre-process", task, result);
 		} else {
-			ObjectFilter filterBoth = preProcessObjectFilterInternal(principal, operationUrl, null,
+			ObjectFilter filterBoth = preProcessObjectFilterInternal(principal, operationUrls, null,
 					false, searchResultType, object, true, origFilter, limitAuthorizationAction, "search pre-process", task, result);
-			ObjectFilter filterRequest = preProcessObjectFilterInternal(principal, operationUrl, AuthorizationPhaseType.REQUEST,
+			ObjectFilter filterRequest = preProcessObjectFilterInternal(principal, operationUrls, AuthorizationPhaseType.REQUEST,
 					false, searchResultType, object, true, origFilter, limitAuthorizationAction, "search pre-process", task, result);
-			ObjectFilter filterExecution = preProcessObjectFilterInternal(principal, operationUrl, AuthorizationPhaseType.EXECUTION,
+			ObjectFilter filterExecution = preProcessObjectFilterInternal(principal, operationUrls, AuthorizationPhaseType.EXECUTION,
 					false, searchResultType, object, true, origFilter, limitAuthorizationAction, "search pre-process", task, result);
 			finalFilter = ObjectQueryUtil.filterOr(filterBoth, ObjectQueryUtil.filterAnd(filterRequest, filterExecution));
 		}
@@ -1019,8 +1121,11 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		return finalFilter;
 	}
 
+	/**
+	 * Question: does object make any sense here? E.g. when searching role members, the role OID should be determined from the query.
+	 */
 	@Override
-	public <T extends ObjectType, O extends ObjectType> boolean canSearch(String operationUrl,
+	public <T extends ObjectType, O extends ObjectType> boolean canSearch(String[] operationUrls,
 			AuthorizationPhaseType phase, Class<T> searchResultType, PrismObject<O> object, boolean includeSpecial, ObjectFilter filter, Task task, OperationResult result)
 			throws SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException, SecurityViolationException {
 		MidPointPrincipal principal = getMidPointPrincipal();
@@ -1033,14 +1138,14 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		}
 		ObjectFilter finalFilter;
 		if (phase != null) {
-			finalFilter = preProcessObjectFilterInternal(principal, operationUrl, phase,
+			finalFilter = preProcessObjectFilterInternal(principal, operationUrls, phase,
 					true, searchResultType, object, includeSpecial, filter, null, "search permission", task, result);
 		} else {
-			ObjectFilter filterBoth = preProcessObjectFilterInternal(principal, operationUrl, null,
+			ObjectFilter filterBoth = preProcessObjectFilterInternal(principal, operationUrls, null,
 					false, searchResultType, object, includeSpecial, filter, null, "search permission", task, result);
-			ObjectFilter filterRequest = preProcessObjectFilterInternal(principal, operationUrl, AuthorizationPhaseType.REQUEST,
+			ObjectFilter filterRequest = preProcessObjectFilterInternal(principal, operationUrls, AuthorizationPhaseType.REQUEST,
 					false, searchResultType, object, includeSpecial, filter, null, "search permission", task, result);
-			ObjectFilter filterExecution = preProcessObjectFilterInternal(principal, operationUrl, AuthorizationPhaseType.EXECUTION,
+			ObjectFilter filterExecution = preProcessObjectFilterInternal(principal, operationUrls, AuthorizationPhaseType.EXECUTION,
 					false, searchResultType, object, includeSpecial, filter, null, "search permission", task, result);
 			finalFilter = ObjectQueryUtil.filterOr(filterBoth, ObjectQueryUtil.filterAnd(filterRequest, filterExecution));
 		}
@@ -1053,7 +1158,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		return decision;
 	}
 
-	private <T extends ObjectType, O extends ObjectType> ObjectFilter preProcessObjectFilterInternal(MidPointPrincipal principal, String operationUrl,
+	private <T extends ObjectType, O extends ObjectType> ObjectFilter preProcessObjectFilterInternal(MidPointPrincipal principal, String[] operationUrls,
 			AuthorizationPhaseType phase, boolean includeNullPhase,
 			Class<T> objectType, PrismObject<O> object, boolean includeSpecial, ObjectFilter origFilter, String limitAuthorizationAction, String desc, Task task, OperationResult result) throws SchemaException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException, SecurityViolationException {
 
@@ -1074,24 +1179,28 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 				if (authority instanceof Authorization) {
 					Authorization autz = (Authorization)authority;
 					String autzHumanReadableDesc = autz.getHumanReadableDesc();
-					LOGGER.trace("  Evaluating {}", autzHumanReadableDesc);
+					LOGGER.trace("    Evaluating {}", autzHumanReadableDesc);
 
 					// action
-					if (!autz.getAction().contains(operationUrl) && !autz.getAction().contains(AuthorizationConstants.AUTZ_ALL_URL)) {
-						LOGGER.trace("    Authorization not applicable for operation {}", operationUrl);
+					if (!isApplicableForActions(autz, operationUrls)) {
+						if (LOGGER.isTraceEnabled()) {
+							LOGGER.trace("      Authorization not applicable for operation {}", prettyActionUrl(operationUrls));
+						}
 						continue;
 					}
 
 					// phase
 					if (autz.getPhase() == phase || (includeNullPhase && autz.getPhase() == null)) {
-						LOGGER.trace("    Authorization is applicable for phases {} (continuing evaluation)", phase);
+						LOGGER.trace("      Authorization is applicable for phases {} (continuing evaluation)", phase);
 					} else {
-						LOGGER.trace("    Authorization is not applicable for phase {}", phase);
+						LOGGER.trace("      Authorization is not applicable for phase {} (includeNullPhase={})", phase, includeNullPhase);
 						continue;
 					}
 					
 					if (!isApplicableLimitations(autz, limitAuthorizationAction)) {
-						LOGGER.trace("    Authorization is limited to other action, not applicable for operation {}", operationUrl);
+						if (LOGGER.isTraceEnabled()) {
+							LOGGER.trace("      Authorization is limited to other action, not applicable for operation {}", prettyActionUrl(operationUrls));
+						}
 						continue;
 					}
 
@@ -1110,9 +1219,9 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 
 						// .. but we need to decide whether this authorization is applicable to the object
 						if (isApplicable(autz.getObject(), object, principal, null, "object", autzHumanReadableDesc, task, result)) {
-							LOGGER.trace("    Authorization is applicable for object {}", object);
+							LOGGER.trace("      Authorization is applicable for object {}", object);
 						} else {
-							LOGGER.trace("    Authorization is not applicable for object {}", object);
+							LOGGER.trace("      Authorization is not applicable for object {}", object);
 							continue;
 						}
 					}
@@ -1120,7 +1229,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 					boolean applicable = true;
 					if (objectSpecTypes == null || objectSpecTypes.isEmpty()) {
 
-						LOGGER.trace("    No {} specification in authorization (authorization is universaly applicable)", objectTargetSpec);
+						LOGGER.trace("      No {} specification in authorization (authorization is universaly applicable)", objectTargetSpec);
 						autzObjSecurityFilter = AllFilter.createAll();
 
 					} else {
@@ -1133,6 +1242,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 							ObjectReferenceType specOrgRef = objectSpecType.getOrgRef();
 							OrgRelationObjectSpecificationType specOrgRelation = objectSpecType.getOrgRelation();
 							RoleRelationObjectSpecificationType specRoleRelation = objectSpecType.getRoleRelation();
+							TenantSelectorType specTenant = objectSpecType.getTenant();
 							QName specTypeQName = objectSpecType.getType();
 							PrismObjectDefinition<T> objectDefinition = null;
 
@@ -1145,12 +1255,10 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 								}
 								Class<?> specObjectClass = specObjectDef.getCompileTimeClass();
 								if (!objectType.isAssignableFrom(specObjectClass)) {
-									LOGGER.trace("    Authorization not applicable for object because of type mismatch, authorization {}, query {}",
-											new Object[]{specObjectClass, objectType});
+									traceClassMatch("Authorization not applicable for object because of type mismatch", specObjectClass, objectType);
 									continue;
 								} else {
-									LOGGER.trace("    Authorization is applicable for object because of type match, authorization {}, query {}",
-											new Object[]{specObjectClass, objectType});
+									traceClassMatch("Authorization is applicable for object because of type match", specObjectClass, objectType);
 									// The spec type is a subclass of requested type. So it might be returned from the search.
 									// We need to use type filter.
 									objSpecTypeFilter = TypeFilter.createType(specTypeQName, null);
@@ -1165,31 +1273,24 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 									objectDefinition = prismContext.getSchemaRegistry().findObjectDefinitionByCompileTimeClass(objectType);
 								}
 								// TODO: MID-3899
+								// TODO what if owner is specified not as "self" ?
 								if (AbstractRoleType.class.isAssignableFrom(objectType)) {
+									// TODO beware, role.ownerRef is deprecated
 									objSpecSecurityFilter = applyOwnerFilterOwnerRef(new ItemPath(AbstractRoleType.F_OWNER_REF), objSpecSecurityFilter,  principal, objectDefinition);
 								} else if (TaskType.class.isAssignableFrom(objectType)) {
 									objSpecSecurityFilter = applyOwnerFilterOwnerRef(new ItemPath(TaskType.F_OWNER_REF), objSpecSecurityFilter,  principal, objectDefinition);
 								} else {
-									LOGGER.trace("    Authorization not applicable for object because it has owner specification (this is not applicable for search)");
+									LOGGER.trace("      Authorization not applicable for object because it has owner specification (this is not applicable for search)");
 									continue;
 								}
 							}
 
-//							// Delegator
-//							if (objectSpecType.getDelegator() != null) {
-//								if (objectDefinition == null) {
-//									objectDefinition = prismContext.getSchemaRegistry().findObjectDefinitionByCompileTimeClass(objectType);
-//								}
-//								// TODO: MID-3899
-//								if (UserType.class.isAssignableFrom(objectType)) { TODO
-//									objSpecSecurityFilter = applyOwnerFilterOwnerRef(new ItemPath(AbstractRoleType.F_OWNER_REF), objSpecSecurityFilter,  principal, objectDefinition);
-//								} else if (TaskType.class.isAssignableFrom(objectType)) {
-//									objSpecSecurityFilter = applyOwnerFilterOwnerRef(new ItemPath(TaskType.F_OWNER_REF), objSpecSecurityFilter,  principal, objectDefinition);
-//								} else {
-//									LOGGER.trace("  Authorization not applicable for object because it has owner specification (this is not applicable for search)");
-//									continue;
-//								}
-//							}
+							// Delegator
+							if (objectSpecType.getDelegator() != null) {
+								// TODO: MID-3899
+								LOGGER.trace("      Authorization not applicable for object because it has delegator specification (this is not applicable for search)");
+								continue;
+							}
 
 							applicable = true;
 
@@ -1197,11 +1298,11 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 							List<SpecialObjectSpecificationType> specSpecial = objectSpecType.getSpecial();
 							if (specSpecial != null && !specSpecial.isEmpty()) {
 								if (!includeSpecial) {
-									LOGGER.trace("    Skipping authorization, because specials are present: {}", specSpecial);
+									LOGGER.trace("      Skipping authorization, because specials are present: {}", specSpecial);
 									applicable = false;
 								}
-								if (specFilterType != null || specOrgRef != null || specOrgRelation != null || specRoleRelation != null) {
-									throw new SchemaException("Both filter/org/role and special object specification specified in authorization");
+								if (specFilterType != null || specOrgRef != null || specOrgRelation != null || specRoleRelation != null || specTenant != null) {
+									throw new SchemaException("Both filter/org/role/tenant and special object specification specified in authorization");
 								}
 								ObjectFilter specialFilter = null;
 								for (SpecialObjectSpecificationType special: specSpecial) {
@@ -1215,7 +1316,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
                                 objSpecSecurityFilter = specTypeQName != null ?
                                         TypeFilter.createType(specTypeQName, specialFilter) : specialFilter;
 							} else {
-								LOGGER.trace("    specials empty: {}", specSpecial);
+								LOGGER.trace("      specials empty: {}", specSpecial);
 							}
 
 							// Filter
@@ -1228,10 +1329,10 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 									ObjectQueryUtil.assertNotRaw(specFilter, "Filter in authorization object has undefined items. Maybe a 'type' specification is missing in the authorization?");
 									ObjectQueryUtil.assertPropertyOnly(specFilter, "Filter in authorization object is not property-only filter");
 								}
-								LOGGER.trace("    applying property filter {}", specFilter);
+								LOGGER.trace("      applying property filter {}", specFilter);
 								objSpecSecurityFilter = ObjectQueryUtil.filterAnd(objSpecSecurityFilter, specFilter);
 							} else {
-								LOGGER.trace("    filter empty");
+								LOGGER.trace("      filter empty");
 							}
 
 							// Org
@@ -1239,9 +1340,9 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 								ObjectFilter orgFilter = QueryBuilder.queryFor(ObjectType.class, prismContext)
 										.isChildOf(specOrgRef.getOid()).buildFilter();
 								objSpecSecurityFilter = ObjectQueryUtil.filterAnd(objSpecSecurityFilter, orgFilter);
-								LOGGER.trace("    applying org filter {}", orgFilter);
+								LOGGER.trace("      applying org filter {}", orgFilter);
 							} else {
-								LOGGER.trace("    org empty");
+								LOGGER.trace("      org empty");
 							}
 
 							// orgRelation
@@ -1249,7 +1350,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 								ObjectFilter objSpecOrgRelationFilter = null;
 								QName subjectRelation = specOrgRelation.getSubjectRelation();
 								for (ObjectReferenceType subjectParentOrgRef: principal.getUser().getParentOrgRef()) {
-									if (MiscSchemaUtil.compareRelation(subjectRelation, subjectParentOrgRef.getRelation())) {
+									if (prismContext.relationMatches(subjectRelation, subjectParentOrgRef.getRelation())) {
 										S_FilterEntryOrEmpty q = QueryBuilder.queryFor(ObjectType.class, prismContext);
 										S_AtomicFilterExit q2;
 										if (specOrgRelation.getScope() == null || specOrgRelation.getScope() == OrgScopeType.ALL_DESCENDANTS) {
@@ -1271,9 +1372,9 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 									objSpecOrgRelationFilter = NoneFilter.createNone();
 								}
 								objSpecSecurityFilter = ObjectQueryUtil.filterAnd(objSpecSecurityFilter, objSpecOrgRelationFilter);
-								LOGGER.trace("    applying orgRelation filter {}", objSpecOrgRelationFilter);
+								LOGGER.trace("      applying orgRelation filter {}", objSpecOrgRelationFilter);
 							} else {
-								LOGGER.trace("    orgRelation empty");
+								LOGGER.trace("      orgRelation empty");
 							}
 
 							// roleRelation
@@ -1281,7 +1382,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 								ObjectFilter objSpecRoleRelationFilter = processRoleRelationFilter(principal, autz, specRoleRelation, queryItemsSpec, origFilter);
 								if (objSpecRoleRelationFilter == null) {
 									if (autz.maySkipOnSearch()) {
-										LOGGER.trace("    not applying roleRelation filter {} because it is not efficient and maySkipOnSearch is set", objSpecRoleRelationFilter);
+										LOGGER.trace("      not applying roleRelation filter {} because it is not efficient and maySkipOnSearch is set", objSpecRoleRelationFilter);
 										applicable = false;
 									} else {
 										objSpecRoleRelationFilter = NoneFilter.createNone();
@@ -1289,10 +1390,29 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 								}
 								if (objSpecRoleRelationFilter != null) {
 									objSpecSecurityFilter = ObjectQueryUtil.filterAnd(objSpecSecurityFilter, objSpecRoleRelationFilter);
-									LOGGER.trace("  applying roleRelation filter {}", objSpecRoleRelationFilter);
+									LOGGER.trace("      applying roleRelation filter {}", objSpecRoleRelationFilter);
 								}
 							} else {
-								LOGGER.trace("    roleRelation empty");
+								LOGGER.trace("      roleRelation empty");
+							}
+
+							// tenant
+							if (specTenant != null) {
+								ObjectFilter objSpecTenantFilter = processTenantFilter(principal, autz, specTenant, queryItemsSpec, origFilter);
+								if (objSpecTenantFilter == null) {
+									if (autz.maySkipOnSearch()) {
+										LOGGER.trace("      not applying tenant filter {} because it is not efficient and maySkipOnSearch is set", objSpecTenantFilter);
+										applicable = false;
+									} else {
+										objSpecTenantFilter = NoneFilter.createNone();
+									}
+								}
+								if (objSpecTenantFilter != null) {
+									objSpecSecurityFilter = ObjectQueryUtil.filterAnd(objSpecSecurityFilter, objSpecTenantFilter);
+									LOGGER.trace("      applying tenant filter {}", objSpecTenantFilter);
+								}
+							} else {
+								LOGGER.trace("      tenant empty");
 							}
 
 							if (objSpecTypeFilter != null) {
@@ -1334,8 +1454,8 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 									// This is "deny all". We cannot have anything stronger than that.
 									// There is no point in continuing the evaluation.
 									if (LOGGER.isTraceEnabled()) {
-										LOGGER.trace("AUTZ {} done: principal={}, operation={}, phase={}: deny all",
-												desc, getUsername(principal), prettyActionUrl(operationUrl), phase);
+										LOGGER.trace("  phase={} done: principal={}, operation={}, {}: deny all",
+												phase, getUsername(principal), prettyActionUrl(operationUrls), desc);
 									}
 									NoneFilter secFilter = NoneFilter.createNone();
 									traceFilter("secFilter", null, secFilter);
@@ -1350,7 +1470,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 					traceFilter("securityFilterDeny", autz, securityFilterDeny);
 
 				} else {
-					LOGGER.warn("Unknown authority type {} in user {}", authority.getClass(), getUsername(principal));
+					LOGGER.warn("  Unknown authority type {} in user {}", authority.getClass(), getUsername(principal));
 				}
 			}
 		}
@@ -1359,13 +1479,13 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		traceFilter("securityFilterDeny", null, securityFilterDeny);
 
 		if (LOGGER.isTraceEnabled()) {
-			LOGGER.trace(" Final items: {}", queryItemsSpec.shortDump());
+			LOGGER.trace("  final items: {}", queryItemsSpec.shortDump());
 		}
 		List<ItemPath> unsatisfiedItems = queryItemsSpec.evaluateUnsatisfierItems();
 		if (!unsatisfiedItems.isEmpty()) {
 			if (LOGGER.isTraceEnabled()) {
-				LOGGER.trace("AUTZ {} done: principal={}, operation={}, phase={}: deny because items {} are not allowed",
-						desc, getUsername(principal), prettyActionUrl(operationUrl), phase, unsatisfiedItems);
+				LOGGER.trace("  phase={} done: principal={}, operation={}, {}: deny because items {} are not allowed",
+						phase, getUsername(principal), prettyActionUrl(operationUrls), desc, unsatisfiedItems);
 			}
 			NoneFilter secFilter = NoneFilter.createNone();
 			traceFilter("secFilter", null, secFilter);
@@ -1378,8 +1498,8 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		} else if (securityFilterAllow == null) {
 			// Nothing has been allowed. This means default deny.
 			if (LOGGER.isTraceEnabled()) {
-				LOGGER.trace("AUTZ {} done: principal={}, operation={}, phase={}: default deny", 
-						desc, getUsername(principal), prettyActionUrl(operationUrl), phase);
+				LOGGER.trace("  phase={} {} done: principal={}, operation={}, {}: default deny", 
+						phase, getUsername(principal), prettyActionUrl(operationUrls), desc);
 			}
 			NoneFilter secFilter = NoneFilter.createNone();
 			traceFilter("secFilter", null, secFilter);
@@ -1390,8 +1510,8 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 
 		if (securityFilterDeny == null) {
 			if (LOGGER.isTraceEnabled()) {
-				LOGGER.trace("AUTZ {} done: principal={}, operation={}, phase={}: allow\n  Filter:\n{}", 
-						desc, getUsername(principal), prettyActionUrl(operationUrl), phase, 
+				LOGGER.trace("  phase={} done: principal={}, operation={}, {}: allow\n  Filter:\n{}", 
+						phase, getUsername(principal), prettyActionUrl(operationUrls), desc, 
 						origWithAllowFilter==null?"null":origWithAllowFilter.debugDump(2));
 			}
 			traceFilter("origWithAllowFilter", null, origWithAllowFilter);
@@ -1399,13 +1519,26 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		} else {
 			ObjectFilter secFilter = ObjectQueryUtil.filterAnd(origWithAllowFilter, NotFilter.createNot(securityFilterDeny));
 			if (LOGGER.isTraceEnabled()) {
-				LOGGER.trace("AUTZ {} done: principal={}, operation={}, phase={}: allow (with deny clauses)\n  Filter:\n{}", desc,
-						getUsername(principal), prettyActionUrl(operationUrl), phase,
+				LOGGER.trace("  phase={} done: principal={}, operation={}, {}: allow (with deny clauses)\n  Filter:\n{}", 
+						phase, getUsername(principal), prettyActionUrl(operationUrls), desc,
 						secFilter==null?"null":secFilter.debugDump(2));
 			}
 			traceFilter("secFilter", null, secFilter);
 			return secFilter;
 		}
+	}
+	
+	private boolean isApplicableForActions(Authorization autz, String[] requiredActions) {
+		List<String> autzActions = autz.getAction();
+		if (autzActions.contains(AuthorizationConstants.AUTZ_ALL_URL)) {
+			return true;
+		}
+		for (String requiredAction : requiredActions) {
+			if (autzActions.contains(requiredAction)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean isApplicableLimitations(Authorization autz, String limitAuthorizationAction) {
@@ -1431,6 +1564,115 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		return QNameUtil.contains(autzRelation, requestRelation);
 	}
 
+	private boolean isApplicableOrderConstraints(Authorization autz, List<OrderConstraintsType> paramOrderConstraints) {
+		if (autz.getAction().contains(AuthorizationConstants.AUTZ_ALL_URL)) {
+			// #all is always applicable
+			// Compatibility note: in fact, this not really correct. We should not make
+			// any special case for #all action - except for the fact that it applies to
+			// all actions. Even for #all, the object and target specification should
+			// still be processed. But orderConstraint is a bit different. For all other
+			// authorization clauses holds that empty clause means that everything is
+			// applicable. But it is different for orderConstraints. Due to compatibility
+			// with midPoint 3.8 empty orderConstraints means min=0,max=0, i.e. it applies
+			// only to assignment (not inducements). Therefore we need this exception for
+			// #all, otherwise #all won't be applicable to inducements.
+			return true;
+		}
+		OrderConstraintsType autzOrderConstraints = autz.getOrderConstraints();
+		if (paramOrderConstraints == null || paramOrderConstraints.isEmpty()) {
+			if (autzOrderConstraints == null) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+		for (OrderConstraintsType paramOrderConstraint : paramOrderConstraints) {
+			if (!isSubset(paramOrderConstraint, autzOrderConstraints)) {
+				return false;
+			}
+		}
+		return true;
+	}
+	
+	private boolean isSubset(OrderConstraintsType paramOrderConstraint, OrderConstraintsType autzOrderConstraints) {
+		Integer autzOrderMin;
+		Integer autzOrderMax;
+		
+		if (autzOrderConstraints == null) {
+			autzOrderMin = 0;
+			autzOrderMax = 0;
+		} else {
+			if (autzOrderConstraints.getRelation() != null) {
+				throw new UnsupportedOperationException("Complex order constaints with relation not supported in authorizations");
+			}
+			if (autzOrderConstraints.getResetOrder() != null) {
+				throw new UnsupportedOperationException("Complex order constaints with resetOrder not supported in authorizations");
+			}
+			
+			Integer autzOrder = autzOrderConstraints.getOrder();
+			autzOrderMin = XsdTypeMapper.multiplicityToInteger(autzOrderConstraints.getOrderMin());
+			if (autzOrderMin == null) {
+				if (autzOrder == null) {
+					autzOrderMin = 0;
+				} else {
+					autzOrderMin = autzOrder;
+				}
+			}
+			autzOrderMax = XsdTypeMapper.multiplicityToInteger(autzOrderConstraints.getOrderMax());
+			if (autzOrderMax == null) {
+				if (autzOrder == null) {
+					autzOrderMax = 0;
+				} else {
+					autzOrderMax = autzOrder;
+				}
+			}
+		}
+
+		Integer paramOrder = paramOrderConstraint.getOrder();
+		Integer paramOrderMin = XsdTypeMapper.multiplicityToInteger(paramOrderConstraint.getOrderMin());
+		if (paramOrderMin == null) {
+			paramOrderMin = paramOrder;
+		}
+		Integer paramOrderMax = XsdTypeMapper.multiplicityToInteger(paramOrderConstraint.getOrderMax());
+		if (paramOrderMax == null) {
+			paramOrderMax = paramOrder;
+		}
+
+//		LOGGER.info("OOO: A:{}-{} P:{}-{}", autzOrderMin, autzOrderMax, paramOrderMin, paramOrderMax);
+		
+		if (autzOrderMin < 0 || paramOrderMin < 0) {
+			// minimum set to infinity, should not really happen
+			return false;
+		}
+		
+		if (paramOrderMin < autzOrderMin) {
+			return false;
+		}
+		
+		if (autzOrderMax < 0) {
+			// required maximum set to infinity, everything allowed
+			return true;
+		}
+		
+		if (paramOrderMax < 0) {
+			// parameter maximum set to infinity. You cannot pass now.
+			return false;
+		}
+		
+		if (paramOrderMax > autzOrderMax) {
+			return false;
+		}
+		
+		return true;
+	}
+
+	private void traceClassMatch(String message, Class<?> specObjectClass, Class<?> objectType) {
+		if (LOGGER.isTraceEnabled()) {
+			LOGGER.trace("      {}, authorization {}, query {}",
+					message, specObjectClass.getSimpleName(), objectType.getSimpleName());
+		}
+	}
+	
 	/**
 	 * Very rudimentary and experimental implementation.
 	 */
@@ -1456,10 +1698,10 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 					throw new UnsupportedOperationException("Inefficient roleRelation search (includeMembers=true without role in the original query) is not supported yet");
 				}
 			} else {
-				QName subjectRelation = specRoleRelation.getSubjectRelation();
+				List<QName> subjectRelation = specRoleRelation.getSubjectRelation();
 				boolean isRoleOidOk = false;
 				for (ObjectReferenceType subjectRoleMembershipRef: principal.getUser().getRoleMembershipRef()) {
-					if (!MiscSchemaUtil.compareRelation(subjectRelation, subjectRoleMembershipRef.getRelation())) {
+					if (!prismContext.relationMatches(subjectRelation, subjectRoleMembershipRef.getRelation())) {
 						continue;
 					}
 					if (!PrismReferenceValue.containsOid(queryRoleRefs, subjectRoleMembershipRef.getOid())) {
@@ -1479,6 +1721,36 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 		}
 
 		return ObjectQueryUtil.filterOr(refRoleFilter, membersFilter);
+	}
+	
+	private ObjectFilter processTenantFilter(MidPointPrincipal principal, Authorization autz,
+			TenantSelectorType specTenant, AutzItemPaths queryItemsSpec, ObjectFilter origFilter) {
+		ObjectFilter tenantFilter = null;
+		if (BooleanUtils.isTrue(specTenant.isSameAsSubject())) {
+			ObjectReferenceType subjectTenantRef = principal.getUser().getTenantRef();
+			if (subjectTenantRef == null || subjectTenantRef.getOid() == null) {
+				LOGGER.trace("    subject tenant empty (none filter)");
+				tenantFilter = NoneFilter.createNone();
+			} else {
+				tenantFilter = QueryBuilder.queryFor(ObjectType.class, prismContext)
+					.item(ObjectType.F_TENANT_REF).ref(subjectTenantRef.getOid())
+					.buildFilter();
+			}
+			if (!BooleanUtils.isTrue(specTenant.isIncludeTenantOrg())) {
+				ObjectFilter notTenantFilter = QueryBuilder.queryFor(ObjectType.class, prismContext)
+						.not()
+							.type(OrgType.class)
+								.item(OrgType.F_TENANT).eq(true)
+						.buildFilter();
+				tenantFilter = ObjectQueryUtil.filterAnd(tenantFilter, notTenantFilter);
+			}
+			LOGGER.trace("    applying tenant filter {}", tenantFilter);
+		} else {
+			tenantFilter = NoneFilter.createNone();
+			LOGGER.trace("    tenant authorization empty (none filter)");
+		}
+
+		return tenantFilter;
 	}
 
 	private List<PrismReferenceValue> getRoleOidsFromFilter(ObjectFilter origFilter) {
@@ -1508,7 +1780,7 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 				.item(ownerRefPath, ownerRefDef).ref(principal.getUser().getOid());
 		// TODO don't understand this code
 		for (ObjectReferenceType subjectParentOrgRef: principal.getUser().getParentOrgRef()) {
-			if (ObjectTypeUtil.isDefaultRelation(subjectParentOrgRef.getRelation())) {
+			if (prismContext.isDefaultRelation(subjectParentOrgRef.getRelation())) {
 				builder = builder.or().item(ownerRefPath, ownerRefDef).ref(subjectParentOrgRef.getOid());
 			}
 		}
@@ -1531,6 +1803,21 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 	
 	private String prettyActionUrl(String fullUrl) {
 		return DebugUtil.shortenUrl(AuthorizationConstants.NS_SECURITY_PREFIX, fullUrl);
+	}
+	
+	private String prettyActionUrl(String[] fullUrls) {
+		if (fullUrls.length == 1) {
+			return DebugUtil.shortenUrl(AuthorizationConstants.NS_SECURITY_PREFIX, fullUrls[0]);
+		} else {
+			StringBuilder sb = new StringBuilder();
+			for (int i = 0; i < fullUrls.length; i++) {
+				sb.append(DebugUtil.shortenUrl(AuthorizationConstants.NS_SECURITY_PREFIX, fullUrls[i]));
+				if (i < fullUrls.length - 1) {
+					sb.append(",");
+				}
+			}
+			return sb.toString();
+		}
 	}
 	
 	private <O extends ObjectType> String getObjectType(Class<O> type) {
@@ -1615,24 +1902,27 @@ public class SecurityEnforcerImpl implements SecurityEnforcer {
 	public <O extends ObjectType> AccessDecision determineSubitemDecision(
 			ObjectSecurityConstraints securityConstraints, ObjectDelta<O> delta, PrismObject<O> currentObject, String operationUrl,
 			AuthorizationPhaseType phase, ItemPath subitemRootPath) {
-		return determineDeltaDecision(delta, currentObject,
-				(nameOnlyItemPath, removingContainer) -> {
-					if (removingContainer && isInList(nameOnlyItemPath, AuthorizationConstants.OPERATIONAL_ITEMS_ALLOWED_FOR_CONTAINER_DELETE)) {
-						return null;
-					}
-					if (AuthorizationPhaseType.EXECUTION.equals(phase) && isInList(nameOnlyItemPath, AuthorizationConstants.EXECUTION_ITEMS_ALLOWED_BY_DEFAULT)) {
-						return null;
-					}
-					if (subitemRootPath != null && !subitemRootPath.isSubPathOrEquivalent(nameOnlyItemPath)) {
-//						LOGGER.trace("subitem decision: {} <=> {} (not under root) : {}", subitemRootPath, nameOnlyItemPath, null);
-						return null;
-					}
-					
-					AuthorizationDecisionType authorizationDecisionType = securityConstraints.findItemDecision(nameOnlyItemPath, operationUrl, phase);
-					AccessDecision decision = AccessDecision.translate(authorizationDecisionType);
-//					LOGGER.trace("subitem decision: {} <=> {} : {}", subitemRootPath, nameOnlyItemPath, decision);
-					return decision;
-				});
+		ItemDecisionFunction itemDecisionFunction = (nameOnlyItemPath, removingContainer) -> subitemDecide(nameOnlyItemPath, removingContainer, securityConstraints, operationUrl, phase, subitemRootPath); 
+		ItemDecisionFunction itemDecisionFunctionDelete = (nameOnlyItemPath, removingContainer) -> subitemDecide(nameOnlyItemPath, removingContainer, securityConstraints, operationUrl, AuthorizationPhaseType.EXECUTION, subitemRootPath);
+		return determineDeltaDecision(delta, currentObject, itemDecisionFunction, itemDecisionFunctionDelete);
+	}
+	
+	private AccessDecision subitemDecide(ItemPath nameOnlyItemPath, boolean removingContainer, ObjectSecurityConstraints securityConstraints, String operationUrl, AuthorizationPhaseType phase, ItemPath subitemRootPath) {
+		if (removingContainer && isInList(nameOnlyItemPath, AuthorizationConstants.OPERATIONAL_ITEMS_ALLOWED_FOR_CONTAINER_DELETE)) {
+			return null;
+		}
+		if (AuthorizationPhaseType.EXECUTION.equals(phase) && isInList(nameOnlyItemPath, AuthorizationConstants.EXECUTION_ITEMS_ALLOWED_BY_DEFAULT)) {
+			return null;
+		}
+		if (subitemRootPath != null && !subitemRootPath.isSubPathOrEquivalent(nameOnlyItemPath)) {
+//			LOGGER.trace("subitem decision: {} <=> {} (not under root) : {}", subitemRootPath, nameOnlyItemPath, null);
+			return null;
+		}
+		
+		AuthorizationDecisionType authorizationDecisionType = securityConstraints.findItemDecision(nameOnlyItemPath, operationUrl, phase);
+		AccessDecision decision = AccessDecision.translate(authorizationDecisionType);
+//		LOGGER.trace("subitem decision: {} <=> {} : {}", subitemRootPath, nameOnlyItemPath, decision);
+		return decision;
 	}
 	
 	@Override

@@ -17,13 +17,15 @@ package com.evolveum.midpoint.model.impl.lens;
 
 import javax.xml.namespace.QName;
 
-import com.evolveum.midpoint.repo.common.expression.ItemDeltaItem;
+import com.evolveum.midpoint.prism.PrismContext;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
 import com.evolveum.midpoint.model.api.context.AssignmentPathSegment;
 import com.evolveum.midpoint.model.api.context.EvaluationOrder;
 import com.evolveum.midpoint.prism.PrismContainer;
 import com.evolveum.midpoint.prism.PrismContainerDefinition;
 import com.evolveum.midpoint.prism.PrismContainerValue;
 import com.evolveum.midpoint.prism.xml.XsdTypeMapper;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.util.DebugUtil;
 import com.evolveum.midpoint.util.QNameUtil;
@@ -51,6 +53,9 @@ import static com.evolveum.midpoint.prism.PrismContainerValue.asContainerable;
 public class AssignmentPathSegmentImpl implements AssignmentPathSegment {
 
 	private static final Trace LOGGER = TraceManager.getTrace(AssignmentPathSegmentImpl.class);
+
+	@NotNull private final RelationRegistry relationRegistry;
+	@NotNull private final PrismContext prismContext;
 
 	// "assignment path segment" information
 
@@ -265,16 +270,20 @@ public class AssignmentPathSegmentImpl implements AssignmentPathSegment {
 
 	AssignmentPathSegmentImpl(ObjectType source, String sourceDescription,
 			ItemDeltaItem<PrismContainerValue<AssignmentType>, PrismContainerDefinition<AssignmentType>> assignmentIdi,
-			boolean isAssignment, boolean evaluatedForOld) {
+			boolean isAssignment, boolean evaluatedForOld, @NotNull RelationRegistry relationRegistry,
+			@NotNull PrismContext prismContext) {
 		this.source = source;
 		this.sourceDescription = sourceDescription;
 		this.assignmentIdi = assignmentIdi;
 		this.isAssignment = isAssignment;
 		this.evaluatedForOld = evaluatedForOld;
+		this.relationRegistry = relationRegistry;
+		this.prismContext = prismContext;
 	}
 
-	AssignmentPathSegmentImpl(ObjectType source, String sourceDescription, AssignmentType assignment, boolean isAssignment) {
-		this(source, sourceDescription, createAssignmentIdi(assignment), isAssignment, false);
+	AssignmentPathSegmentImpl(ObjectType source, String sourceDescription, AssignmentType assignment, boolean isAssignment,
+			RelationRegistry relationRegistry, PrismContext prismContext) {
+		this(source, sourceDescription, createAssignmentIdi(assignment), isAssignment, false, relationRegistry, prismContext);
 	}
 
 	private static ItemDeltaItem<PrismContainerValue<AssignmentType>, PrismContainerDefinition<AssignmentType>> createAssignmentIdi(
@@ -451,6 +460,7 @@ public class AssignmentPathSegmentImpl implements AssignmentPathSegment {
 				extraRelations.removeIf(r -> QNameUtil.match(r, orderConstraint.getRelation()));
 			}
 		}
+		// TODO this is to be reconsidered -- why do we consider assignment of relation e.g. approver non-matching?
 		if (!extraRelations.isEmpty()) {
 			rv = false;
 		}
@@ -478,7 +488,7 @@ public class AssignmentPathSegmentImpl implements AssignmentPathSegment {
 
 	@Override
 	public boolean isDelegation() {
-		return ObjectTypeUtil.isDelegationRelation(relation);
+		return relationRegistry.isDelegation(relation);
 	}
 
 	@Override
@@ -612,11 +622,11 @@ public class AssignmentPathSegmentImpl implements AssignmentPathSegment {
 			rv.setAssignmentId(assignment.getId());
 		}
 		if (source != null) {
-			rv.setSourceRef(ObjectTypeUtil.createObjectRef(source));
+			rv.setSourceRef(ObjectTypeUtil.createObjectRef(source, prismContext));
 			rv.setSourceDisplayName(ObjectTypeUtil.getDisplayName(source));
 		}
 		if (target != null) {
-			rv.setTargetRef(ObjectTypeUtil.createObjectRef(target));
+			rv.setTargetRef(ObjectTypeUtil.createObjectRef(target, prismContext));
 			rv.setTargetDisplayName(ObjectTypeUtil.getDisplayName(target));
 		}
 		rv.setMatchingOrder(isMatchingOrder());
@@ -641,7 +651,7 @@ public class AssignmentPathSegmentImpl implements AssignmentPathSegment {
 	// that are to be checked for equivalency
 	@Override
 	public boolean equivalent(AssignmentPathSegment otherSegment) {
-		if (!ObjectTypeUtil.relationsEquivalent(relation, otherSegment.getRelation())) {
+		if (!prismContext.relationsEquivalent(relation, otherSegment.getRelation())) {
 			return false;
 		}
 		if (target == null && otherSegment.getTarget() == null) {

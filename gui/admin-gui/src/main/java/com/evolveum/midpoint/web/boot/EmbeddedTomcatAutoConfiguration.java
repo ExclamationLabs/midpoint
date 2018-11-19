@@ -17,15 +17,17 @@ package com.evolveum.midpoint.web.boot;
 
 import javax.servlet.Servlet;
 
+import org.apache.catalina.connector.Connector;
 import org.apache.catalina.startup.Tomcat;
+import org.apache.coyote.UpgradeProtocol;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.autoconfigure.condition.SearchStrategy;
-import org.springframework.boot.autoconfigure.web.EmbeddedServletContainerAutoConfiguration.BeanPostProcessorsRegistrar;
-import org.springframework.boot.context.embedded.EmbeddedServletContainerFactory;
-import org.springframework.boot.context.embedded.tomcat.TomcatEmbeddedServletContainerFactory;
+import org.springframework.boot.autoconfigure.web.servlet.ServletWebServerFactoryAutoConfiguration.BeanPostProcessorsRegistrar;
+import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -37,7 +39,7 @@ import com.evolveum.midpoint.util.logging.TraceManager;
 /**
  * Custom configuration (factory) for embedded tomcat factory.
  * This is necessary, as the tomcat factory is hacking tomcat setup.
- * @see MidPointTomcatEmbeddedServletContainerFactory
+ * @see MidPointTomcatServletWebServerFactory
  * 
  * @author semancik
  */
@@ -50,13 +52,30 @@ public class EmbeddedTomcatAutoConfiguration {
 	private static final Trace LOGGER = TraceManager.getTrace(EmbeddedTomcatAutoConfiguration.class);
 	
 	@Configuration
-	@ConditionalOnClass({ Servlet.class, Tomcat.class })
-	@ConditionalOnMissingBean(value = EmbeddedServletContainerFactory.class, search = SearchStrategy.CURRENT)
+	@ConditionalOnClass({ Servlet.class, Tomcat.class, UpgradeProtocol.class })
+	@ConditionalOnMissingBean(value = TomcatServletWebServerFactory.class, search = SearchStrategy.CURRENT)
 	public static class EmbeddedTomcat {
-
+		
+		@Value( "${server.tomcat.ajp.enabled:false}" )
+		private boolean enableAjp;
+		
+		@Value( "${server.tomcat.ajp.port:9090}" )
+		private int port;
+		
 		@Bean
-		public TomcatEmbeddedServletContainerFactory tomcatEmbeddedServletContainerFactory() {
-			return new MidPointTomcatEmbeddedServletContainerFactory();
+		public TomcatServletWebServerFactory tomcatEmbeddedServletContainerFactory() {
+			MidPointTomcatServletWebServerFactory tomcat = new MidPointTomcatServletWebServerFactory();
+			
+			if(enableAjp) {
+				Connector ajpConnector = new Connector("AJP/1.3");
+				ajpConnector.setPort(port);
+				ajpConnector.setSecure(false);
+				ajpConnector.setScheme("http");
+				ajpConnector.setAllowTrace(false);
+				tomcat.addAdditionalTomcatConnectors(ajpConnector);
+			}
+			
+			return tomcat;
 		}
 
 	}

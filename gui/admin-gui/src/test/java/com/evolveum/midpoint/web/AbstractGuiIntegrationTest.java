@@ -20,8 +20,9 @@ import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertNull;
 import static com.evolveum.midpoint.web.AdminGuiTestConstants.*;
 
+import com.evolveum.midpoint.common.LocalizationService;
 import com.evolveum.midpoint.gui.api.util.ModelServiceLocator;
-import com.evolveum.midpoint.gui.api.util.WebModelServiceUtils;
+import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.model.api.ModelInteractionService;
 import com.evolveum.midpoint.model.api.ModelService;
 import com.evolveum.midpoint.model.test.AbstractModelIntegrationTest;
@@ -30,9 +31,9 @@ import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.prism.util.PrismAsserts;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
-import com.evolveum.midpoint.security.api.MidPointPrincipal;
 import com.evolveum.midpoint.security.api.SecurityContextManager;
 import com.evolveum.midpoint.security.enforcer.api.SecurityEnforcer;
 import com.evolveum.midpoint.task.api.Task;
@@ -43,7 +44,6 @@ import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
 import com.evolveum.midpoint.web.application.DescriptorLoader;
 import com.evolveum.midpoint.web.security.MidPointApplication;
-import com.evolveum.midpoint.web.security.SecurityUtils;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.AdminGuiConfigurationType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
@@ -54,8 +54,11 @@ import org.apache.wicket.protocol.http.WicketFilter;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.mock.web.MockFilterConfig;
 import org.springframework.mock.web.MockServletContext;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.web.context.WebApplicationContext;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
@@ -64,6 +67,7 @@ import org.testng.annotations.BeforeMethod;
 
 import java.io.File;
 import java.lang.reflect.Method;
+import java.util.Locale;
 import java.util.Set;
 
 import javax.annotation.PostConstruct;
@@ -106,40 +110,35 @@ public abstract class AbstractGuiIntegrationTest extends AbstractModelIntegratio
 	protected static final String ORG_SAVE_ELAINE_OID = "00000000-8888-6666-0000-200000000001";
 	protected static final String ORG_KIDNAP_AND_MARRY_ELAINE_OID = "00000000-8888-6666-0000-200000000002";
 
-    private MidPointApplication application;
+    @Autowired private MidPointApplication application;
     
     @Autowired private ApplicationContext appContext;
     @Autowired protected PrismContext prismContext;
     @Autowired protected ExpressionFactory expressionFactory;
+    @Autowired protected RelationRegistry relationRegistry;
 
     @Override
 	public void initSystem(Task initTask, OperationResult initResult) throws Exception {
 		super.initSystem(initTask, initResult);
+	    WebComponentUtil.setStaticallyProvidedRelationRegistry(relationRegistry);
 	}
     
     @PostConstruct
     public void setupApplication() throws ServletException {
     	
     	display("PostContruct");
-    	Set<String> applicationKeys = Application.getApplicationKeys();
     	for (String key: Application.getApplicationKeys()) {
     		display("App "+key, Application.get(key));
     	}
-    	
-    	application = (MidPointApplication) Application.get("midpoint");
-    	if (application == null) {
-    		application = createInitializedMidPointApplication();
-    	}
+    	initializeMidPointApplication();
     }
     
-    private MidPointApplication createInitializedMidPointApplication() throws ServletException {
-		MidPointApplication application = new MidPointApplication();
+    private void initializeMidPointApplication() throws ServletException {
     	WicketFilter wicketFilter = new WicketFilter(application);
     	MockServletContext servletContext = new MockServletContext();
     	WebApplicationContext wac = new MockWebApplicationContext(appContext, servletContext);
     	servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, wac);
     	MockFilterConfig filterConfig = new MockFilterConfig(servletContext, "midpoint");
-    	filterConfig.addInitParameter("applicationClassName", MidPointApplication.class.getName());
 		wicketFilter.init(filterConfig);
 		application.setWicketFilter(wicketFilter);
 		application.setServletContext(servletContext);
@@ -147,7 +146,6 @@ public abstract class AbstractGuiIntegrationTest extends AbstractModelIntegratio
     	ThreadContext.setApplication(application);
     	application.initApplication();
     	ThreadContext.setApplication(null);
-    	return application;
 	}
     
     @BeforeMethod
@@ -158,6 +156,7 @@ public abstract class AbstractGuiIntegrationTest extends AbstractModelIntegratio
     @AfterMethod
     public void afterMethodApplication() {
     	ThreadContext.setApplication(null);
+    	application.internalDestroy();
     }
 
 	@BeforeClass
@@ -236,6 +235,16 @@ public abstract class AbstractGuiIntegrationTest extends AbstractModelIntegratio
 			@Override
 			public ExpressionFactory getExpressionFactory() {
 				return expressionFactory;
+			}
+
+			@Override
+			public LocalizationService getLocalizationService() {
+				return localizationService;
+			}
+
+			@Override
+			public Locale getLocale() {
+				return Locale.US;
 			}
 
 		};

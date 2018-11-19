@@ -1,10 +1,22 @@
 package com.evolveum.midpoint.schrodinger.page.configuration;
 
+import com.codeborne.selenide.Condition;
 import com.codeborne.selenide.SelenideElement;
+import com.evolveum.midpoint.schrodinger.MidPoint;
+import com.evolveum.midpoint.schrodinger.component.common.ConfirmationModal;
 import com.evolveum.midpoint.schrodinger.component.common.FeedbackBox;
+import com.evolveum.midpoint.schrodinger.component.common.table.ReadOnlyTable;
 import com.evolveum.midpoint.schrodinger.page.BasicPage;
+import com.evolveum.midpoint.schrodinger.page.LoginPage;
 import com.evolveum.midpoint.schrodinger.util.Schrodinger;
 import org.openqa.selenium.By;
+
+//import com.evolveum.midpoint.util.logging.Trace;
+//import com.evolveum.midpoint.util.logging.TraceManager;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import static com.codeborne.selenide.Selenide.$;
 
@@ -12,6 +24,8 @@ import static com.codeborne.selenide.Selenide.$;
  * Created by Viliam Repan (lazyman).
  */
 public class AboutPage extends BasicPage {
+
+    // public static Trace LOGGER = TraceManager.getTrace(AboutPage.class);
 
     public AboutPage repositorySelfTest() {
         $(Schrodinger.byDataResourceKey("PageAbout.button.testRepository")).click();
@@ -67,10 +81,64 @@ public class AboutPage extends BasicPage {
         return $(Schrodinger.bySchrodingerDataId("provisioningDetailValue")).parent().getText();
     }
 
-    public FeedbackBox<AboutPage> feedback() {
-        SelenideElement feedback = $(By.cssSelector("div.feedbackContainer"));
+    public List<String> getJVMproperties() {
+        SelenideElement jvmProperties = $(Schrodinger.byDataId("jvmProperties"));
+        String jvmPropertiesText = jvmProperties.getText();
 
-        return new FeedbackBox<>(this, feedback);
+        List<String> listOfProperties = new ArrayList<>();
+        if (jvmPropertiesText != null && !jvmPropertiesText.isEmpty()) {
+            String[] properties = jvmPropertiesText.split("\\r?\\n");
+
+            listOfProperties = Arrays.asList(properties);
+
+        } else {
+            // LOGGER.info("JVM properties not found";
+
+        }
+
+        return listOfProperties;
+    }
+
+    public String getJVMproperty(String property) {
+
+        List<String> listOfProperties = getJVMproperties();
+
+        if (property != null && !property.isEmpty()) {
+
+            for (String keyPair : listOfProperties) {
+
+                String[] pairs = keyPair.split("\\=");
+
+                if (pairs != null && pairs.length > 1) {
+                    if (pairs[0].equals(property)) {
+                        return pairs[1];
+                    }
+                } else if (pairs.length == 1) {
+                    if (pairs[0].contains(property)) {
+                        return pairs[0];
+                    }
+
+                }
+            }
+        }
+
+        return "";
+    }
+
+
+    public ConfirmationModal<LoginPage> clickSwitchToFactoryDefaults() {
+        $(Schrodinger.byDataResourceKey("PageAbout.button.factoryDefault")).waitUntil(Condition.visible,MidPoint.TIMEOUT_DEFAULT_2_S).click();
+        SelenideElement confirmBox =$(Schrodinger.byElementAttributeValue("div","aria-labelledby","Confirm deletion"))
+                .waitUntil(Condition.appear, MidPoint.TIMEOUT_DEFAULT_2_S);
+
+        return new ConfirmationModal<>(new LoginPage(),confirmBox);
+    }
+
+    public String getSystemProperty(String propertyNameUserHome) {
+        SelenideElement propertiesTable = $(Schrodinger.byElementValue("h3","System properties")).waitUntil(Condition.appear,MidPoint.TIMEOUT_DEFAULT_2_S).parent().$(By.cssSelector(".table.table-striped"));
+
+        ReadOnlyTable readOnlyTable = new ReadOnlyTable(this,propertiesTable);
+        return readOnlyTable.getParameterValue(propertyNameUserHome);
     }
 }
 

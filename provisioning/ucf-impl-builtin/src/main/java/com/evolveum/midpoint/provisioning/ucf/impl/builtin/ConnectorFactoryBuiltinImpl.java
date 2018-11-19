@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 Evolveum
+ * Copyright (c) 2017-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -88,6 +88,9 @@ public class ConnectorFactoryBuiltinImpl implements ConnectorFactory {
 	@Override
 	public Set<ConnectorType> listConnectors(ConnectorHostType host, OperationResult parentRestul)
 			throws CommunicationException {
+		if (host != null) {
+			return null;
+		}
 		if (connectorMap == null) {
 			discoverConnectors();
 		}
@@ -223,7 +226,7 @@ public class ConnectorFactoryBuiltinImpl implements ConnectorFactory {
 
 	@Override
 	public ConnectorInstance createConnectorInstance(ConnectorType connectorType, String namespace,
-			String desc) throws ObjectNotFoundException, SchemaException {
+			String instanceName, String desc) throws ObjectNotFoundException, SchemaException {
 		String type = connectorType.getConnectorType();
 		ConnectorStruct struct = connectorMap.get(type);
 		Class<? extends ConnectorInstance> connectorClass = struct.connectorClass;

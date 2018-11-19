@@ -24,6 +24,7 @@ import com.evolveum.midpoint.schema.ResourceShadowDiscriminator;
 import com.evolveum.midpoint.schema.SelectorOptions;
 import com.evolveum.midpoint.schema.processor.ObjectClassComplexTypeDefinition;
 import com.evolveum.midpoint.schema.result.OperationResult;
+import com.evolveum.midpoint.schema.util.ResourceTypeUtil;
 import com.evolveum.midpoint.task.api.StateReporter;
 import com.evolveum.midpoint.util.exception.*;
 import com.evolveum.midpoint.util.logging.Trace;
@@ -58,6 +59,7 @@ public class ProvisioningContext extends StateReporter {
 	private ResourceShadowDiscriminator shadowCoordinates;
 	private Collection<QName> additionalAuxiliaryObjectClassQNames;
 	private boolean useRefinedDefinition = true;
+	private boolean isPropagation;
 
 	private RefinedObjectClassDefinition objectClassDefinition;
 
@@ -115,6 +117,14 @@ public class ProvisioningContext extends StateReporter {
 
 	public void setUseRefinedDefinition(boolean useRefinedDefinition) {
 		this.useRefinedDefinition = useRefinedDefinition;
+	}
+	
+	public boolean isPropagation() {
+		return isPropagation;
+	}
+
+	public void setPropagation(boolean isPropagation) {
+		this.isPropagation = isPropagation;
 	}
 
 	public void setObjectClassDefinition(RefinedObjectClassDefinition objectClassDefinition) {
@@ -304,7 +314,11 @@ public class ProvisioningContext extends StateReporter {
 			throw e;
 		}
 	}
-
+	
+	public <T extends CapabilityType> T getResourceEffectiveCapability(Class<T> capabilityClass) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, ExpressionEvaluationException {
+		return ResourceTypeUtil.getEffectiveCapability(getResource(), capabilityClass);
+	}
+	
 	public <T extends CapabilityType> CapabilitiesType getConnectorCapabilities(Class<T> operationCapabilityClass) {
 		return resourceManager.getConnectorCapabilities(resource.asPrismObject(), operationCapabilityClass);
 	}

@@ -28,9 +28,9 @@ import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.delta.ContainerDelta;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.schema.result.OperationResult;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.exception.*;
@@ -38,6 +38,7 @@ import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import javax.xml.namespace.QName;
@@ -52,29 +53,14 @@ public abstract class BaseCertificationHandler implements CertificationHandler {
 
     private static final transient Trace LOGGER = TraceManager.getTrace(BaseCertificationHandler.class);
 
-    @Autowired
-    protected PrismContext prismContext;
-
-    @Autowired
-    protected ModelService modelService;
-
-    @Autowired
-    protected ObjectResolver objectResolver;
-
-    @Autowired
-    protected CertificationManagerImpl certificationManager;
-
-    @Autowired
-    protected AccCertGeneralHelper helper;
-
-    @Autowired
-    protected AccCertResponseComputationHelper computationHelper;
-
-    @Autowired
-    protected AccCertReviewersHelper reviewersHelper;
-
-    @Autowired
-    protected AccCertExpressionHelper expressionHelper;
+    @Autowired protected PrismContext prismContext;
+    @Autowired protected ModelService modelService;
+    @Autowired @Qualifier("modelObjectResolver") protected ObjectResolver objectResolver;
+    @Autowired protected CertificationManagerImpl certificationManager;
+    @Autowired protected AccCertGeneralHelper helper;
+    @Autowired protected AccCertResponseComputationHelper computationHelper;
+    @Autowired protected AccCertReviewersHelper reviewersHelper;
+    @Autowired protected AccCertExpressionHelper expressionHelper;
 
     // default implementation, depending only on the expressions provided
     public <F extends FocusType> Collection<? extends AccessCertificationCaseType> createCasesForObject(PrismObject<F> object, AccessCertificationCampaignType campaign, Task task, OperationResult parentResult) throws ExpressionEvaluationException, ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException {
@@ -114,13 +100,14 @@ public abstract class BaseCertificationHandler implements CertificationHandler {
 //	}
 
 	// TODO move to some helper?
-	protected void revokeAssignmentCase(AccessCertificationAssignmentCaseType assignmentCase,
+	void revokeAssignmentCase(AccessCertificationAssignmentCaseType assignmentCase,
 			AccessCertificationCampaignType campaign, OperationResult caseResult, Task task)
 			throws SchemaException, ObjectAlreadyExistsException, ObjectNotFoundException,
 			ExpressionEvaluationException, CommunicationException, ConfigurationException, PolicyViolationException,
 			SecurityViolationException {
 		String objectOid = assignmentCase.getObjectRef().getOid();
 		Class<? extends Objectable> clazz = ObjectTypes.getObjectTypeFromTypeQName(assignmentCase.getObjectRef().getType()).getClassDefinition();
+		//noinspection unchecked
 		PrismContainerValue<AssignmentType> cval = assignmentCase.getAssignment().asPrismContainerValue().clone();
 
 		ContainerDelta assignmentDelta;

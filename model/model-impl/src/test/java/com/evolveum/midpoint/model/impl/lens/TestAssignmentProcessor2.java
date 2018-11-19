@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,14 +31,14 @@ import com.evolveum.midpoint.prism.delta.PlusMinusZero;
 import com.evolveum.midpoint.prism.delta.builder.DeltaBuilder;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.prism.polystring.PolyString;
-import com.evolveum.midpoint.repo.common.expression.ItemDeltaItem;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.schema.constants.ExpressionConstants;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.ActivationUtil;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.test.util.TestUtil;
@@ -52,6 +52,7 @@ import org.apache.commons.collections4.multimap.ArrayListValuedHashMap;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.testng.annotations.Test;
 
 import javax.xml.namespace.QName;
@@ -116,7 +117,7 @@ public class TestAssignmentProcessor2 extends AbstractLensTest {
 
 	@Autowired private AssignmentProcessor assignmentProcessor;
     @Autowired private Clock clock;
-	@Autowired private ObjectResolver objectResolver;
+	@Autowired @Qualifier("modelObjectResolver") private ObjectResolver objectResolver;
 	@Autowired private MappingFactory mappingFactory;
 	@Autowired private MappingEvaluator mappingEvaluator;
 	@Autowired private ActivationComputer activationComputer;
@@ -373,7 +374,7 @@ public class TestAssignmentProcessor2 extends AbstractLensTest {
 		rule.setName("barbossa-0");
 		policyRuleAssignment.setPolicyRule(rule);
 		@SuppressWarnings({"unchecked", "raw" })
-		ObjectDelta<ObjectType> objectDelta = (ObjectDelta<ObjectType>) DeltaBuilder.deltaFor(UserType.class, prismContext)
+		ObjectDelta<ObjectType> objectDelta = deltaFor(UserType.class)
 				.item(UserType.F_ASSIGNMENT).add(
 						ObjectTypeUtil.createAssignmentTo(ROLE_R1_OID, ObjectTypes.ROLE, prismContext),
 						policyRuleAssignment)
@@ -458,7 +459,7 @@ public class TestAssignmentProcessor2 extends AbstractLensTest {
 		rule.setName("guybrush-0");
 		policyRuleAssignment.setPolicyRule(rule);
 		@SuppressWarnings({"unchecked", "raw" })
-		ObjectDelta<ObjectType> objectDelta = (ObjectDelta<ObjectType>) DeltaBuilder.deltaFor(UserType.class, prismContext)
+		ObjectDelta<ObjectType> objectDelta = deltaFor(UserType.class)
 				.item(UserType.F_ASSIGNMENT).add(deputyOfBarbossaAssignment, policyRuleAssignment)
 				.asObjectDelta(USER_GUYBRUSH_OID);
 		executeChangesAssertSuccess(objectDelta, null, task, result);
@@ -533,6 +534,7 @@ public class TestAssignmentProcessor2 extends AbstractLensTest {
 				.channel(context.getChannel())
 				.objectResolver(objectResolver)
 				.systemObjectCache(systemObjectCache)
+				.relationRegistry(relationRegistry)
 				.prismContext(prismContext)
 				.mappingFactory(mappingFactory)
 				.mappingEvaluator(mappingEvaluator)
@@ -2037,7 +2039,7 @@ public class TestAssignmentProcessor2 extends AbstractLensTest {
 		assign(org11, org1);
 		assign(org21, org2);
 		// org1->roleAdmin
-		AssignmentType inducement = ObjectTypeUtil.createAssignmentTo(roleAdmin.asPrismObject())
+		AssignmentType inducement = ObjectTypeUtil.createAssignmentTo(roleAdmin.asPrismObject(), prismContext)
 				.beginOrderConstraint()
 					.orderMin("1")
 					.orderMax("unbounded")
@@ -2046,7 +2048,7 @@ public class TestAssignmentProcessor2 extends AbstractLensTest {
 		org1.getInducement().add(inducement);
 
 		// org2->roleAdmin
-		AssignmentType inducement2 = ObjectTypeUtil.createAssignmentTo(roleAdmin.asPrismObject())
+		AssignmentType inducement2 = ObjectTypeUtil.createAssignmentTo(roleAdmin.asPrismObject(), prismContext)
 				.beginOrderConstraint()
 					.order(1)
 					.relation(SchemaConstants.ORG_MANAGER)
@@ -2067,7 +2069,7 @@ public class TestAssignmentProcessor2 extends AbstractLensTest {
 		 *        Org41        Admin
 		 */
 		assign(org41, org4);
-		AssignmentType inducement4 = ObjectTypeUtil.createAssignmentTo(roleAdmin.asPrismObject())
+		AssignmentType inducement4 = ObjectTypeUtil.createAssignmentTo(roleAdmin.asPrismObject(), prismContext)
 				.beginOrderConstraint()
 					.orderMin("0")
 					.orderMax("unbounded")
@@ -2227,7 +2229,7 @@ public class TestAssignmentProcessor2 extends AbstractLensTest {
 	}
 
 	private void induce(AbstractRoleType source, AbstractRoleType target, int inducementOrder) {
-		AssignmentType inducement = ObjectTypeUtil.createAssignmentTo(target.asPrismObject());
+		AssignmentType inducement = ObjectTypeUtil.createAssignmentTo(target.asPrismObject(), prismContext);
 		if (inducementOrder > 1) {
 			inducement.setOrder(inducementOrder);
 		}
@@ -2235,12 +2237,12 @@ public class TestAssignmentProcessor2 extends AbstractLensTest {
 	}
 
 	private void assign(AbstractRoleType source, AbstractRoleType target) {
-		AssignmentType assignment = ObjectTypeUtil.createAssignmentTo(target.asPrismObject());
+		AssignmentType assignment = ObjectTypeUtil.createAssignmentTo(target.asPrismObject(), prismContext);
 		source.getAssignment().add(assignment);
 	}
 
 	private void assign(AbstractRoleType source, AbstractRoleType target, QName relation) {
-		AssignmentType assignment = ObjectTypeUtil.createAssignmentTo(target.asPrismObject());
+		AssignmentType assignment = ObjectTypeUtil.createAssignmentTo(target.asPrismObject(), prismContext);
 		assignment.getTargetRef().setRelation(relation);
 		source.getAssignment().add(assignment);
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,18 +23,19 @@ import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.common.LocalizationService;
 import com.evolveum.midpoint.prism.*;
-import com.evolveum.midpoint.repo.common.expression.ItemDeltaItem;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
 import com.evolveum.midpoint.model.api.context.*;
 import com.evolveum.midpoint.model.common.mapping.MappingImpl;
 import com.evolveum.midpoint.model.common.mapping.PrismValueDeltaSetTripleProducer;
 import com.evolveum.midpoint.prism.delta.DeltaSetTriple;
 import com.evolveum.midpoint.prism.delta.PlusMinusZero;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.schema.result.OperationResult;
-import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.security.api.Authorization;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.DebugUtil;
+import com.evolveum.midpoint.util.ShortDumpable;
 import com.evolveum.midpoint.util.exception.CommunicationException;
 import com.evolveum.midpoint.util.exception.ConfigurationException;
 import com.evolveum.midpoint.util.exception.ExpressionEvaluationException;
@@ -58,7 +59,7 @@ import static com.evolveum.midpoint.prism.delta.PlusMinusZero.ZERO;
  *
  * @author Radovan Semancik
  */
-public class EvaluatedAssignmentImpl<F extends FocusType> implements EvaluatedAssignment<F> {
+public class EvaluatedAssignmentImpl<F extends FocusType> implements EvaluatedAssignment<F>, ShortDumpable {
 
 	private static final Trace LOGGER = TraceManager.getTrace(EvaluatedAssignmentImpl.class);
 
@@ -81,8 +82,10 @@ public class EvaluatedAssignmentImpl<F extends FocusType> implements EvaluatedAs
 	// usually, these rules do not cause direct action (e.g. in the case of approvals);
 	// however, there are situations in which they are used (e.g. for exclusion rules)
 	@NotNull private final Collection<EvaluatedPolicyRule> otherTargetsPolicyRules = new ArrayList<>();
+	private String tenantOid;
 
 	private PrismObject<?> target;
+	private boolean virtual;
 	private boolean isValid;
 	private boolean wasValid;
 	private boolean forceRecon;         // used also to force recomputation of parentOrgRefs
@@ -121,17 +124,24 @@ public class EvaluatedAssignmentImpl<F extends FocusType> implements EvaluatedAs
 		return asContainerable(assignmentIdi.getSingleValue(old));
 	}
 
-	@Override
-	public QName getRelation() {
+	private ObjectReferenceType getTargetRef() {
 		AssignmentType assignmentType = getAssignmentType();
 		if (assignmentType == null) {
 			return null;
 		}
-		ObjectReferenceType targetRef = assignmentType.getTargetRef();
-		if (targetRef == null) {
-			return null;
-		}
-		return ObjectTypeUtil.normalizeRelation(targetRef.getRelation());
+		return assignmentType.getTargetRef();
+	}
+
+	@Override
+	public QName getRelation() {
+		ObjectReferenceType targetRef = getTargetRef();
+		return targetRef != null ? targetRef.getRelation() : null;
+	}
+
+	@Override
+	public QName getNormalizedRelation(RelationRegistry relationRegistry) {
+		ObjectReferenceType targetRef = getTargetRef();
+		return targetRef != null ? relationRegistry.normalizeRelation(targetRef.getRelation()) : null;
 	}
 
 	@NotNull
@@ -244,6 +254,14 @@ public class EvaluatedAssignmentImpl<F extends FocusType> implements EvaluatedAs
 		delegationRefVals.add(org);
 	}
 
+	public String getTenantOid() {
+		return tenantOid;
+	}
+
+	public void setTenantOid(String tenantOid) {
+		this.tenantOid = tenantOid;
+	}
+
 	@NotNull
 	@Override
 	public Collection<Authorization> getAuthorizations() {
@@ -284,6 +302,14 @@ public class EvaluatedAssignmentImpl<F extends FocusType> implements EvaluatedAs
 		this.target = target;
 	}
 
+	public boolean isVirtual() {
+		return virtual;
+	}
+	
+	public void setVirtual(boolean virtual) {
+		this.virtual = virtual;
+	}
+	
 	/* (non-Javadoc)
          * @see com.evolveum.midpoint.model.impl.lens.EvaluatedAssignment#isValid()
          */
@@ -458,7 +484,8 @@ public class EvaluatedAssignmentImpl<F extends FocusType> implements EvaluatedAs
 		DebugUtil.debugDumpWithLabelLn(sb, "assignment new", String.valueOf(assignmentIdi.getItemNew()), indent + 1);
 		DebugUtil.debugDumpWithLabelLn(sb, "evaluatedOld", evaluatedOld, indent + 1);
 		DebugUtil.debugDumpWithLabelLn(sb, "target", String.valueOf(target), indent + 1);
-		DebugUtil.debugDumpWithLabel(sb, "isValid", isValid, indent + 1);
+		DebugUtil.debugDumpWithLabelLn(sb, "isValid", isValid, indent + 1);
+		DebugUtil.debugDumpWithLabel(sb, "isVirtual", virtual, indent + 1);
         if (forceRecon) {
             sb.append("\n");
             DebugUtil.debugDumpWithLabel(sb, "forceRecon", forceRecon, indent + 1);
@@ -544,6 +571,27 @@ public class EvaluatedAssignmentImpl<F extends FocusType> implements EvaluatedAs
 			return toString();
 		}
 	}
+	
+	@Override
+	public void shortDump(StringBuilder sb) {
+		if (target != null) {
+			sb.append(target);
+		} else if (!constructionTriple.isEmpty()) {
+			sb.append("construction(");
+			constructionTriple.shortDump(sb);
+			sb.append(")");
+		} else if (!personaConstructionTriple.isEmpty()) {
+			sb.append("personaConstruction(");
+			personaConstructionTriple.shortDump(sb);
+			sb.append(")");
+		} else {
+			sb.append(toString());
+			return;
+		}
+		if (!isValid()) {
+			sb.append(" invalid ");
+		}
+	}
 
 	public List<EvaluatedAssignmentTargetImpl> getNonNegativeTargets() {
 		List<EvaluatedAssignmentTargetImpl> rv = new ArrayList<>();
@@ -565,4 +613,5 @@ public class EvaluatedAssignmentImpl<F extends FocusType> implements EvaluatedAs
 			return PLUS;
 		}
 	}
+	
 }

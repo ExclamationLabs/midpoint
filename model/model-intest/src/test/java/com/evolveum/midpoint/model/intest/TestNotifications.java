@@ -92,13 +92,15 @@ public class TestNotifications extends AbstractInitializedModelIntegrationTest {
 	}
 
 	@Override
-	protected void addSystemConfigurationObject(OperationResult initResult) throws IOException, CommonException,
+	protected PrismObject<SystemConfigurationType> addSystemConfigurationObject(OperationResult initResult) throws IOException, CommonException,
 			EncryptionException {
 		List<String> configLines = IOUtils.readLines(new FileReader(SYSTEM_CONFIGURATION_FILE));
 		String configString = StringUtils.join(configLines, '\n');
 		int port = startHttpServer();
 		configString = configString.replaceAll("\\$\\$port\\$\\$", Integer.toString(port));
-		repoAddObject(prismContext.parseObject(configString), initResult);
+		PrismObject<SystemConfigurationType> sysconfigObject = prismContext.parseObject(configString);
+		repoAddObject(sysconfigObject, initResult);
+		return sysconfigObject;
 	}
 
 	private int startHttpServer() throws IOException {
@@ -304,7 +306,7 @@ public class TestNotifications extends AbstractInitializedModelIntegrationTest {
 
 		// WHEN
         TestUtil.displayWhen(TEST_NAME);
-        assignAccount(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
+        assignAccountToUser(USER_JACK_OID, RESOURCE_DUMMY_OID, null, task, result);
 
 		// THEN
 		TestUtil.displayThen(TEST_NAME);
@@ -628,6 +630,32 @@ public class TestNotifications extends AbstractInitializedModelIntegrationTest {
 		String expectedAuthorization = "Basic " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.ISO_8859_1));
 		assertEquals("Wrong Authorization header", singletonList(expectedAuthorization), httpHandler.lastRequest.headers.get("authorization"));
 		assertEquals("Wrong 1st line of body", "Body=\"body\"&To=[%2B123, %2B456, %2B789]&From=from", httpHandler.lastRequest.body.get(0));
+	}
+
+	@Test
+	public void test300CheckVariables() {
+		final String TEST_NAME = "test300CheckVariables";
+		TestUtil.displayTestTitle(this, TEST_NAME);
+
+		// GIVEN
+		Task task = taskManager.createTaskInstance(TestNotifications.class.getName() + "." + TEST_NAME);
+		OperationResult result = task.getResult();
+
+		prepareNotifications();
+
+		// WHEN
+		TestUtil.displayWhen(TEST_NAME);
+		Event event = new CustomEvent(lightweightIdentifierGenerator, "check-variables", null,
+				"hello world", EventOperationType.ADD, EventStatusType.SUCCESS, null);
+		notificationManager.processEvent(event, task, result);
+
+		// THEN
+		TestUtil.displayThen(TEST_NAME);
+		result.computeStatus();
+		TestUtil.assertSuccess("processEvent result", result);
+
+		displayAllNotifications();
+		assertSingleDummyTransportMessage("check-variables", "variables ok");
 	}
 
 	@SuppressWarnings("Duplicates")

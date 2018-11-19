@@ -32,6 +32,7 @@ import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
 import com.evolveum.midpoint.prism.query.builder.S_AtomicFilterExit;
 import com.evolveum.midpoint.prism.xml.XsdTypeMapper;
 import com.evolveum.midpoint.repo.api.RepositoryService;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
@@ -71,6 +72,7 @@ public class MultiplicityConstraintEvaluator implements PolicyConstraintEvaluato
 
 	@Autowired private ConstraintEvaluatorHelper evaluatorHelper;
 	@Autowired private PrismContext prismContext;
+	@Autowired private RelationRegistry relationRegistry;
 	@Autowired @Qualifier("cacheRepositoryService") private RepositoryService repositoryService;
 
 	@Override
@@ -95,14 +97,16 @@ public class MultiplicityConstraintEvaluator implements PolicyConstraintEvaluato
 			return null;
 		}
 		List<QName> relationsToCheck = constraint.getValue().getRelation().isEmpty()
-				? Collections.singletonList(SchemaConstants.ORG_DEFAULT) : constraint.getValue().getRelation();
+				? Collections.singletonList(prismContext.getDefaultRelation()) : constraint.getValue().getRelation();
 
 		AbstractRoleType targetRole = (AbstractRoleType) target.asObjectable();
 		boolean isMin = QNameUtil.match(constraint.getName(), PolicyConstraintsType.F_MIN_ASSIGNEES)
 				|| QNameUtil.match(constraint.getName(), PolicyConstraintsType.F_OBJECT_MIN_ASSIGNEES_VIOLATION);
 		boolean isMax = QNameUtil.match(constraint.getName(), PolicyConstraintsType.F_MAX_ASSIGNEES)
 				|| QNameUtil.match(constraint.getName(), PolicyConstraintsType.F_OBJECT_MAX_ASSIGNEES_VIOLATION);
-		assert isMin || isMax;
+		if (!isMin && !isMax) {
+			throw new AssertionError("!isMin and !isMax");
+		}
 		// TODO cache repository call results
 		if (isMin) {
 			Integer requiredMultiplicity = XsdTypeMapper.multiplicityToInteger(constraint.getValue().getMultiplicity());
@@ -173,14 +177,16 @@ public class MultiplicityConstraintEvaluator implements PolicyConstraintEvaluato
 			return null;
 		}
 		AbstractRoleType targetRole = (AbstractRoleType) target.asObjectable();
-		QName relation = ObjectTypeUtil.normalizeRelation(assignment.getRelation());
-		if (!containsRelation(constraint.getValue(), relation)) {
+		QName relation = assignment.getNormalizedRelation(relationRegistry);
+		if (relation == null || !containsRelation(constraint.getValue(), relation)) {
 			return null;
 		}
 		String focusOid = context.getFocusContext() != null ? context.getFocusContext().getOid() : null;
 		boolean isMin = QNameUtil.match(constraint.getName(), PolicyConstraintsType.F_MIN_ASSIGNEES);
 		boolean isMax = QNameUtil.match(constraint.getName(), PolicyConstraintsType.F_MAX_ASSIGNEES);
-		assert isMin || isMax;
+		if (!isMin && !isMax) {
+			throw new AssertionError("!isMin and !isMax");
+		}
 		// TODO cache repository call results
 		if (isMin) {
 			Integer requiredMultiplicity = XsdTypeMapper.multiplicityToInteger(constraint.getValue().getMultiplicity());
@@ -220,13 +226,13 @@ public class MultiplicityConstraintEvaluator implements PolicyConstraintEvaluato
 
 	private boolean containsRelation(MultiplicityPolicyConstraintType constraint, QName relation) {
 		return getConstraintRelations(constraint).stream()
-				.anyMatch(constraintRelation -> ObjectTypeUtil.relationMatches(constraintRelation, relation));
+				.anyMatch(constraintRelation -> prismContext.relationMatches(constraintRelation, relation));
 	}
 
 	private List<QName> getConstraintRelations(MultiplicityPolicyConstraintType constraint) {
 		return !constraint.getRelation().isEmpty() ?
 				constraint.getRelation() :
-				Collections.singletonList(SchemaConstants.ORG_DEFAULT);
+				Collections.singletonList(prismContext.getDefaultRelation());
 	}
 
 	/**

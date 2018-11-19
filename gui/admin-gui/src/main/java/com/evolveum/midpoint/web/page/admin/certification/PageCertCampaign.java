@@ -32,11 +32,12 @@ import com.evolveum.midpoint.util.logging.TraceManager;
 import com.evolveum.midpoint.web.application.AuthorizationAction;
 import com.evolveum.midpoint.web.application.PageDescriptor;
 import com.evolveum.midpoint.web.component.AjaxButton;
+import com.evolveum.midpoint.web.component.AjaxIconButton;
 import com.evolveum.midpoint.web.component.AjaxSubmitButton;
 import com.evolveum.midpoint.web.component.data.BoxedTablePanel;
+import com.evolveum.midpoint.web.component.data.MultiButtonPanel;
 import com.evolveum.midpoint.web.component.data.Table;
 import com.evolveum.midpoint.web.component.data.column.DoubleButtonColumn.BUTTON_COLOR_CLASS;
-import com.evolveum.midpoint.web.component.data.column.MultiButtonColumn;
 import com.evolveum.midpoint.web.component.util.VisibleBehaviour;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
 import com.evolveum.midpoint.web.page.admin.certification.dto.CertCampaignDto;
@@ -48,12 +49,15 @@ import com.evolveum.midpoint.web.util.OnePageParameterEncoder;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.apache.wicket.Component;
 import org.apache.wicket.ajax.AjaxRequestTarget;
+import org.apache.wicket.extensions.markup.html.repeater.data.grid.ICellPopulator;
 import org.apache.wicket.extensions.markup.html.repeater.data.sort.SortOrder;
+import org.apache.wicket.extensions.markup.html.repeater.data.table.AbstractColumn;
 import org.apache.wicket.extensions.markup.html.repeater.data.table.IColumn;
 import org.apache.wicket.extensions.markup.html.repeater.data.table.PropertyColumn;
 import org.apache.wicket.markup.html.WebMarkupContainer;
 import org.apache.wicket.markup.html.basic.Label;
 import org.apache.wicket.markup.html.form.Form;
+import org.apache.wicket.markup.repeater.Item;
 import org.apache.wicket.model.AbstractReadOnlyModel;
 import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.Model;
@@ -105,6 +109,7 @@ public class PageCertCampaign extends PageAdminCertification {
 	private static final String ID_CAMPAIGN_OWNER = "campaignOwner";
 	private static final String ID_CAMPAIGN_NUMBER_OF_STAGES = "campaignNumberOfStages";
 	private static final String ID_CAMPAIGN_CURRENT_STATE = "campaignCurrentState";
+	private static final String ID_CAMPAIGN_ITERATION = "campaignIteration";
 	private static final String ID_CAMPAIGN_TIME = "campaignTime";
 	private static final String ID_STAGE_TIME = "stageTime";
 	private static final String ID_ESCALATION_LEVEL_INFO_CONTAINER = "escalationLevelInfoContainer";
@@ -220,6 +225,7 @@ public class PageCertCampaign extends PageAdminCertification {
 		mainForm.add(new Label(ID_CAMPAIGN_DESCRIPTION, new PropertyModel<>(campaignModel, CertCampaignDto.F_DESCRIPTION)));
 		mainForm.add(new Label(ID_CAMPAIGN_OWNER, new PropertyModel<>(campaignModel, CertCampaignDto.F_OWNER_NAME)));
 		mainForm.add(new Label(ID_CAMPAIGN_NUMBER_OF_STAGES, new PropertyModel<>(campaignModel, CertCampaignDto.F_NUMBER_OF_STAGES)));
+		mainForm.add(new Label(ID_CAMPAIGN_ITERATION, new PropertyModel<>(campaignModel, CertCampaignDto.F_ITERATION)));
 		mainForm.add(new Label(ID_CAMPAIGN_CURRENT_STATE, new PropertyModel<>(campaignModel, CertCampaignDto.F_CURRENT_STATE)));
 		mainForm.add(new Label(ID_CAMPAIGN_TIME, new AbstractReadOnlyModel<String>() {
 			@Override
@@ -314,34 +320,36 @@ public class PageCertCampaign extends PageAdminCertification {
 		final AvailableResponses availableResponses = new AvailableResponses(this);
 		final int responses = availableResponses.getCount();
 
-		column = new MultiButtonColumn<CertCaseDto>(new Model(), responses+1) {
+		column = new AbstractColumn<CertCaseDto, String>(new Model<>()) {
+
+			private static final long serialVersionUID = 1L;
 
 			@Override
-			public String getButtonTitle(int id) {
-				return availableResponses.getTitle(id);
-			}
+			public void populateItem(Item<ICellPopulator<CertCaseDto>> cellItem, String componentId,
+									 IModel<CertCaseDto> rowModel) {
 
-			@Override
-			public boolean isButtonEnabled(int id, IModel<CertCaseDto> model) {
-				return false;
-			}
+				cellItem.add(new MultiButtonPanel<CertCaseDto>(componentId, rowModel, responses + 1) {
 
-			@Override
-			public boolean isButtonVisible(int id, IModel<CertCaseDto> model) {
-				if (id < responses) {
-					return true;
-				} else {
-					return !availableResponses.isAvailable(model.getObject().getOverallOutcome());
-				}
-			}
+					private static final long serialVersionUID = 1L;
 
-			@Override
-			public String getButtonColorCssClass(int id) {
-				if (id < responses) {
-					return getDecisionButtonColor(getRowModel(), availableResponses.getResponseValues().get(id));
-				} else {
-					return BUTTON_COLOR_CLASS.DANGER.toString();
-				}
+					@Override
+					protected AjaxIconButton createButton(int index, String componentId, IModel<CertCaseDto> model) {
+						AjaxIconButton btn = null;
+						if (index < responses) {
+							btn = buildDefaultButton(componentId, null, new Model(availableResponses.getTitle(index)),
+									new Model<>("btn btn-sm " + getDecisionButtonColor(model, availableResponses.getResponseValues().get(index))),
+									null);
+						} else {
+							btn = buildDefaultButton(componentId, null, new Model(availableResponses.getTitle(index)),
+									new Model<>("btn btn-sm " + BUTTON_COLOR_CLASS.DANGER),
+									null);
+							btn.add(new VisibleBehaviour(() -> !availableResponses.isAvailable(model.getObject().getOverallOutcome())));
+						}
+						btn.setEnabled(false);
+
+						return btn;
+					}
+				});
 			}
 		};
 		columns.add(column);
@@ -476,17 +484,16 @@ public class PageCertCampaign extends PageAdminCertification {
 		OperationResult result = new OperationResult(OPERATION_ADVANCE_LIFECYCLE);
 		try {
 			AccessCertificationService acs = getCertificationService();
-			int currentStage = campaignModel.getObject().getCurrentStageNumber();
 			Task task;
 			switch (action) {
 				case OP_START_CAMPAIGN:
 				case OP_OPEN_NEXT_STAGE:
 					task = createSimpleTask(OPERATION_OPEN_NEXT_STAGE);
-					acs.openNextStage(campaignOid, currentStage + 1, task, result);
+					acs.openNextStage(campaignOid, task, result);
 					break;
 				case OP_CLOSE_STAGE:
 					task = createSimpleTask(OPERATION_CLOSE_STAGE);
-					acs.closeCurrentStage(campaignOid, currentStage, task, result);
+					acs.closeCurrentStage(campaignOid, task, result);
 					break;
 				case OP_START_REMEDIATION:
 					task = createSimpleTask(OPERATION_START_REMEDIATION);

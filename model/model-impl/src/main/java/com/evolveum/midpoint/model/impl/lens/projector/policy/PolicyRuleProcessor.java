@@ -26,17 +26,20 @@ import com.evolveum.midpoint.prism.delta.ContainerDelta;
 import com.evolveum.midpoint.prism.delta.DeltaSetTriple;
 import com.evolveum.midpoint.prism.delta.PlusMinusZero;
 import com.evolveum.midpoint.prism.delta.PrismValueDeltaSetTriple;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.repo.api.RepositoryService;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
 import com.evolveum.midpoint.repo.common.expression.ExpressionUtil;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
 import com.evolveum.midpoint.schema.constants.ExpressionConstants;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
+import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.schema.util.PolicyRuleTypeUtil;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.DOMUtil;
 import com.evolveum.midpoint.util.DebugUtil;
+import com.evolveum.midpoint.util.LocalizableMessageBuilder;
+import com.evolveum.midpoint.util.SingleLocalizableMessage;
 import com.evolveum.midpoint.util.exception.*;
 import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
@@ -261,11 +264,13 @@ public class PolicyRuleProcessor {
 		}
 		List<GlobalPolicyRuleType> globalPolicyRuleList = systemConfiguration.asObjectable().getGlobalPolicyRule();
 		LOGGER.trace("Checking {} global policy rules", globalPolicyRuleList.size());
+		int globalRulesFound = 0;
 		for (GlobalPolicyRuleType globalPolicyRule: globalPolicyRuleList) {
 			ObjectSelectorType focusSelector = globalPolicyRule.getFocusSelector();
 			if (repositoryService.selectorMatches(focusSelector, focus, null, LOGGER, "Global policy rule "+globalPolicyRule.getName()+": ")) {
 				if (isRuleConditionTrue(globalPolicyRule, focus, null, context, task, result)) {
 					rules.add(new EvaluatedPolicyRuleImpl(globalPolicyRule, null, prismContext));
+					globalRulesFound++;
 				} else {
 					LOGGER.trace("Skipping global policy rule {} because the condition evaluated to false: {}", globalPolicyRule.getName(), globalPolicyRule);
 				}
@@ -273,6 +278,7 @@ public class PolicyRuleProcessor {
 				LOGGER.trace("Skipping global policy rule {} because the selector did not match: {}", globalPolicyRule.getName(), globalPolicyRule);
 			}
 		}
+		LOGGER.trace("Selected {} global policy rules for further evaluation", globalRulesFound);
 	}
 
 	//endregion
@@ -436,12 +442,13 @@ public class PolicyRuleProcessor {
 	//region ------------------------------------------------------------------ Pruning
 	public <F extends FocusType> boolean processPruning(LensContext<F> context,
 			DeltaSetTriple<EvaluatedAssignmentImpl<F>> evaluatedAssignmentTriple,
-			OperationResult result) throws PolicyViolationException, SchemaException {
+			OperationResult result) throws SchemaException {
 		Collection<EvaluatedAssignmentImpl<F>> plusSet = evaluatedAssignmentTriple.getPlusSet();
 		boolean needToReevaluateAssignments = false;
+		boolean enforceOverride = false;
 		for (EvaluatedAssignmentImpl<F> plusAssignment: plusSet) {
 			for (EvaluatedPolicyRule targetPolicyRule: plusAssignment.getAllTargetsPolicyRules()) {
-				for (EvaluatedPolicyRuleTrigger trigger: targetPolicyRule.getTriggers()) {
+				for (EvaluatedPolicyRuleTrigger trigger: new ArrayList<>(targetPolicyRule.getTriggers())) {
 					if (!(trigger instanceof EvaluatedExclusionTrigger)) {
 						continue;
 					}
@@ -455,19 +462,35 @@ public class PolicyRuleProcessor {
 								+", the exclusion prune rule was triggered but there is no conflicting assignment in the trigger");
 					}
 					LOGGER.debug("Pruning assignment {} because it conflicts with added assignment {}", conflictingAssignment, plusAssignment);
-					
-					PrismContainerValue<AssignmentType> assignmentValueToRemove = conflictingAssignment.getAssignmentType().asPrismContainerValue().clone();
-					PrismObjectDefinition<F> focusDef = context.getFocusContext().getObjectDefinition();
-					ContainerDelta<AssignmentType> assignmentDelta = ContainerDelta.createDelta(FocusType.F_ASSIGNMENT, focusDef);
-					assignmentDelta.addValuesToDelete(assignmentValueToRemove);
-					context.getFocusContext().swallowToSecondaryDelta(assignmentDelta);
-					
+					if (!conflictingAssignment.isPresentInOldObject()) {
+						SingleLocalizableMessage message = new LocalizableMessageBuilder()
+								.key("PolicyViolationException.message.prunedRolesAssigned")
+								.arg(ObjectTypeUtil.createDisplayInformation(plusAssignment.getTarget(), false))
+								.arg(ObjectTypeUtil.createDisplayInformation(conflictingAssignment.getTarget(), false))
+								.build();
+						targetPolicyRule.addTrigger(
+								new EvaluatedExclusionTrigger(exclTrigger.getConstraint(),
+										message, null, exclTrigger.getConflictingAssignment(),
+										exclTrigger.getConflictingTarget(), exclTrigger.getConflictingPath(), true)
+						);
+						enforceOverride = true;
+					} else {
+						PrismContainerValue<AssignmentType> assignmentValueToRemove = conflictingAssignment.getAssignmentType()
+								.asPrismContainerValue().clone();
+						PrismObjectDefinition<F> focusDef = context.getFocusContext().getObjectDefinition();
+						ContainerDelta<AssignmentType> assignmentDelta = ContainerDelta
+								.createDelta(FocusType.F_ASSIGNMENT, focusDef);
+						assignmentDelta.addValuesToDelete(assignmentValueToRemove);
+						context.getFocusContext().swallowToSecondaryDelta(assignmentDelta);
+					}
 					needToReevaluateAssignments = true;
 				}
 			}
 		}
-		
-		return needToReevaluateAssignments;
+
+		// If enforceOverride we will signal violation exception later anyway, and it is crucial that we will *NOT* prune
+		// conflicting assignments away, because it would mean that these enforcement triggers would go away with them.
+		return needToReevaluateAssignments && !enforceOverride;
 	}
 	//endregion
 
@@ -490,6 +513,7 @@ public class PolicyRuleProcessor {
 
 		List<GlobalPolicyRuleType> globalPolicyRuleList = systemConfiguration.asObjectable().getGlobalPolicyRule();
 		LOGGER.trace("Checking {} global policy rules for selection to assignments", globalPolicyRuleList.size());
+		int globalRulesInstantiated = 0;
 		for (GlobalPolicyRuleType globalPolicyRule: systemConfiguration.asObjectable().getGlobalPolicyRule()) {
 			ObjectSelectorType focusSelector = globalPolicyRule.getFocusSelector();
 			if (!repositoryService.selectorMatches(focusSelector, focus, null, LOGGER,
@@ -522,9 +546,11 @@ public class PolicyRuleProcessor {
 					} else {
 						evaluatedAssignment.addOtherTargetPolicyRule(evaluatedRule);
 					}
+					globalRulesInstantiated++;
 				}
 			}
 		}
+		LOGGER.trace("Global policy rules instantiated {} times for further evaluation", globalRulesInstantiated);
 	}
 
 	private <F extends FocusType> boolean isRuleConditionTrue(GlobalPolicyRuleType globalPolicyRule, PrismObject<F> focus,

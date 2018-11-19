@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.evolveum.midpoint.model.impl.lens;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -26,35 +27,41 @@ import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.common.ActivationComputer;
 import com.evolveum.midpoint.model.api.ModelExecuteOptions;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.repo.common.expression.ExpressionUtil;
 import com.evolveum.midpoint.repo.common.expression.ExpressionVariables;
-import com.evolveum.midpoint.repo.common.expression.ItemDeltaItem;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
 import com.evolveum.midpoint.model.api.context.AssignmentPathSegment;
 import com.evolveum.midpoint.model.api.context.EvaluatedAssignment;
 import com.evolveum.midpoint.model.api.context.EvaluationOrder;
 import com.evolveum.midpoint.model.api.util.DeputyUtils;
+import com.evolveum.midpoint.model.api.util.ModelUtils;
 import com.evolveum.midpoint.model.common.SystemObjectCache;
 import com.evolveum.midpoint.model.common.mapping.MappingImpl;
 import com.evolveum.midpoint.model.common.mapping.MappingFactory;
 import com.evolveum.midpoint.model.impl.expr.ExpressionEnvironment;
 import com.evolveum.midpoint.model.impl.expr.ModelExpressionThreadLocalHolder;
 import com.evolveum.midpoint.model.impl.lens.projector.MappingEvaluator;
-import com.evolveum.midpoint.model.impl.util.Utils;
+import com.evolveum.midpoint.model.impl.util.ModelImplUtils;
 import com.evolveum.midpoint.prism.*;
 import com.evolveum.midpoint.prism.delta.PlusMinusZero;
 import com.evolveum.midpoint.prism.delta.PrismValueDeltaSetTriple;
 import com.evolveum.midpoint.prism.marshaller.QueryConvertor;
 import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
+import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.repo.api.RepositoryService;
+import com.evolveum.midpoint.schema.RelationRegistry;
+import com.evolveum.midpoint.schema.ResultHandler;
+import com.evolveum.midpoint.schema.VirtualAssignmenetSpecification;
 import com.evolveum.midpoint.schema.constants.ExpressionConstants;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.internals.InternalMonitor;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.FocusTypeUtil;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
+import com.evolveum.midpoint.schema.util.LifecycleUtil;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.security.api.Authorization;
 import com.evolveum.midpoint.task.api.Task;
@@ -95,6 +102,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 	private final String channel;
 	private final ObjectResolver objectResolver;
 	private final SystemObjectCache systemObjectCache;
+	private final RelationRegistry relationRegistry;
 	private final PrismContext prismContext;
 	private final MappingFactory mappingFactory;
 	private final ActivationComputer activationComputer;
@@ -103,6 +111,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 	private final PrismObject<SystemConfigurationType> systemConfiguration;
 	private final MappingEvaluator mappingEvaluator;
 	private final EvaluatedAssignmentTargetCache evaluatedAssignmentTargetCache;
+	private final LifecycleStateModelType focusStateModel;
 
 	private AssignmentEvaluator(Builder<F> builder) {
 		repository = builder.repository;
@@ -111,6 +120,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 		channel = builder.channel;
 		objectResolver = builder.objectResolver;
 		systemObjectCache = builder.systemObjectCache;
+		relationRegistry = builder.relationRegistry;
 		prismContext = builder.prismContext;
 		mappingFactory = builder.mappingFactory;
 		activationComputer = builder.activationComputer;
@@ -119,6 +129,13 @@ public class AssignmentEvaluator<F extends FocusType> {
 		systemConfiguration = builder.systemConfiguration;
 		mappingEvaluator = builder.mappingEvaluator;
 		evaluatedAssignmentTargetCache = new EvaluatedAssignmentTargetCache();
+		
+		LensFocusContext<F> focusContext = lensContext.getFocusContext();
+		if (focusContext != null) {
+			focusStateModel = focusContext.getLifecycleModel();
+		} else {
+			focusStateModel = null;
+		}
 	}
 
 	public RepositoryService getRepository() {
@@ -219,9 +236,9 @@ public class AssignmentEvaluator<F extends FocusType> {
 				new AssignmentPathImpl(prismContext),
 				primaryAssignmentMode, evaluateOld, task, result);
 
-		AssignmentPathSegmentImpl segment = new AssignmentPathSegmentImpl(source, sourceDescription, assignmentIdi, true, evaluateOld);
+		AssignmentPathSegmentImpl segment = new AssignmentPathSegmentImpl(source, sourceDescription, assignmentIdi, true, evaluateOld, relationRegistry, prismContext);
 		segment.setEvaluationOrder(getInitialEvaluationOrder(assignmentIdi, ctx));
-		segment.setEvaluationOrderForTarget(EvaluationOrderImpl.ZERO);
+		segment.setEvaluationOrderForTarget(EvaluationOrderImpl.zero(relationRegistry));
 		segment.setValidityOverride(true);
 		segment.setPathToSourceValid(true);
 		segment.setProcessMembership(true);
@@ -237,7 +254,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 			ItemDeltaItem<PrismContainerValue<AssignmentType>, PrismContainerDefinition<AssignmentType>> assignmentIdi,
 			EvaluationContext ctx) {
 		AssignmentType assignmentType = LensUtil.getAssignmentType(assignmentIdi, ctx.evaluateOld);
-		return EvaluationOrderImpl.ZERO.advance(getRelation(assignmentType));
+		return EvaluationOrderImpl.zero(relationRegistry).advance(getRelation(assignmentType));
 	}
 
 	/**
@@ -316,15 +333,61 @@ public class AssignmentEvaluator<F extends FocusType> {
 			}
 		}
 
-		boolean isValid = evaluateContent && evaluateSegmentContent(segment, relativeMode, ctx);
+		boolean isVirtual = isForcedAssignment(segment, ctx);
+		if (ctx.assignmentPath.isEmpty() && isVirtual) {
+			segment.setValidityOverride(isVirtual);
+		}
+		
+		boolean isValid = (evaluateContent && evaluateSegmentContent(segment, relativeMode, ctx)) || isVirtual;
 
 		ctx.assignmentPath.removeLast(segment);
 		if (ctx.assignmentPath.isEmpty()) {		// direct assignment
 			ctx.evalAssignment.setValid(isValid);
+			ctx.evalAssignment.setVirtual(isVirtual);
 		}
+		
+		LOGGER.trace("evalAssignment isVirtual {} ", ctx.evalAssignment.isVirtual());
 	}
-
-	// "content" means "payload + targets" here
+	
+	private <R extends AbstractRoleType> boolean isForcedAssignment(AssignmentPathSegmentImpl segment, EvaluationContext ctx) {
+		
+		F focusNew = focusOdo.getNewObject().asObjectable();
+    	Collection<R> forcedRoles = new HashSet<>();
+    	try {
+			VirtualAssignmenetSpecification<R> virtualAssignmenetSpecification = LifecycleUtil.getForcedAssignmentSpecification(focusStateModel, focusNew.getLifecycleState(), prismContext);
+			if (virtualAssignmenetSpecification == null) {
+				return false;
+			}
+			
+			ResultHandler<R> handler = (object, result) -> {
+				return forcedRoles.add(object.asObjectable());
+			};
+			objectResolver.searchIterative(virtualAssignmenetSpecification.getType(), 
+					ObjectQuery.createObjectQuery(virtualAssignmenetSpecification.getFilter()), null, handler, ctx.task, ctx.result);
+		} catch (SchemaException | ObjectNotFoundException | CommunicationException | ConfigurationException
+				| SecurityViolationException | ExpressionEvaluationException e) {
+			LOGGER.error("Cannot search for forced roles", e);
+		}
+		
+		for (R forcedRole : forcedRoles) {
+			ObjectFilter filterTargetRef = QueryBuilder.queryFor(AssignmentType.class, prismContext)
+					.item(AssignmentType.F_TARGET_REF).ref(forcedRole.getOid()).buildFilter();
+			AssignmentType assignmentType = getAssignmentType(segment, ctx);
+			try {
+				if (filterTargetRef.match(assignmentType.asPrismContainerValue(), null)) {
+					return true;
+				}
+			} catch (SchemaException e) {
+				LOGGER.error("Cannot evaluate filter {} for assignemnt {}", filterTargetRef, assignmentType);
+				continue;
+			}
+		}
+		
+		return false;
+		
+	}
+    
+   	// "content" means "payload + targets" here
 	private <O extends ObjectType> boolean evaluateSegmentContent(AssignmentPathSegmentImpl segment,
 			PlusMinusZero relativeMode, EvaluationContext ctx)
 			throws SchemaException, ExpressionEvaluationException, ObjectNotFoundException, PolicyViolationException, SecurityViolationException, ConfigurationException, CommunicationException {
@@ -334,7 +397,9 @@ public class AssignmentEvaluator<F extends FocusType> {
 		final boolean isDirectAssignment = ctx.assignmentPath.size() == 1;
 
 		AssignmentType assignmentType = getAssignmentType(segment, ctx);
-		boolean isAssignmentValid = LensUtil.isAssignmentValid(focusOdo.getNewObject().asObjectable(), assignmentType, now, activationComputer);
+		
+		boolean isAssignmentValid = LensUtil.isAssignmentValid(focusOdo.getNewObject().asObjectable(), assignmentType, 
+				now, activationComputer, focusStateModel);
 		if (isAssignmentValid || segment.isValidityOverride()) {
 			// Note: validityOverride is currently the same as "isDirectAssignment" - which is very probably OK.
 			// Direct assignments are visited even if they are not valid (i.e. effectively disabled).
@@ -370,12 +435,12 @@ public class AssignmentEvaluator<F extends FocusType> {
 			}
 			if (assignmentType.getTarget() != null || assignmentType.getTargetRef() != null) {
 				QName relation = getRelation(assignmentType);
-				if (loginMode && !ObjectTypeUtil.processRelationOnLogin(relation)) {
+				if (loginMode && !relationRegistry.isProcessedOnLogin(relation)) {
 					LOGGER.trace("Skipping processing of assignment target {} because relation {} is configured for login skip", assignmentType.getTargetRef().getOid(), relation);
 					// Skip - to optimize logging-in, we skip all assignments with non-membership/non-delegation relations (e.g. approver, owner, etc)
 					// We want to make this configurable in the future MID-3581
 				} else if (!loginMode && !isChanged(ctx.primaryAssignmentMode) &&
-						!ObjectTypeUtil.processRelationOnRecompute(relation) && !shouldEvaluateAllAssignmentRelationsOnRecompute()) {
+						!relationRegistry.isProcessedOnRecompute(relation) && !shouldEvaluateAllAssignmentRelationsOnRecompute()) {
 					LOGGER.debug("Skipping processing of assignment target {} because relation {} is configured for recompute skip (mode={})", assignmentType.getTargetRef().getOid(), relation, relativeMode);
 					// Skip - to optimize recompute, we skip all assignments with non-membership/non-delegation relations (e.g. approver, owner, etc)
 					// never skip this if assignment has changed. We want to process this, e.g. to enforce min/max assignee rules
@@ -642,13 +707,13 @@ public class AssignmentEvaluator<F extends FocusType> {
 		ModelExpressionThreadLocalHolder.pushExpressionEnvironment(new ExpressionEnvironment<>(lensContext, null, ctx.task, ctx.result));
 		try {
 			PrismObject<SystemConfigurationType> systemConfiguration = systemObjectCache.getSystemConfiguration(ctx.result);
-			ExpressionVariables variables = Utils.getDefaultExpressionVariables(segment.source, null, null, systemConfiguration.asObjectable());
+			ExpressionVariables variables = ModelImplUtils.getDefaultExpressionVariables(segment.source, null, null, systemConfiguration.asObjectable());
 			variables.addVariableDefinition(ExpressionConstants.VAR_SOURCE, segment.getOrderOneObject());
 			AssignmentPathVariables assignmentPathVariables = LensUtil.computeAssignmentPathVariables(ctx.assignmentPath);
 			if (assignmentPathVariables != null) {
-				Utils.addAssignmentPathVariables(assignmentPathVariables, variables);
+				ModelImplUtils.addAssignmentPathVariables(assignmentPathVariables, variables);
 			}
-	
+			variables.addVariableDefinitions(getAssignmentEvaluationVariables());
 			ObjectFilter origFilter = QueryConvertor.parseFilter(filter, targetClass, prismContext);
 			ObjectFilter evaluatedFilter = ExpressionUtil.evaluateFilterExpressions(origFilter, variables, getMappingFactory().getExpressionFactory(), prismContext, " evaluating resource filter expression ", ctx.task, ctx.result);
 			if (evaluatedFilter == null) {
@@ -661,7 +726,14 @@ public class AssignmentEvaluator<F extends FocusType> {
 			ModelExpressionThreadLocalHolder.popExpressionEnvironment();
 		}
 	}
-		
+
+	private ExpressionVariables getAssignmentEvaluationVariables() {
+		ExpressionVariables variables = new ExpressionVariables();
+		variables.addVariableDefinition(ExpressionConstants.VAR_LOGIN_MODE, loginMode);
+		// e.g. AssignmentEvaluator itself, model context, etc (when needed)
+		return variables;
+	}
+
 	private void evaluateSegmentTarget(AssignmentPathSegmentImpl segment, PlusMinusZero relativeMode, boolean isValid,
 			FocusType targetType, QName relation, EvaluationContext ctx)
 			throws SchemaException, ObjectNotFoundException, ExpressionEvaluationException, PolicyViolationException, SecurityViolationException, ConfigurationException, CommunicationException {
@@ -684,7 +756,8 @@ public class AssignmentEvaluator<F extends FocusType> {
 
 		checkRelationWithTarget(segment, targetType, relation);
 
-		boolean isTargetValid = LensUtil.isFocusValid(targetType, now, activationComputer);
+		LifecycleStateModelType targetStateModel = ModelUtils.determineLifecycleModel(targetType.asPrismObject(), systemConfiguration);
+		boolean isTargetValid = LensUtil.isFocusValid(targetType, now, activationComputer, targetStateModel);
 		if (!isTargetValid) {
 			isValid = false;
 		}
@@ -744,6 +817,10 @@ public class AssignmentEvaluator<F extends FocusType> {
 			return;
 		}
 
+		if ((isNonNegative(relativeMode))) {
+			collectTenantRef(targetType, ctx);
+		}
+		
 		// We continue evaluation even if the relation is non-membership and non-delegation.
 		// Computation of isMatchingOrder will ensure that we won't collect any unwanted content.
 		
@@ -794,7 +871,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 
 		ObjectType orderOneObject = getOrderOneObject(segment);
 
-		if (ObjectTypeUtil.isDelegationRelation(relation)) {
+		if (relationRegistry.isDelegation(relation)) {
 			// We have to handle assignments as though they were inducements here.
 			if (!isAllowedByLimitations(segment, roleAssignment, ctx)) {
 				if (LOGGER.isTraceEnabled()) {
@@ -812,7 +889,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 					segment.getEvaluationOrder().shortDump(), targetType, FocusTypeUtil.dumpAssignment(roleAssignment), nextEvaluationOrder);
 		}
 		String nextSourceDescription = targetType+" in "+segment.sourceDescription;
-		AssignmentPathSegmentImpl nextSegment = new AssignmentPathSegmentImpl(targetType, nextSourceDescription, roleAssignment, true);
+		AssignmentPathSegmentImpl nextSegment = new AssignmentPathSegmentImpl(targetType, nextSourceDescription, roleAssignment, true, relationRegistry, prismContext);
 		nextSegment.setRelation(nextRelation);
 		nextSegment.setEvaluationOrder(nextEvaluationOrder);
 		nextSegment.setEvaluationOrderForTarget(nextEvaluationOrderForTarget);
@@ -849,7 +926,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 			return;
 		}
 		String subSourceDescription = targetType+" in "+segment.sourceDescription;
-		AssignmentPathSegmentImpl nextSegment = new AssignmentPathSegmentImpl(targetType, subSourceDescription, inducement, false);
+		AssignmentPathSegmentImpl nextSegment = new AssignmentPathSegmentImpl(targetType, subSourceDescription, inducement, false, relationRegistry, prismContext);
 		// note that 'old' and 'new' values for assignment in nextSegment are the same
 		boolean nextIsMatchingOrder = AssignmentPathSegmentImpl.computeMatchingOrder(
 				segment.getEvaluationOrder(), nextSegment.getAssignmentNew());
@@ -933,7 +1010,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 					}
 					AssignmentPathSegmentImpl segment = assignmentPath.getSegments().get(i);
 					if (segment.isAssignment()) {
-						if (!ObjectTypeUtil.isDelegationRelation(segment.getRelation())) {
+						if (!relationRegistry.isDelegation(segment.getRelation())) {
 							// backRelations.add(segment.getRelation());
 							assignmentsSeen++;
 							LOGGER.trace("Going back {}: relation at assignment -{} (position -{}): {}", summaryBackwards,
@@ -966,7 +1043,8 @@ public class AssignmentEvaluator<F extends FocusType> {
 			for (OrderConstraintsType constraint : constraints) {
 				if (constraint.getRelation() != null && constraint.getResetOrder() != null) {
 					LOGGER.warn("Ignoring resetOrder (with a value of {} for {}) because summary order was already moved backwards by {} to {}: {}",
-							constraint.getResetOrder(), constraint.getRelation(), summaryBackwards, evaluationOrderHolder.getValue().getSummaryOrder(), constraint);
+							constraint.getResetOrder(), constraint.getRelation(), summaryBackwards,
+							evaluationOrderHolder.getValue().getSummaryOrder(), constraint);
 				}
 			}
 		} else {
@@ -1020,6 +1098,16 @@ public class AssignmentEvaluator<F extends FocusType> {
 		collectMembershipRefVal(refVal, targetType.getClass(), relation, targetType, ctx);
 	}
 	
+	private void collectTenantRef(FocusType targetType, AssignmentEvaluator<F>.EvaluationContext ctx) {
+		if (targetType instanceof OrgType) {
+			if (BooleanUtils.isTrue(((OrgType)targetType).isTenant()) && ctx.evalAssignment.getTenantOid() == null) {
+				if (ctx.assignmentPath.hasOnlyOrgs()) {
+					ctx.evalAssignment.setTenantOid(targetType.getOid());
+				}
+			}
+		}
+	}
+
 	private void collectMembership(ObjectReferenceType targetRef, QName relation, EvaluationContext ctx) {
 		PrismReferenceValue refVal = new PrismReferenceValue();
 		refVal.setOid(targetRef.getOid());
@@ -1033,7 +1121,8 @@ public class AssignmentEvaluator<F extends FocusType> {
 	
 	private void collectMembershipRefVal(PrismReferenceValue membershipRefVal, Class<? extends ObjectType> targetClass, QName relation, Object targetDesc, EvaluationContext ctx) {
 
-		if (ctx.assignmentPath.getSegments().stream().anyMatch(aps -> DeputyUtils.isDelegationAssignment(aps.getAssignment(ctx.evaluateOld)))) {
+		if (ctx.assignmentPath.getSegments().stream().anyMatch(aps -> DeputyUtils.isDelegationAssignment(aps.getAssignment(ctx.evaluateOld),
+				relationRegistry))) {
 			addIfNotThere(ctx.evalAssignment.getDelegationRefVals(), ctx.evalAssignment::addDelegationRefVal, membershipRefVal,
 					"delegationRef", targetDesc);
 		} else {
@@ -1042,7 +1131,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 						"membershipRef", targetDesc);
 			}
 		}
-		if (OrgType.class.isAssignableFrom(targetClass) && (ObjectTypeUtil.isDefaultRelation(relation) || ObjectTypeUtil.isManagerRelation(relation))) {
+		if (OrgType.class.isAssignableFrom(targetClass) && relationRegistry.isStoredIntoParentOrgRef(relation)) {
 			addIfNotThere(ctx.evalAssignment.getOrgRefVals(), ctx.evalAssignment::addOrgRefVal, membershipRefVal,
 					"orgRef", targetDesc);
 		}
@@ -1075,7 +1164,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 		if (targetType instanceof AbstractRoleType) {
 			// OK, just go on
 		} else if (targetType instanceof UserType) {
-			if (!ObjectTypeUtil.isDelegationRelation(relation)) {
+			if (!relationRegistry.isDelegation(relation)) {
 				throw new SchemaException("Unsupported relation " + relation + " for assignment of target type " + targetType + " in " + segment.sourceDescription);
 			}
 		} else {
@@ -1112,16 +1201,13 @@ public class AssignmentEvaluator<F extends FocusType> {
 			// As for the case of targetRef==null: we want to pass target-less assignments (focus mappings, policy rules etc)
 			// from the delegator to delegatee. To block them we should use order constraints (but also for assignments?).
 			return targetLimitation == null || nextAssignment.getTargetRef() == null ||
-					FocusTypeUtil.selectorMatches(targetLimitation, nextAssignment);
+					FocusTypeUtil.selectorMatches(targetLimitation, nextAssignment, prismContext);
 		}
 	}
 	
 	private boolean isDeputyDelegation(AssignmentType assignmentType) {
 		ObjectReferenceType targetRef = assignmentType.getTargetRef();
-		if (targetRef == null) {
-			return false;
-		}
-		return ObjectTypeUtil.isDelegationRelation(targetRef.getRelation());
+		return targetRef != null && relationRegistry.isDelegation(targetRef.getRelation());
 	}
 
 	private Authorization createAuthorization(AuthorizationType authorizationType, String sourceDesc) {
@@ -1198,6 +1284,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 				.originType(OriginType.ASSIGNMENTS)
 				.originObject(source)
 				.defaultTargetDefinition(new PrismPropertyDefinitionImpl<>(CONDITION_OUTPUT_NAME, DOMUtil.XSD_BOOLEAN, prismContext))
+				.addVariableDefinitions(getAssignmentEvaluationVariables().getMap())
 				.addVariableDefinition(ExpressionConstants.VAR_USER, focusOdo)
 				.addVariableDefinition(ExpressionConstants.VAR_FOCUS, focusOdo)
 				.addVariableDefinition(ExpressionConstants.VAR_SOURCE, source)
@@ -1214,7 +1301,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 	@Nullable
 	private QName getRelation(AssignmentType assignmentType) {
 		return assignmentType.getTargetRef() != null ?
-				ObjectTypeUtil.normalizeRelation(assignmentType.getTargetRef().getRelation()) : null;
+				relationRegistry.normalizeRelation(assignmentType.getTargetRef().getRelation()) : null;
 	}
 
 	public static final class Builder<F extends FocusType> {
@@ -1224,6 +1311,7 @@ public class AssignmentEvaluator<F extends FocusType> {
 		private String channel;
 		private ObjectResolver objectResolver;
 		private SystemObjectCache systemObjectCache;
+		private RelationRegistry relationRegistry;
 		private PrismContext prismContext;
 		private MappingFactory mappingFactory;
 		private ActivationComputer activationComputer;
@@ -1262,6 +1350,11 @@ public class AssignmentEvaluator<F extends FocusType> {
 
 		public Builder<F> systemObjectCache(SystemObjectCache val) {
 			systemObjectCache = val;
+			return this;
+		}
+
+		public Builder<F> relationRegistry(RelationRegistry val) {
+			relationRegistry = val;
 			return this;
 		}
 

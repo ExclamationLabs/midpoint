@@ -19,6 +19,7 @@ import com.evolveum.midpoint.common.refinery.RefinedObjectClassDefinition;
 import com.evolveum.midpoint.model.api.context.ModelContext;
 import com.evolveum.midpoint.model.api.util.MergeDeltas;
 import com.evolveum.midpoint.model.api.visualizer.Scene;
+import com.evolveum.midpoint.prism.Item;
 import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.PrismObjectDefinition;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
@@ -73,6 +74,7 @@ public interface ModelInteractionService {
 	String MERGE_OBJECTS_PREVIEW_DELTA = CLASS_NAME_WITH_DOT + "mergeObjectsPreviewDelta";
 	String MERGE_OBJECTS_PREVIEW_OBJECT = CLASS_NAME_WITH_DOT + "mergeObjectsPreviewObject";
 	String GET_DEPUTY_ASSIGNEES = CLASS_NAME_WITH_DOT + "getDeputyAssignees";
+	String SUBMIT_TASK_FROM_TEMPLATE = CLASS_NAME_WITH_DOT + "submitTaskFromTemplate";
 
 	/**
 	 * Computes the most likely changes triggered by the provided delta. The delta may be any change of any object, e.g.
@@ -146,7 +148,7 @@ public interface ModelInteractionService {
      *
      * @param focus Object of the operation. The object (usually user) to whom the roles should be assigned.
      */
-    <F extends FocusType> RoleSelectionSpecification getAssignableRoleSpecification(PrismObject<F> focus, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException, ConfigurationException, ExpressionEvaluationException, CommunicationException, SecurityViolationException;
+    <F extends FocusType, R extends AbstractRoleType> RoleSelectionSpecification getAssignableRoleSpecification(PrismObject<F> focus, Class<R> targetType, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException, ConfigurationException, ExpressionEvaluationException, CommunicationException, SecurityViolationException;
 
     /**
      * Returns filter for lookup of donors or power of attorney. The donors are the users that have granted
@@ -169,6 +171,7 @@ public interface ModelInteractionService {
     
     /**
      * TODO
+     * Question: does object make any sense here? E.g. when searching role members, the role OID should be determined from the query.
      *
      * @param includeSpecial include special authorizations, such as "self". If set to false those authorizations
      *                       will be ignored. This is a good way to avoid interference of "self" when checking for
@@ -185,7 +188,7 @@ public interface ModelInteractionService {
      */
     <O extends ObjectType,R extends AbstractRoleType> ItemSecurityConstraints getAllowedRequestAssignmentItems(PrismObject<O> object, PrismObject<R> target, Task task, OperationResult result) throws SchemaException, SecurityViolationException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException;
 
-    SecurityPolicyType getSecurityPolicy(PrismObject<UserType> user, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException;
+    SecurityPolicyType getSecurityPolicy(PrismObject<UserType> user, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException;
 
     /**
      * Returns an authentications policies as defined in the system configuration security policy. This method is designed to be used
@@ -194,35 +197,51 @@ public interface ModelInteractionService {
      *
      *
      * @param task
-     *@param parentResult  @return applicable credentials policy or null
+     * @param parentResult
+     * @return applicable credentials policy or null
      * @throws ObjectNotFoundException No system configuration or other major system inconsistency
      * @throws SchemaException Wrong schema or content of security policy
      */
-    AuthenticationsPolicyType getAuthenticationPolicy(PrismObject<UserType> user, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException;
+    AuthenticationsPolicyType getAuthenticationPolicy(PrismObject<UserType> user, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException;
 
     /**
      * Returns a policy for registration, e.g. type of the supported registrations (self, social,...)
      *
      * @param user user for who the policy should apply
      * @param task
-     *@param parentResult  @return applicable credentials policy or null
+     * @param parentResult
+     * @return applicable credentials policy or null
+     * @throws ObjectNotFoundException No system configuration or other major system inconsistency
+     * @throws SchemaException Wrong schema or content of security policy
+     * @deprecated
+     */
+    RegistrationsPolicyType getRegistrationPolicy(PrismObject<UserType> user, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException;
+
+    /**
+     * Returns a policy for registration, e.g. type of the supported registrations (self, social,...)
+     *
+     * @param user user for who the policy should apply
+     * @param task
+     * @param parentResult
+     * @return applicable credentials policy or null
      * @throws ObjectNotFoundException No system configuration or other major system inconsistency
      * @throws SchemaException Wrong schema or content of security policy
      */
-    RegistrationsPolicyType getRegistrationPolicy(PrismObject<UserType> user, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException;
+    RegistrationsPolicyType getFlowPolicy(PrismObject<UserType> user, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException;
 
-    /**
+        /**
      * Returns a credential policy that applies to the specified user. This method is designed to be used
      * during credential reset so the GUI has enough information to set up the credential (e.g. password policies,
      * security questions, etc).
      *
      * @param user user for who the policy should apply
      * @param task
-     *@param parentResult  @return applicable credentials policy or null
+     * @param parentResult
+     * @return applicable credentials policy or null
      * @throws ObjectNotFoundException No system configuration or other major system inconsistency
      * @throws SchemaException Wrong schema or content of security policy
      */
-    CredentialsPolicyType getCredentialsPolicy(PrismObject<UserType> user, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException;
+    CredentialsPolicyType getCredentialsPolicy(PrismObject<UserType> user, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException;
 
     /**
      * Returns currently applicable admin GUI configuration. The implementation will do all steps necessary to construct
@@ -260,6 +279,9 @@ public interface ModelInteractionService {
 
 	@NotNull
 	Scene visualizeDelta(ObjectDelta<? extends ObjectType> delta, Task task, OperationResult result) throws SchemaException, ExpressionEvaluationException;
+
+	@NotNull
+	Scene visualizeDelta(ObjectDelta<? extends ObjectType> delta, ObjectReferenceType objectRef, Task task, OperationResult result) throws SchemaException, ExpressionEvaluationException;
 
 	List<ConnectorOperationalStatus> getConnectorOperationalStatus(String resourceOid, Task task, OperationResult parentResult)
 			throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException, ExpressionEvaluationException;
@@ -309,12 +331,9 @@ public interface ModelInteractionService {
 			throws SchemaException;
 
 	/**
-	 * computes effective status for the current ActivationType object
-	 * @param lifecycleStatus
-	 * @param activationType
-	 * @return
+	 * Computes effective status for the current ActivationType in for an assignment
 	 */
-	ActivationStatusType getEffectiveStatus(String lifecycleStatus, ActivationType activationType);
+	ActivationStatusType getAssignmentEffectiveStatus(String lifecycleStatus, ActivationType activationType);
 	
 	MidPointPrincipal assumePowerOfAttorney(PrismObject<UserType> donor, Task task, OperationResult result) 
 			throws SchemaException, SecurityViolationException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException;
@@ -329,10 +348,22 @@ public interface ModelInteractionService {
 			throws ObjectNotFoundException, SchemaException, ExpressionEvaluationException, CommunicationException,
 			ConfigurationException, SecurityViolationException;
 	
-	public ExecuteCredentialResetResponseType executeCredentialsReset(PrismObject<UserType> user, 
+	ExecuteCredentialResetResponseType executeCredentialsReset(PrismObject<UserType> user, 
 			ExecuteCredentialResetRequestType executeCredentialResetRequest, Task task, OperationResult result)
 			throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException,
 			SecurityViolationException, ExpressionEvaluationException, ObjectAlreadyExistsException, PolicyViolationException;
+
+	void refreshPrincipal(String oid) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException;
 	
-	public void clearCaches();
+	List<RelationDefinitionType> getRelationDefinitions();
+
+	@NotNull
+	TaskType submitTaskFromTemplate(String templateTaskOid, List<Item<?, ?>> extensionItems, Task opTask, OperationResult result)
+			throws CommunicationException, ObjectNotFoundException, SchemaException, SecurityViolationException,
+			ConfigurationException, ExpressionEvaluationException, ObjectAlreadyExistsException, PolicyViolationException;
+
+	@NotNull
+	TaskType submitTaskFromTemplate(String templateTaskOid, Map<QName, Object> extensionValues, Task opTask, OperationResult result)
+			throws CommunicationException, ObjectNotFoundException, SchemaException, SecurityViolationException,
+			ConfigurationException, ExpressionEvaluationException, ObjectAlreadyExistsException, PolicyViolationException;
 }

@@ -42,6 +42,7 @@ import org.apache.wicket.ajax.markup.html.AjaxLink;
 import org.apache.wicket.ajax.markup.html.form.AjaxCheckBox;
 import org.apache.wicket.markup.html.WebMarkupContainer;
 import org.apache.wicket.markup.html.basic.Label;
+import org.apache.wicket.markup.html.form.Form;
 import org.apache.wicket.markup.html.form.TextArea;
 import org.apache.wicket.markup.html.list.ListItem;
 import org.apache.wicket.markup.html.list.ListView;
@@ -200,9 +201,9 @@ public class DelegationEditorPanel extends AssignmentEditorPanel {
 
             @Override
             public void onClick(AjaxRequestTarget target) {
-                nameClickPerformed(target);
+            	nameClickPerformed(target);
             }
-
+            
             @Override
             public boolean isOn() {
                 return !DelegationEditorPanel.this.getModelObject().isMinimized();

@@ -15,6 +15,7 @@
  */
 package com.evolveum.midpoint.model.api.context;
 
+import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.schema.util.LocalizationUtil;
 import com.evolveum.midpoint.schema.util.PolicyRuleTypeUtil;
 import com.evolveum.midpoint.util.DebugDumpable;
@@ -39,12 +40,19 @@ public abstract class EvaluatedPolicyRuleTrigger<CT extends AbstractPolicyConstr
 	private final LocalizableMessage message;
 	private final LocalizableMessage shortMessage;
 
+	/**
+	 * If true, this trigger is to be reported as PolicyViolationException regardless of specified policy rule action.
+	 * Used e.g. for disallowing assignment of two pruned roles (MID-4766).
+	 */
+	private final boolean enforcementOverride;
+
 	public EvaluatedPolicyRuleTrigger(@NotNull PolicyConstraintKindType constraintKind, @NotNull CT constraint,
-			LocalizableMessage message, LocalizableMessage shortMessage) {
+			LocalizableMessage message, LocalizableMessage shortMessage, boolean enforcementOverride) {
 		this.constraintKind = constraintKind;
 		this.constraint = constraint;
 		this.message = message;
 		this.shortMessage = shortMessage;
+		this.enforcementOverride = enforcementOverride;
 	}
 
 	/**
@@ -56,7 +64,7 @@ public abstract class EvaluatedPolicyRuleTrigger<CT extends AbstractPolicyConstr
 	}
 
 	@NotNull
-	public AbstractPolicyConstraintType getConstraint() {
+	public CT getConstraint() {
 		return constraint;
 	}
 
@@ -137,7 +145,8 @@ public abstract class EvaluatedPolicyRuleTrigger<CT extends AbstractPolicyConstr
 		return PolicyRuleTypeUtil.toDiagShortcut(constraintKind);
 	}
 
-	public EvaluatedPolicyRuleTriggerType toEvaluatedPolicyRuleTriggerType(PolicyRuleExternalizationOptions options) {
+	public EvaluatedPolicyRuleTriggerType toEvaluatedPolicyRuleTriggerType(PolicyRuleExternalizationOptions options,
+			PrismContext prismContext) {
 		EvaluatedPolicyRuleTriggerType rv = new EvaluatedPolicyRuleTriggerType();
 		fillCommonContent(rv);
 		return rv;
@@ -159,4 +168,7 @@ public abstract class EvaluatedPolicyRuleTrigger<CT extends AbstractPolicyConstr
 		return Collections.emptySet();
 	}
 
+	public boolean isEnforcementOverride() {
+		return enforcementOverride;
+	}
 }

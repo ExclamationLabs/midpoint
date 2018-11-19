@@ -29,7 +29,10 @@ import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.crypto.Protector;
 import com.evolveum.midpoint.prism.match.MatchingRuleRegistry;
 import com.evolveum.midpoint.repo.api.RepositoryService;
+import com.evolveum.midpoint.repo.api.SystemConfigurationChangeDispatcher;
+import com.evolveum.midpoint.repo.api.SystemConfigurationChangeListener;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.SchemaDebugUtil;
 import com.evolveum.midpoint.security.api.AuthorizationConstants;
@@ -48,13 +51,16 @@ import com.evolveum.midpoint.web.application.DescriptorLoader;
 import com.evolveum.midpoint.web.page.admin.home.PageDashboard;
 import com.evolveum.midpoint.web.page.error.*;
 import com.evolveum.midpoint.web.page.login.PageLogin;
+import com.evolveum.midpoint.web.page.self.PagePostAuthentication;
 import com.evolveum.midpoint.web.page.self.PageSelfDashboard;
 import com.evolveum.midpoint.web.resource.img.ImgResources;
 import com.evolveum.midpoint.web.util.MidPointResourceStreamLocator;
 import com.evolveum.midpoint.web.util.MidPointStringResourceLoader;
 import com.evolveum.midpoint.web.util.SchrodingerComponentInitListener;
 import com.evolveum.midpoint.wf.api.WorkflowManager;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.DeploymentInformationType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.SystemConfigurationType;
+
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.io.IOUtils;
 import org.apache.wicket.*;
@@ -81,6 +87,7 @@ import org.apache.wicket.settings.ApplicationSettings;
 import org.apache.wicket.settings.ResourceSettings;
 import org.apache.wicket.spring.injection.annot.SpringComponentInjector;
 import org.apache.wicket.util.lang.Bytes;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
@@ -102,14 +109,10 @@ import java.util.*;
  */
 public class MidPointApplication extends AuthenticatedWebApplication {
 
-    public static final String SYSTEM_PROPERTY_SCHRODINGER = "midpoint.schrodinger";
-
-    /**
+	/**
      * Max. photo size for user/jpegPhoto
      */
     public static final Bytes FOCUS_PHOTO_MAX_FILE_SIZE = Bytes.kilobytes(192);
-
-    public static final String WEB_APP_CONFIGURATION = "midpoint.webApplication";
 
     public static final List<LocaleDescriptor> AVAILABLE_LOCALES;
 
@@ -120,13 +123,13 @@ public class MidPointApplication extends AuthenticatedWebApplication {
     private static final String PROP_DEFAULT = ".default";
 
     private static final Trace LOGGER = TraceManager.getTrace(MidPointApplication.class);
-
+    
     static {
         SchemaDebugUtil.initialize();
     }
 
     static {
-        String midpointHome = System.getProperty(WebApplicationConfiguration.MIDPOINT_HOME);
+        String midpointHome = System.getProperty(MidpointConfiguration.MIDPOINT_HOME_PROPERTY);
         File file = new File(midpointHome, LOCALIZATION_DESCRIPTOR);
 
         Resource[] localeDescriptorResources = new Resource[]{
@@ -159,6 +162,8 @@ public class MidPointApplication extends AuthenticatedWebApplication {
     transient ModelService model;
     @Autowired
     transient ModelInteractionService modelInteractionService;
+    @Autowired
+    transient RelationRegistry relationRegistry;
     @Autowired
     transient TaskService taskService;
     @Autowired
@@ -193,12 +198,26 @@ public class MidPointApplication extends AuthenticatedWebApplication {
     transient AsyncWebProcessManager asyncWebProcessManager;
     @Autowired
     transient ApplicationContext applicationContext;
+    @Autowired
+    transient SystemConfigurationChangeDispatcher systemConfigurationChangeDispatcher;
 
     private WebApplicationConfiguration webApplicationConfiguration;
 
+    private DeploymentInformationType deploymentInfo;
+    
+    public static final String MOUNT_INTERNAL_SERVER_ERROR = "/error";
+    public static final String MOUNT_UNAUTHORIZED_ERROR = "/error/401";
+    public static final String MOUNT_FORBIDEN_ERROR = "/error/403";
+    public static final String MOUNT_NOT_FOUND_ERROR = "/error/404";
+    public static final String MOUNT_GONE_ERROR = "/error/410";
+
     @Override
     public Class<? extends PageBase> getHomePage() {
-        if (WebComponentUtil.isAuthorized(AuthorizationConstants.AUTZ_UI_DASHBOARD_URL,
+    	if (WebModelServiceUtils.isPostAuthenticationEnabled(getTaskManager(), getModelInteractionService())) {
+    		return PagePostAuthentication.class;
+    	}
+    	
+    	if (WebComponentUtil.isAuthorized(AuthorizationConstants.AUTZ_UI_DASHBOARD_URL,
                 AuthorizationConstants.AUTZ_UI_HOME_ALL_URL)) {
             return PageDashboard.class;
         } else {
@@ -215,6 +234,12 @@ public class MidPointApplication extends AuthenticatedWebApplication {
                         "../../../../../webjars/adminlte/2.3.11/plugins/jQuery/jquery-2.2.3.min.js"));
 
         getComponentInstantiationListeners().add(new SpringComponentInjector(this));
+
+        systemConfigurationChangeDispatcher.registerListener(new DeploymentInformationChangeListener(this));
+        SystemConfigurationType config = getSystemConfigurationIfAvailable();
+        if (config != null) {
+            deploymentInfo = config.getDeploymentInformation();
+        }
 
         ResourceSettings resourceSettings = getResourceSettings();
         resourceSettings.setParentFolderPlaceholder("$-$");
@@ -247,11 +272,11 @@ public class MidPointApplication extends AuthenticatedWebApplication {
         appSettings.setInternalErrorPage(PageError.class);
         appSettings.setPageExpiredErrorPage(PageError.class);
 
-        mount(new MountedMapper("/error", PageError.class, new PageParametersEncoder()));
-        mount(new MountedMapper("/error/401", PageError401.class, new PageParametersEncoder()));
-        mount(new MountedMapper("/error/403", PageError403.class, new PageParametersEncoder()));
-        mount(new MountedMapper("/error/404", PageError404.class, new PageParametersEncoder()));
-        mount(new MountedMapper("/error/410", PageError410.class, new PageParametersEncoder()));
+        mount(new MountedMapper(MOUNT_INTERNAL_SERVER_ERROR, PageError.class, new PageParametersEncoder()));
+        mount(new MountedMapper(MOUNT_UNAUTHORIZED_ERROR, PageError401.class, new PageParametersEncoder()));
+        mount(new MountedMapper(MOUNT_FORBIDEN_ERROR, PageError403.class, new PageParametersEncoder()));
+        mount(new MountedMapper(MOUNT_NOT_FOUND_ERROR, PageError404.class, new PageParametersEncoder()));
+        mount(new MountedMapper(MOUNT_GONE_ERROR, PageError410.class, new PageParametersEncoder()));
 
         getRequestCycleListeners().add(new LoggingRequestCycleListener(this));
 
@@ -294,6 +319,10 @@ public class MidPointApplication extends AuthenticatedWebApplication {
         initializeSchrodinger();
     }
 
+    public DeploymentInformationType getDeploymentInfo() {
+        return deploymentInfo;
+    }
+
     private void initializeSchrodinger() {
     	if (applicationContext == null) {
     		return;
@@ -303,7 +332,7 @@ public class MidPointApplication extends AuthenticatedWebApplication {
         	return;
         }
 
-        String value = environment.getProperty(SYSTEM_PROPERTY_SCHRODINGER);
+        String value = environment.getProperty(MidpointConfiguration.MIDPOINT_SCHRODINGER_PROPERTY);
         Boolean enabled = Boolean.parseBoolean(value);
 
         if (enabled) {
@@ -377,7 +406,7 @@ public class MidPointApplication extends AuthenticatedWebApplication {
     }
 
     private URL buildMidpointHomeLocalizationFolderUrl() {
-        String midpointHome = System.getProperty(WebApplicationConfiguration.MIDPOINT_HOME);
+        String midpointHome = System.getProperty(MidpointConfiguration.MIDPOINT_HOME_PROPERTY);
 
         File file = new File(midpointHome, "localization");
         try {
@@ -405,20 +434,15 @@ public class MidPointApplication extends AuthenticatedWebApplication {
 
     private void mountFiles(String path, Class<?> clazz) {
         try {
-            List<Resource> list = new ArrayList<>();
             String packagePath = clazz.getPackage().getName().replace('.', '/');
 
             PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-            Resource[] res = resolver.getResources("classpath:" + packagePath + "/*.png");
-            if (res != null) {
-                list.addAll(Arrays.asList(res));
-            }
-            res = resolver.getResources("classpath:" + packagePath + "/*.gif");
-            if (res != null) {
-                list.addAll(Arrays.asList(res));
-            }
+            Resource[] pngResources = resolver.getResources("classpath:" + packagePath + "/*.png");
+            Resource[] gifResources = resolver.getResources("classpath:" + packagePath + "/*.gif");
+            List<Resource> allResources = new ArrayList<>(Arrays.asList(pngResources));
+            allResources.addAll(Arrays.asList(gifResources));
 
-            for (Resource resource : list) {
+            for (Resource resource : allResources) {
                 URI uri = resource.getURI();
                 File file = new File(uri.toString());
                 mountResource(path + "/" + file.getName(), new SharedResourceReference(clazz, file.getName()));
@@ -430,7 +454,7 @@ public class MidPointApplication extends AuthenticatedWebApplication {
 
     public WebApplicationConfiguration getWebApplicationConfiguration() {
         if (webApplicationConfiguration == null) {
-            Configuration config = configuration.getConfiguration(WEB_APP_CONFIGURATION);
+            Configuration config = configuration.getConfiguration(MidpointConfiguration.WEB_APP_CONFIGURATION);
             webApplicationConfiguration = new WebApplicationConfiguration(config);
         }
         return webApplicationConfiguration;
@@ -492,6 +516,10 @@ public class MidPointApplication extends AuthenticatedWebApplication {
 
     public ModelInteractionService getModelInteractionService() {
         return modelInteractionService;
+    }
+
+    public RelationRegistry getRelationRegistry() {
+        return relationRegistry;
     }
 
     public static boolean containsLocale(Locale locale) {
@@ -623,6 +651,22 @@ public class MidPointApplication extends AuthenticatedWebApplication {
                 }
                 return bundle;
             }
+        }
+    }
+
+    private static class DeploymentInformationChangeListener implements SystemConfigurationChangeListener {
+
+        private MidPointApplication application;
+
+        public DeploymentInformationChangeListener(MidPointApplication application) {
+            this.application = application;
+        }
+
+        @Override
+        public boolean update(@Nullable SystemConfigurationType value) {
+            application.deploymentInfo = value != null ? value.getDeploymentInformation() : null;
+
+            return true;
         }
     }
 }

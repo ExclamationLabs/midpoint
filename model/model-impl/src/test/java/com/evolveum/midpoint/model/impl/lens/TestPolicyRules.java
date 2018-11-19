@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -265,7 +265,7 @@ public class TestPolicyRules extends AbstractLensTest {
         assertTargetTriggers(context,  null, 0);
 	}
 
-	@Test
+	@Test(enabled = false)          // after MID-4797 the projector.project now raises PolicyViolationException on conflicting roles
     public void test110AssignRolePirateToJack() throws Exception {
 		final String TEST_NAME = "test110AssignRolePirateToJack";
         TestUtil.displayTestTitle(this, TEST_NAME);
@@ -630,7 +630,7 @@ public class TestPolicyRules extends AbstractLensTest {
 
 		// WHEN
 		TestUtil.displayWhen(TEST_NAME);
-		ObjectDelta<? extends ObjectType> delta = (ObjectDelta<? extends ObjectType>) DeltaBuilder.deltaFor(UserType.class, prismContext)
+		ObjectDelta<? extends ObjectType> delta = deltaFor(UserType.class)
 				.item(UserType.F_ASSIGNMENT)
 				.add(ObjectTypeUtil.createAssignmentTo(ROLE_JUDGE_OID, ObjectTypes.ROLE, prismContext))
 				.item(UserType.F_EMPLOYEE_TYPE).replace("T")

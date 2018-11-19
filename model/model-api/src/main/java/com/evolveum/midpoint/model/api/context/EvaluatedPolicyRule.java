@@ -18,7 +18,9 @@ package com.evolveum.midpoint.model.api.context;
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.List;
+import java.util.function.Predicate;
 
+import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.util.DebugDumpable;
 import com.evolveum.midpoint.util.LocalizableMessage;
 import com.evolveum.midpoint.util.TreeNode;
@@ -30,7 +32,7 @@ import org.jetbrains.annotations.Nullable;
  * @author semancik
  *
  */
-public interface EvaluatedPolicyRule extends DebugDumpable, Serializable {
+public interface EvaluatedPolicyRule extends DebugDumpable, Serializable, Cloneable {
 
 	@NotNull
 	Collection<EvaluatedPolicyRuleTrigger<?>> getTriggers();
@@ -67,7 +69,8 @@ public interface EvaluatedPolicyRule extends DebugDumpable, Serializable {
 
 	Collection<PolicyExceptionType> getPolicyExceptions();
 
-	void addToEvaluatedPolicyRuleTypes(Collection<EvaluatedPolicyRuleType> rules, PolicyRuleExternalizationOptions options);
+	void addToEvaluatedPolicyRuleTypes(Collection<EvaluatedPolicyRuleType> rules, PolicyRuleExternalizationOptions options,
+			Predicate<EvaluatedPolicyRuleTrigger<?>> triggerSelector, PrismContext prismContext);
 
 	boolean isGlobal();
 
@@ -89,4 +92,7 @@ public interface EvaluatedPolicyRule extends DebugDumpable, Serializable {
 	<T extends PolicyActionType> List<T> getEnabledActions(Class<T> clazz);
 
 	<T extends PolicyActionType> T getEnabledAction(Class<T> clazz);
+
+	// use only if you know what you're doing
+	void addTrigger(@NotNull EvaluatedPolicyRuleTrigger<?> trigger);
 }

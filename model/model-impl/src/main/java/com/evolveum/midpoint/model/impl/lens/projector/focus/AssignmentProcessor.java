@@ -27,20 +27,23 @@ import com.evolveum.midpoint.model.impl.lens.projector.ComplexConstructionConsum
 import com.evolveum.midpoint.model.impl.lens.projector.ConstructionProcessor;
 import com.evolveum.midpoint.model.impl.lens.projector.MappingEvaluator;
 import com.evolveum.midpoint.model.impl.lens.projector.policy.PolicyRuleProcessor;
+import com.evolveum.midpoint.model.impl.util.ModelImplUtils;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
+
+import org.apache.commons.lang.BooleanUtils;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import com.evolveum.midpoint.common.ActivationComputer;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.model.api.ModelExecuteOptions;
 import com.evolveum.midpoint.model.api.context.SynchronizationPolicyDecision;
 import com.evolveum.midpoint.model.common.SystemObjectCache;
 import com.evolveum.midpoint.model.common.mapping.MappingImpl;
 import com.evolveum.midpoint.model.common.mapping.MappingFactory;
-import com.evolveum.midpoint.model.impl.controller.ModelImplUtils;
 import com.evolveum.midpoint.model.impl.lens.AssignmentEvaluator;
 import com.evolveum.midpoint.model.impl.lens.Construction;
 import com.evolveum.midpoint.model.impl.lens.ConstructionPack;
@@ -69,6 +72,7 @@ import com.evolveum.midpoint.prism.delta.PlusMinusZero;
 import com.evolveum.midpoint.prism.delta.PrismValueDeltaSetTriple;
 import com.evolveum.midpoint.prism.delta.ReferenceDelta;
 import com.evolveum.midpoint.prism.path.ItemPath;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.provisioning.api.ProvisioningService;
 import com.evolveum.midpoint.repo.api.RepositoryService;
 import com.evolveum.midpoint.schema.ResourceShadowDiscriminator;
@@ -76,7 +80,6 @@ import com.evolveum.midpoint.schema.constants.SchemaConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.result.OperationResultStatus;
 import com.evolveum.midpoint.schema.util.FocusTypeUtil;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.schema.util.SchemaDebugUtil;
 import com.evolveum.midpoint.task.api.Task;
@@ -116,10 +119,14 @@ public class AssignmentProcessor {
     private RepositoryService repositoryService;
 
     @Autowired
+    @Qualifier("modelObjectResolver")
     private ObjectResolver objectResolver;
 
     @Autowired
 	private SystemObjectCache systemObjectCache;
+
+    @Autowired
+    private RelationRegistry relationRegistry;
 
     @Autowired
     private PrismContext prismContext;
@@ -130,13 +137,13 @@ public class AssignmentProcessor {
     @Autowired
     private MappingEvaluator mappingEvaluator;
 
-    @Autowired(required=true)
+    @Autowired
 	private ActivationComputer activationComputer;
 
-    @Autowired(required=true)
+    @Autowired
     private ProvisioningService provisioningService;
 
-    @Autowired(required=true)
+    @Autowired
     private ConstructionProcessor constructionProcessor;
 
     @Autowired
@@ -334,7 +341,7 @@ public class AssignmentProcessor {
 				}
 
 				@Override
-				public void onAssigned(ResourceShadowDiscriminator rat, String desc) {
+				public void onAssigned(ResourceShadowDiscriminator rat, String desc) throws SchemaException {
 					LensProjectionContext projectionContext = LensUtil.getOrCreateProjectionContext(context, rat);
 					projectionContext.setAssigned(true);
 					projectionContext.setAssignedOld(false);
@@ -348,7 +355,7 @@ public class AssignmentProcessor {
 				}
 
 				@Override
-				public void onUnchangedValid(ResourceShadowDiscriminator key, String desc) {
+				public void onUnchangedValid(ResourceShadowDiscriminator key, String desc) throws SchemaException {
 					LensProjectionContext projectionContext = context.findProjectionContext(key);
 					if (projectionContext == null) {
 						if (processOnlyExistingProjCxts) {
@@ -373,7 +380,7 @@ public class AssignmentProcessor {
 				}
 
 				@Override
-				public void onUnchangedInvalid(ResourceShadowDiscriminator rat, String desc) {
+				public void onUnchangedInvalid(ResourceShadowDiscriminator rat, String desc) throws SchemaException {
 					LensProjectionContext projectionContext = context.findProjectionContext(rat);
 					if (projectionContext == null) {
 						if (processOnlyExistingProjCxts) {
@@ -400,7 +407,7 @@ public class AssignmentProcessor {
 				}
 
 				@Override
-				public void onUnassigned(ResourceShadowDiscriminator rat, String desc) {
+				public void onUnassigned(ResourceShadowDiscriminator rat, String desc) throws SchemaException {
 					if (accountExists(context, rat)) {
 						LensProjectionContext projectionContext = context.findProjectionContext(rat);
 						if (projectionContext == null) {
@@ -661,7 +668,7 @@ public class AssignmentProcessor {
 								+" while the synchronization enforcement policy is FULL and the projection is not assigned");
 					}
 
-				} else if (enforcementType == AssignmentPolicyEnforcementType.NONE && !projectionContext.isThombstone()) {
+				} else if (enforcementType == AssignmentPolicyEnforcementType.NONE && !projectionContext.isTombstone()) {
 					if (projectionContext.isAdd()) {
 						LOGGER.trace("Projection {} legal: added in NONE policy", desc);
 						projectionContext.setLegal(true);
@@ -677,13 +684,13 @@ public class AssignmentProcessor {
 						projectionContext.setLegalOld(projectionContext.isExists());
 					}
 
-				} else if (enforcementType == AssignmentPolicyEnforcementType.POSITIVE && !projectionContext.isThombstone()) {
+				} else if (enforcementType == AssignmentPolicyEnforcementType.POSITIVE && !projectionContext.isTombstone()) {
 					// Everything that is not yet dead is legal in POSITIVE enforcement mode
 					LOGGER.trace("Projection {} legal: not dead in POSITIVE policy", desc);
 					projectionContext.setLegal(true);
 					projectionContext.setLegalOld(true);
 
-				} else if (enforcementType == AssignmentPolicyEnforcementType.RELATIVE && !projectionContext.isThombstone() &&
+				} else if (enforcementType == AssignmentPolicyEnforcementType.RELATIVE && !projectionContext.isTombstone() &&
 						projectionContext.isLegal() == null && projectionContext.isLegalOld() == null) {
 					// RELATIVE mode and nothing has changed. Maintain status quo. Pretend that it is legal.
 					LOGGER.trace("Projection {} legal: no change in RELATIVE policy", desc);
@@ -694,7 +701,7 @@ public class AssignmentProcessor {
 
 			if (LOGGER.isTraceEnabled()) {
 				LOGGER.trace("Finishing legal decision for {}, thombstone {}, enforcement mode {}, legalize {}: {} -> {}",
-						projectionContext.toHumanReadableString(), projectionContext.isThombstone(),
+						projectionContext.toHumanReadableString(), projectionContext.isTombstone(),
 						projectionContext.getAssignmentPolicyEnforcementType(),
 						projectionContext.isLegalize(), projectionContext.isLegalOld(), projectionContext.isLegal());
 			}
@@ -724,7 +731,7 @@ public class AssignmentProcessor {
         ContainerDelta<AssignmentType> assignmentDelta = ContainerDelta.createDelta(FocusType.F_ASSIGNMENT, focusClass, prismContext);
 		AssignmentType assignment = new AssignmentType();
 		ConstructionType constructionType = new ConstructionType();
-		constructionType.setResourceRef(ObjectTypeUtil.createObjectRef(accountContext.getResource()));
+		constructionType.setResourceRef(ObjectTypeUtil.createObjectRef(accountContext.getResource(), prismContext));
 		assignment.setConstruction(constructionType);
 		assignmentDelta.addValueToAdd(assignment.asPrismContainerValue());
 		PrismContainerDefinition<AssignmentType> containerDefinition = prismContext.getSchemaRegistry().findObjectDefinitionByCompileTimeClass(focusClass).findContainerDefinition(FocusType.F_ASSIGNMENT);
@@ -733,7 +740,7 @@ public class AssignmentProcessor {
 
 	}
 
-	public <F extends ObjectType> void processOrgAssignments(LensContext<F> context, OperationResult result) throws SchemaException, PolicyViolationException {
+	public <F extends ObjectType> void processOrgAssignments(LensContext<F> context, Task task, OperationResult result) throws SchemaException, PolicyViolationException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
 
 		LensFocusContext<F> focusContext = context.getFocusContext();
 		if (focusContext == null) {
@@ -789,12 +796,115 @@ public class AssignmentProcessor {
 				}
 			}
 		}
+		
+		computeTenantRef(context, task, result);
+	}
+
+	private <F extends ObjectType> void computeTenantRef(LensContext<F> context, Task task, OperationResult result) throws PolicyViolationException, SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
+		String tenantOid = null;
+		LensFocusContext<F> focusContext = context.getFocusContext();
+		PrismObject<F> objectNew = focusContext.getObjectNew();
+		if (objectNew == null) {
+			return;
+		}
+		
+		if (objectNew.canRepresent(OrgType.class) && BooleanUtils.isTrue(((OrgType)objectNew.asObjectable()).isTenant())) {
+			// Special "zero" case. Tenant org has itself as a tenant.
+			tenantOid = objectNew.getOid();
+			
+		} else {
+		
+			DeltaSetTriple<EvaluatedAssignmentImpl<?>> evaluatedAssignmentTriple = context.getEvaluatedAssignmentTriple();
+			for (EvaluatedAssignmentImpl<?> evalAssignment : evaluatedAssignmentTriple.getNonNegativeValues()) {
+				if (!evalAssignment.isValid()) {
+					continue;
+				}
+				String assignmentTenantOid = evalAssignment.getTenantOid();
+				if (assignmentTenantOid == null) {
+					continue;
+				}
+				if (tenantOid == null) {
+					tenantOid = assignmentTenantOid;
+				} else {
+					if (!assignmentTenantOid.equals(tenantOid)) {
+						throw new PolicyViolationException("Two different tenants ("+tenantOid+", "+assignmentTenantOid+") applicable to "+context.getFocusContext().getHumanReadableName());
+					}
+				}
+			}
+			
+		}
+		
+		addTenantRefDelta(context, objectNew, tenantOid);
+	}
+	
+	/**
+	 * This is somehow "future legacy" code. It will be removed later when we have better support for organizational structure
+	 * membership in resources and tasks.
+	 */
+	public <O extends ObjectType> void computeTenantRefLegacy(LensContext<O> context, Task task, OperationResult result) throws PolicyViolationException, SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException {
+		String tenantOid = null;
+		
+		LensFocusContext<O> focusContext = context.getFocusContext();
+		PrismObject<O> objectNew = focusContext.getObjectNew();
+		if (objectNew == null) {
+			return;
+		}
+		if (!objectNew.canRepresent(ResourceType.class) && !objectNew.canRepresent(TaskType.class)) {
+			return;
+		}
+		
+		String desc = "parentOrgRef in "+objectNew;
+		for (ObjectReferenceType parentOrgRef: objectNew.asObjectable().getParentOrgRef()) {
+			OrgType parentOrg = objectResolver.resolve(parentOrgRef, OrgType.class, null, desc, task, result);
+			ObjectReferenceType parentTenantRef = parentOrg.getTenantRef();
+			if (parentTenantRef == null || parentTenantRef.getOid() == null) {
+				continue;
+			}
+			if (tenantOid == null) {
+				tenantOid = parentTenantRef.getOid();
+			} else {
+				if (!parentTenantRef.getOid().equals(tenantOid)) {
+					throw new PolicyViolationException("Two different tenants ("+tenantOid+", "+parentTenantRef.getOid()+") applicable to "+context.getFocusContext().getHumanReadableName());
+				}
+			}
+		}
+		
+		addTenantRefDelta(context, objectNew, tenantOid);
+	}
+	
+	private <F extends ObjectType> void addTenantRefDelta(LensContext<F> context, PrismObject<F> objectNew, String tenantOid) throws SchemaException {
+		LensFocusContext<F> focusContext = context.getFocusContext();
+		ObjectReferenceType currentTenantRef = objectNew.asObjectable().getTenantRef();
+		if (currentTenantRef == null) {
+			if (tenantOid == null) {
+				return;
+			} else {
+				LOGGER.trace("Setting tenantRef to {}", tenantOid);
+				ReferenceDelta tenantRefDelta = ReferenceDelta.createModificationReplace(ObjectType.F_TENANT_REF, focusContext.getObjectDefinition(), tenantOid);
+				focusContext.swallowToProjectionWaveSecondaryDelta(tenantRefDelta);
+			}
+		} else {
+			if (tenantOid == null) {
+				LOGGER.trace("Clearing tenantRef");
+				ReferenceDelta tenantRefDelta = ReferenceDelta.createModificationReplace(ObjectType.F_TENANT_REF, focusContext.getObjectDefinition(), (PrismReferenceValue)null);
+				focusContext.swallowToProjectionWaveSecondaryDelta(tenantRefDelta);
+			} else {
+				if (!tenantOid.equals(currentTenantRef.getOid())) {
+					LOGGER.trace("Changing tenantRef to {}", tenantOid);
+					ReferenceDelta tenantRefDelta = ReferenceDelta.createModificationReplace(ObjectType.F_TENANT_REF, focusContext.getObjectDefinition(), tenantOid);
+					focusContext.swallowToProjectionWaveSecondaryDelta(tenantRefDelta);
+				}
+			}
+		}
 	}
 
 	public <F extends ObjectType> void checkForAssignmentConflicts(LensContext<F> context,
-			OperationResult result) throws PolicyViolationException {
+			OperationResult result) throws PolicyViolationException, SchemaException {
 		for(LensProjectionContext projectionContext: context.getProjectionContexts()) {
 			if (AssignmentPolicyEnforcementType.NONE == projectionContext.getAssignmentPolicyEnforcementType()){
+				continue;
+			}
+			if (projectionContext.isTombstone()) {
 				continue;
 			}
 			if (projectionContext.isAssigned()) {
@@ -873,6 +983,9 @@ public class AssignmentProcessor {
 		XMLGregorianCalendar nextRecomputeTime = null;
 
 		for (EvaluatedAssignmentImpl<F> ea: evaluatedAssignments) {
+			if (ea.isVirtual()) {
+				continue;
+			}
 			Collection<MappingImpl<V,D>> focusMappings = (Collection)ea.getFocusMappings();
 			for (MappingImpl<V,D> mapping: focusMappings) {
 
@@ -963,15 +1076,15 @@ public class AssignmentProcessor {
 			boolean found = false;
 			for (PrismReferenceValue exVal: extractedReferences) {
 				if (MiscUtil.equals(exVal.getOid(), reference.getOid())
-						&& ObjectTypeUtil.relationsEquivalent(exVal.getRelation(), reference.getRelation())) {
+						&& prismContext.relationsEquivalent(exVal.getRelation(), reference.getRelation())) {
 					found = true;
 					break;
 				}
 			}
 			if (!found) {
 				PrismReferenceValue ref = reference.cloneComplex(CloneStrategy.REUSE);		// clone without full object instead of calling canonicalize()
-				if (ref.getRelation() != null && QNameUtil.isUnqualified(ref.getRelation())) {
-					ref.setRelation(new QName(SchemaConstants.NS_ORG, ref.getRelation().getLocalPart(), SchemaConstants.PREFIX_NS_ORG));
+				if (ref.getRelation() == null || QNameUtil.isUnqualified(ref.getRelation())) {
+					ref.setRelation(relationRegistry.normalizeRelation(ref.getRelation()));
 				}
 				extractedReferences.add(ref);
 			}
@@ -987,6 +1100,7 @@ public class AssignmentProcessor {
 				.channel(context.getChannel())
 				.objectResolver(objectResolver)
 				.systemObjectCache(systemObjectCache)
+				.relationRegistry(relationRegistry)
 				.prismContext(prismContext)
 				.mappingFactory(mappingFactory)
 				.mappingEvaluator(mappingEvaluator)

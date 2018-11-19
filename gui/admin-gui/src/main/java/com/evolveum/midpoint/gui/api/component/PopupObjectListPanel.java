@@ -17,9 +17,11 @@ package com.evolveum.midpoint.gui.api.component;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.function.Supplier;
 
 import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.SelectorOptions;
+import com.evolveum.midpoint.web.component.util.SerializableSupplier;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.wicket.ajax.AjaxRequestTarget;
 import org.apache.wicket.extensions.markup.html.repeater.data.table.DataTable;
@@ -35,6 +37,7 @@ import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItem;
 import com.evolveum.midpoint.web.component.util.SelectableBean;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
 import org.apache.wicket.model.Model;
+import org.jetbrains.annotations.NotNull;
 
 public abstract class PopupObjectListPanel<O extends ObjectType> extends ObjectListPanel<O> {
 	private static final long serialVersionUID = 1L;
@@ -48,9 +51,8 @@ public abstract class PopupObjectListPanel<O extends ObjectType> extends ObjectL
 	}
 
 	public PopupObjectListPanel(String id, Class<? extends O> defaultType, Collection<SelectorOptions<GetOperationOptions>> options,
-								boolean multiselect, PageBase parentPage, List<O> selectedObjectsList) {
-		super(id, defaultType, null, options, multiselect, parentPage, selectedObjectsList);
-
+								boolean multiselect, PageBase parentPage) {
+		super(id, defaultType, null, options, multiselect, parentPage);
 	}
 
 	@Override
@@ -60,36 +62,21 @@ public abstract class PopupObjectListPanel<O extends ObjectType> extends ObjectL
 				private static final long serialVersionUID = 1L;
 
 				@Override
-				protected void onUpdateRow(AjaxRequestTarget target, DataTable table, IModel<SelectableBean<O>> rowModel) {
-					super.onUpdateRow(target, table, rowModel);
-					onUpdateCheckbox(target);
+				protected void onUpdateRow(AjaxRequestTarget target, DataTable table, IModel<SelectableBean<O>> rowModel, IModel<Boolean> selected) {
+					super.onUpdateRow(target, table, rowModel, selected);
+					onUpdateCheckbox(target, rowModel);
 				};
 
 				@Override
 				protected void onUpdateHeader(AjaxRequestTarget target, boolean selected, DataTable table) {
 					super.onUpdateHeader(target, selected, table);
-					onUpdateCheckbox(target);
+					onUpdateCheckbox(target, null);
 				}
 
 				@Override
 				protected IModel<Boolean> getEnabled(IModel<SelectableBean<O>> rowModel) {
 						return PopupObjectListPanel.this.getCheckBoxEnableModel(rowModel);
 				}
-
-				@Override
-				protected IModel<Boolean> getCheckBoxValueModel(IModel<SelectableBean<O>> rowModel){
-					IModel<Boolean> model = super.getCheckBoxValueModel(rowModel);
-					if (selectedObjects != null && selectedObjects.size() > 0) {
-						for (O selectedObject : selectedObjects){
-							if (rowModel.getObject().getValue().getOid().equals(selectedObject.getOid())){
-								model.setObject(true);
-								break;
-							}
-						}
-					}
-					return model;
-				}
-
 			};
 		}
 		return null;
@@ -137,7 +124,12 @@ public abstract class PopupObjectListPanel<O extends ObjectType> extends ObjectL
 		return null;
 	}
 
-	protected void onUpdateCheckbox(AjaxRequestTarget target){
+	@Override
+	protected void addCustomActions(@NotNull List<InlineMenuItem> actionsList, SerializableSupplier<Collection<? extends ObjectType>> objectsSupplier) {
+	}
+
+
+	protected void onUpdateCheckbox(AjaxRequestTarget target, IModel<SelectableBean<O>> rowModel){
 
 	}
 

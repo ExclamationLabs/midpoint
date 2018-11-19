@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2010-2017 Evolveum
+ *  Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,12 @@ import com.evolveum.midpoint.prism.ItemProcessing;
 import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.prism.PrismValue;
 import com.evolveum.midpoint.prism.path.ItemPath;
+import com.evolveum.midpoint.repo.common.expression.Expression;
 import com.evolveum.midpoint.util.exception.SchemaException;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ExpressionType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.FormItemServerValidationType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.FormItemValidationType;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ItemRefinedDefinitionType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.MetadataType;
 
 /**
@@ -97,13 +102,9 @@ public abstract class PropertyOrReferenceWrapper<I extends Item<? extends PrismV
 
 	public boolean isVisible() {
 		
-        if (getItemDefinition().isOperational() && !isMetadataContainer()) {			// TODO ...or use itemDefinition instead?
+        if (!isVisibleOnBasisOfModel()) {
 			return false;
 		} 
-        
-        if (getItemDefinition().isDeprecated() && isEmpty()) {
-        	return false;
-        }
 
         if (container == null) {
         	return false;           // TODO: ok ?
@@ -122,6 +123,37 @@ public abstract class PropertyOrReferenceWrapper<I extends Item<? extends PrismV
 //		}
 	}
 	
+	private boolean isVisibleOnBasisOfModel() {
+		
+		if (getItemDefinition().isOperational() && !isMetadataContainer()) {			// TODO ...or use itemDefinition instead?
+			return false;
+		} 
+        
+        if (getItemDefinition().isDeprecated() && isEmpty()) {
+        	return false;
+        }
+        return true;
+	}
+	
+	public boolean isOnlyHide() {
+		
+		if (!isVisibleOnBasisOfModel()) {
+			return false;
+		} 
+		
+		if (container == null) {
+        	return false;
+        }
+		
+		switch (container.getObjectStatus()) {
+    		case ADDING : 
+    			return getItemDefinition().canAdd() && !isShowEmpty();
+    		case MODIFYING :
+    			return getItemDefinition().canRead() && !isShowEmpty();
+    		default : return false;
+		}
+	}
+	
 	@Override
 	public ItemProcessing getProcessing() {
 		return getItemDefinition().getProcessing();
@@ -132,11 +164,11 @@ public abstract class PropertyOrReferenceWrapper<I extends Item<? extends PrismV
 	}
 	
 	private boolean canAddDefault() {
-		return getItemDefinition().canAdd() && getItemDefinition().isEmphasized();
+		return getItemDefinition().canAdd() && (getItemDefinition().isEmphasized() || getItemDefinition().getMinOccurs() == 1);
 	}
 	
 	private boolean canReadOrModifyAndNonEmpty() {
-		return getItemDefinition().canRead() && (!getItem().isEmpty() || getItemDefinition().isEmphasized()); //(getItemDefinition().canModify() || getItemDefinition().canRead()) && !getItem().isEmpty();
+		return getItemDefinition().canRead() && (!getItem().isEmpty() || getItemDefinition().isEmphasized() || getItemDefinition().getMinOccurs() == 1); //(getItemDefinition().canModify() || getItemDefinition().canRead()) && !getItem().isEmpty();
 	}
 	
 	private boolean canReadOrModifyAndShowEmpty() {
@@ -306,5 +338,20 @@ public abstract class PropertyOrReferenceWrapper<I extends Item<? extends PrismV
 	@Override
 	public String getDeprecatedSince() {
 		return getItemDefinition().getDeprecatedSince();
+	}
+	
+	@Override
+	public ExpressionType getFormItemValidator() {
+		FormItemValidationType formItemValidation = item.getDefinition().getAnnotation(ItemRefinedDefinitionType.F_VALIDATION);
+		if (formItemValidation == null) {
+			return null;
+		}
+		
+		List<FormItemServerValidationType> serverValidators = formItemValidation.getServer();
+		if (CollectionUtils.isNotEmpty(serverValidators)) {
+			return serverValidators.iterator().next().getExpression();
+		}
+		
+		return null;
 	}
 }

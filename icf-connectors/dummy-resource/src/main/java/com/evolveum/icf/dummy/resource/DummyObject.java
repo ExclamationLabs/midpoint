@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@ public abstract class DummyObject implements DebugDumpable {
 	private Boolean enabled = true;
 	private Date validFrom = null;
 	private Date validTo = null;
+	private String lastModifier;
 	protected DummyResource resource;
 
 	private final Set<String> auxiliaryObjectClassNames = new HashSet<>();
@@ -88,7 +89,7 @@ public abstract class DummyObject implements DebugDumpable {
 		return enabled;
 	}
 
-	public void setEnabled(Boolean enabled) throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public void setEnabled(Boolean enabled) throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		checkModifyBreak();
 		delayOperation();
 		this.enabled = enabled;
@@ -99,7 +100,7 @@ public abstract class DummyObject implements DebugDumpable {
 		return validFrom;
 	}
 
-	public void setValidFrom(Date validFrom) throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public void setValidFrom(Date validFrom) throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		checkModifyBreak();
 		delayOperation();
 		this.validFrom = validFrom;
@@ -110,11 +111,19 @@ public abstract class DummyObject implements DebugDumpable {
 		return validTo;
 	}
 
-	public void setValidTo(Date validTo) throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public void setValidTo(Date validTo) throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		checkModifyBreak();
 		delayOperation();
 		this.validTo = validTo;
 		recordModify();
+	}
+
+	public String getLastModifier() {
+		return lastModifier;
+	}
+
+	public void setLastModifier(String lastModifier) {
+		this.lastModifier = lastModifier;
 	}
 
 	public BreakMode getModifyBreakMode() {
@@ -149,13 +158,13 @@ public abstract class DummyObject implements DebugDumpable {
 		return getAttributeValue(attrName,String.class);
 	}
 
-	public void replaceAttributeValue(String name, Object value) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public void replaceAttributeValue(String name, Object value) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		Collection<Object> values = new ArrayList<>(1);
 		values.add(value);
 		replaceAttributeValues(name, values);
 	}
 
-	public void replaceAttributeValues(String name, Collection<Object> values) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public void replaceAttributeValues(String name, Collection<Object> values) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		checkModifyBreak();
 		delayOperation();
 		Set<Object> currentValues = attributes.get(name);
@@ -170,7 +179,7 @@ public abstract class DummyObject implements DebugDumpable {
 		recordModify();
 	}
 
-	public void replaceAttributeValues(String name, Object... values) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public void replaceAttributeValues(String name, Object... values) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		checkModifyBreak();
 		delayOperation();
 		Set<Object> currentValues = attributes.get(name);
@@ -189,13 +198,13 @@ public abstract class DummyObject implements DebugDumpable {
 		recordModify();
 	}
 
-	public void addAttributeValue(String name, Object value) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public void addAttributeValue(String name, Object value) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		Collection<Object> values = new ArrayList<>(1);
 		values.add(value);
 		addAttributeValues(name, values);
 	}
 
-	public void addAttributeValues(String name, Collection<Object> valuesToAdd) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public <T> void addAttributeValues(String name, Collection<T> valuesToAdd) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		checkModifyBreak();
 		delayOperation();
 		Set<Object> currentValues = attributes.get(name);
@@ -203,13 +212,13 @@ public abstract class DummyObject implements DebugDumpable {
 			currentValues = new HashSet<>();
 			attributes.put(name, currentValues);
 		}
-		for(Object valueToAdd: valuesToAdd) {
+		for(T valueToAdd: valuesToAdd) {
 			addAttributeValue(name, currentValues, valueToAdd);
 		}
 		recordModify();
 	}
 
-	public void addAttributeValues(String name, String... valuesToAdd) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public void addAttributeValues(String name, String... valuesToAdd) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		checkModifyBreak();
 		delayOperation();
 		Set<Object> currentValues = attributes.get(name);
@@ -223,7 +232,7 @@ public abstract class DummyObject implements DebugDumpable {
 		recordModify();
 	}
 
-	private void addAttributeValue(String attrName, Set<Object> currentValues, Object valueToAdd) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	private void addAttributeValue(String attrName, Set<Object> currentValues, Object valueToAdd) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		checkModifyBreak();
 		delayOperation();
 		if (resource != null && !resource.isTolerateDuplicateValues()) {
@@ -256,13 +265,13 @@ public abstract class DummyObject implements DebugDumpable {
 		currentValues.add(valueToAdd);
 	}
 
-	public void removeAttributeValue(String name, Object value) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public void removeAttributeValue(String name, Object value) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		Collection<Object> values = new ArrayList<>();
 		values.add(value);
 		removeAttributeValues(name, values);
 	}
 
-	public void removeAttributeValues(String name, Collection<Object> values) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException {
+	public <T> void removeAttributeValues(String name, Collection<T> values) throws SchemaViolationException, ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException {
 		checkModifyBreak();
 		delayOperation();
 		Set<Object> currentValues = attributes.get(name);
@@ -333,8 +342,8 @@ public abstract class DummyObject implements DebugDumpable {
 		}
 	}
 
-	private void checkIfExist(Collection<Object> valuesToDelete, Set<Object> currentValues) throws SchemaViolationException{
-		for (Object valueToDelete : valuesToDelete) {
+	private <T> void checkIfExist(Collection<T> valuesToDelete, Set<Object> currentValues) throws SchemaViolationException{
+		for (T valueToDelete : valuesToDelete) {
 			boolean found = false;
 			for (Object currentValue : currentValues) {
 				if (resource.isCaseIgnoreValues() && currentValue instanceof String && valueToDelete instanceof String) {
@@ -394,7 +403,7 @@ public abstract class DummyObject implements DebugDumpable {
 		}
 	}
 
-	private void delayOperation() {
+	private void delayOperation() throws InterruptedException {
 		if (resource != null) {
 			resource.delayOperation();
 		}
@@ -445,7 +454,7 @@ public abstract class DummyObject implements DebugDumpable {
 		return null;
 	}
 
-	abstract protected DummyObjectClass getObjectClass() throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException;
+	abstract protected DummyObjectClass getObjectClass() throws ConnectException, FileNotFoundException, SchemaViolationException, ConflictException, InterruptedException;
 
 	abstract protected DummyObjectClass getObjectClassNoExceptions();
 
@@ -458,11 +467,6 @@ public abstract class DummyObject implements DebugDumpable {
 
 	protected String toStringContent() {
 		return "name=" + name + ", attributes=" + attributes + ", enabled=" + enabled;
-	}
-
-	@Override
-	public String debugDump() {
-		return debugDump(0);
 	}
 
 	@Override
@@ -482,6 +486,8 @@ public abstract class DummyObject implements DebugDumpable {
 			DebugUtil.debugDumpLabel(sb, "Validity", indent + 1);
 			sb.append(" ").append(PrettyPrinter.prettyPrint(validFrom)).append(" - ").append(PrettyPrinter.prettyPrint(validTo));
 		}
+		sb.append("\n");
+		DebugUtil.debugDumpWithLabel(sb, "lastModifier", lastModifier, indent + 1);
 		sb.append("\n");
 		DebugUtil.debugDumpWithLabel(sb, "Attributes", attributes, indent + 1);
 		extendDebugDump(sb, indent);

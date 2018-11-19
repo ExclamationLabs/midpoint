@@ -18,7 +18,10 @@ package com.evolveum.midpoint.web.page.admin.orgs;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.web.component.util.SelectableBean;
+import com.evolveum.midpoint.web.session.UsersStorage;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.FocusType;
 import org.apache.wicket.ajax.AjaxEventBehavior;
 import org.apache.wicket.ajax.AjaxRequestTarget;
 import org.apache.wicket.extensions.markup.html.tabs.AbstractTab;
@@ -56,6 +59,7 @@ public abstract class AbstractOrgTabPanel extends BasePanel {
 
     private static final String DOT_CLASS = OrgTreeAssignablePanel.class.getName() + ".";
     private static final String OPERATION_LOAD_ORG_UNIT = DOT_CLASS + "loadOrgUnit";
+    private static final String OPERATION_LOAD_ASSIGNABLE_ITEMS = DOT_CLASS + "loadAssignableOrgs";
 
     private String ID_TABS = "tabs";
     private List<PrismObject<OrgType>> roots;
@@ -88,8 +92,10 @@ public abstract class AbstractOrgTabPanel extends BasePanel {
                             		private static final long serialVersionUID = 1L;
 
                                     protected void onEvent(final AjaxRequestTarget target) {
-                                        SessionStorage storage = getPageBase().getSessionStorage();
-                                        storage.getUsers().setSelectedTabId(tabId);
+                                        UsersStorage usersStorage = getUsersSessionStorage();
+                                        if (usersStorage != null) {
+                                            usersStorage.setSelectedTabId(tabId);
+                                        }
                                     }
                                 }
                             );
@@ -108,12 +114,14 @@ public abstract class AbstractOrgTabPanel extends BasePanel {
             }
         };
 
-        final SessionStorage storage = getPageBase().getSessionStorage();
-        int selectedTab = storage.getUsers().getSelectedTabId() == -1 ? 0 : storage.getUsers().getSelectedTabId();
         List<ITab> tabsList = tabModel.getObject();
-        if (tabsList == null || (selectedTab > tabsList.size() - 1)) {
-            storage.getUsers().setSelectedTabId(0);
-            selectedTab = 0;
+        UsersStorage usersStorage = getUsersSessionStorage();
+        int selectedTab = 0;
+        if (usersStorage != null) {
+            selectedTab = usersStorage.getSelectedTabId() == -1 ? 0 : usersStorage.getSelectedTabId();
+            if (tabsList == null || (selectedTab > tabsList.size() - 1)) {
+                usersStorage.setSelectedTabId(0);
+            }
         }
         AjaxTabbedPanel<ITab> tabbedPanel = new AjaxTabbedPanel<ITab>(ID_TABS, tabModel.getObject(), new Model<>(selectedTab), null){
 
@@ -169,6 +177,10 @@ public abstract class AbstractOrgTabPanel extends BasePanel {
         List<PrismObject<OrgType>> list = new ArrayList<>();
         try {
             ObjectQuery query = ObjectQueryUtil.createRootOrgQuery(getPageBase().getPrismContext());
+            ObjectFilter assignableItemsFilter = getAssignableItemsFilter();
+            if (assignableItemsFilter != null){
+                query.addFilter(assignableItemsFilter);
+            }
             list = getPageBase().getModelService().searchObjects(OrgType.class, query, null, task, result);
             // Sort org roots by displayOrder, if not set push the org to the end
             list.sort((o1, o2) -> (o1.getRealValue().getDisplayOrder() == null ? Integer.MAX_VALUE : o1.getRealValue().getDisplayOrder())
@@ -190,18 +202,29 @@ public abstract class AbstractOrgTabPanel extends BasePanel {
         return list;
     }
 
+    protected ObjectFilter getAssignableItemsFilter(){
+        return null;
+    }
+
     protected boolean isWarnMessageVisible(){
         return true;
     }
 
     protected void changeTabPerformed(int index){
         if (roots != null && index >= 0 && index <= roots.size()){
-            SessionStorage storage = getPageBase().getSessionStorage();
-            SelectableBean<OrgType> selected = new SelectableBean<>();
-            selected.setValue(roots.get(index).asObjectable());
-            storage.getUsers().setSelectedItem(selected);
-            storage.getUsers().setSelectedTabId(index);
+            UsersStorage usersStorage = getUsersSessionStorage();
+            if (usersStorage != null) {
+                SelectableBean<OrgType> selected = new SelectableBean<>();
+                selected.setValue(roots.get(index).asObjectable());
+                usersStorage.setSelectedItem(selected);
+                usersStorage.setSelectedTabId(index);
+                usersStorage.setInverse(false);
+            }
         }
+    }
+
+    protected UsersStorage getUsersSessionStorage(){
+        return getPageBase().getSessionStorage().getUsers();
     }
 
 }

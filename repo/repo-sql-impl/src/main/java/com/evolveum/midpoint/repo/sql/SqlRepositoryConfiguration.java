@@ -24,13 +24,14 @@ import com.evolveum.midpoint.util.exception.SystemException;
 import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
 import org.apache.commons.configuration.Configuration;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.h2.Driver;
 import org.hibernate.dialect.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
+import java.io.*;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -45,19 +46,40 @@ import static org.apache.commons.lang3.ObjectUtils.defaultIfNull;
  */
 public class SqlRepositoryConfiguration {
 
-    private static final Trace LOGGER = TraceManager.getTrace(SqlRepositoryConfiguration.class);
+	private static final Trace LOGGER = TraceManager.getTrace(SqlRepositoryConfiguration.class);
+
+	private static final String HBM2DDL_CREATE_DROP = "create-drop";
+	private static final String HBM2DDL_CREATE = "create";
+	private static final String HBM2DDL_UPDATE = "update";
+	private static final String HBM2DDL_VALIDATE = "validate";
+	private static final String HBM2DDL_NONE = "none";
 
 	public enum Database {
 
-    	// we might include other dialects if needed (but the ones listed here are the recommended ones)
-        H2(DRIVER_H2, H2Dialect.class.getName()),
-		MYSQL(DRIVER_MYSQL, MidPointMySQLDialect.class.getName()),
-		POSTGRESQL(DRIVER_POSTGRESQL, MidPointPostgreSQLDialect.class.getName()),
-		SQLSERVER(DRIVER_SQLSERVER, UnicodeSQLServer2008Dialect.class.getName()),
-		ORACLE(DRIVER_ORACLE, MidPointOracleDialect.class.getName()),
-		MARIADB(DRIVER_MARIADB, MidPointMySQLDialect.class.getName());
+		// order is important! (the first value is the default)
+        H2(DRIVER_H2,
+			        H2Dialect.class.getName()),
+		MYSQL(DRIVER_MYSQL,
+				MidPointMySQLDialect.class.getName(),
+				org.hibernate.dialect.MySQLDialect.class.getName(),
+				org.hibernate.dialect.MySQLInnoDBDialect.class.getName()),
+		POSTGRESQL(DRIVER_POSTGRESQL,
+				MidPointPostgreSQLDialect.class.getName(),
+				org.hibernate.dialect.PostgreSQLDialect.class.getName(),
+				org.hibernate.dialect.PostgresPlusDialect.class.getName()),
+		SQLSERVER(DRIVER_SQLSERVER,
+				UnicodeSQLServer2008Dialect.class.getName(),
+				org.hibernate.dialect.SQLServerDialect.class.getName()),
+		ORACLE(DRIVER_ORACLE,
+				MidPointOracleDialect.class.getName(),
+				org.hibernate.dialect.OracleDialect.class.getName(),
+				org.hibernate.dialect.Oracle9Dialect.class.getName(),
+				org.hibernate.dialect.Oracle8iDialect.class.getName(),
+				org.hibernate.dialect.Oracle9iDialect.class.getName(),
+				org.hibernate.dialect.Oracle10gDialect.class.getName()),
+		MARIADB(DRIVER_MARIADB,
+				MidPointMySQLDialect.class.getName());
 
-        // order is important! (the first value is the default)
 		@NotNull List<String> drivers;
 		@NotNull List<String> dialects;
 
@@ -116,12 +138,129 @@ public class SqlRepositoryConfiguration {
 	    }
     }
 
+	/**
+	 * What to do if the DB schema is missing.
+	 */
+	public enum MissingSchemaAction {
+		/**
+		 * The problem is reported and midPoint startup is cancelled. This is the default.
+		 */
+		STOP("stop"),
+		/**
+		 * The problem is reported but startup continues. Not recommended.
+		 */
+		WARN("warn"),
+		/**
+		 * MidPoint will attempt to create the schema using standard DB scripts. Then it will validate the schema again.
+		 */
+	    CREATE("create");
+
+	    private String value;
+
+		MissingSchemaAction(String value) {
+			this.value = value;
+		}
+
+		public String getValue() {
+			return value;
+		}
+
+		public static MissingSchemaAction fromValue(String text) {
+			if (StringUtils.isEmpty(text)) {
+				return null;
+			}
+			for (MissingSchemaAction a : values()) {
+				if (text.equals(a.value)) {
+					return a;
+				}
+			}
+			throw new IllegalArgumentException("Unknown MissingSchemaAction: " + text);
+		}
+	}
+
+	/**
+	 * What to do if the DB schema is outdated and is upgradeable (either automatically or manually).
+	 */
+	public enum UpgradeableSchemaAction {
+		/**
+		 * The problem is reported and midPoint startup is cancelled. This is the default.
+		 */
+		STOP("stop"),
+		/**
+		 * The problem is reported. Not recommended.
+		 */
+	    WARN("warn"),
+		/**
+		 * An automatic upgrade is attempted, if possible. (If not possible, the startup is cancelled.) NOT SUPPORTED YET.
+		 */
+	    UPGRADE("upgrade");
+
+		private String value;
+
+		UpgradeableSchemaAction(String value) {
+			this.value = value;
+		}
+
+		public String getValue() {
+			return value;
+		}
+
+		public static UpgradeableSchemaAction fromValue(String text) {
+			if (StringUtils.isEmpty(text)) {
+				return null;
+			}
+			for (UpgradeableSchemaAction a : values()) {
+				if (text.equals(a.value)) {
+					return a;
+				}
+			}
+			throw new IllegalArgumentException("Unknown UpgradeableSchemaAction: " + text);
+		}
+	}
+
+	/**
+	 * What to do if the DB schema is incompatible (e.g. newer schema with older midPoint).
+	 */
+	public enum IncompatibleSchemaAction {
+		/**
+		 * The problem is reported and midPoint startup is cancelled. This is the default.
+		 */
+		STOP("stop"),
+		/**
+		 * The problem is reported. Not recommended.
+		 */
+	    WARN("warn");
+
+		private String value;
+
+		IncompatibleSchemaAction(String value) {
+			this.value = value;
+		}
+
+		public String getValue() {
+			return value;
+		}
+
+		public static IncompatibleSchemaAction fromValue(String text) {
+			if (StringUtils.isEmpty(text)) {
+				return null;
+			}
+			for (IncompatibleSchemaAction a : values()) {
+				if (text.equals(a.value)) {
+					return a;
+				}
+			}
+			throw new IllegalArgumentException("Unknown IncompatibleSchemaAction: " + text);
+		}
+	}
+
 	private static final String DEFAULT_FILE_NAME = "midpoint";
 	private static final String DEFAULT_EMBEDDED_H2_JDBC_USERNAME = "sa";
 	private static final String DEFAULT_EMBEDDED_H2_JDBC_PASSWORD = "";
 	private static final int DEFAULT_EMBEDDED_H2_PORT = 5437;
 	private static final int DEFAULT_MIN_POOL_SIZE = 8;
 	private static final int DEFAULT_MAX_POOL_SIZE = 20;
+	private static final int DEFAULT_MAX_OBJECTS_FOR_IMPLICIT_FETCH_ALL_ITERATION_METHOD = 500;
 
 	private static final String USER_HOME_VARIABLE = "user.home";
 	private static final String MIDPOINT_HOME_VARIABLE = "midpoint.home";
@@ -138,6 +277,7 @@ public class SqlRepositoryConfiguration {
     public static final String PROPERTY_HIBERNATE_HBM2DDL = "hibernateHbm2ddl";
     public static final String PROPERTY_HIBERNATE_DIALECT = "hibernateDialect";
     public static final String PROPERTY_JDBC_PASSWORD = "jdbcPassword";
+    public static final String PROPERTY_JDBC_PASSWORD_FILE = "jdbcPasswordFile";
     public static final String PROPERTY_JDBC_USERNAME = "jdbcUsername";
     public static final String PROPERTY_JDBC_URL = "jdbcUrl";
     public static final String PROPERTY_DATASOURCE = "dataSource";
@@ -156,12 +296,23 @@ public class SqlRepositoryConfiguration {
     //other
     public static final String PROPERTY_ITERATIVE_SEARCH_BY_PAGING = "iterativeSearchByPaging";
     public static final String PROPERTY_ITERATIVE_SEARCH_BY_PAGING_BATCH_SIZE = "iterativeSearchByPagingBatchSize";
+    public static final String PROPERTY_MAX_OBJECTS_FOR_IMPLICIT_FETCH_ALL_ITERATION_METHOD = "maxObjectsForImplicitFetchAllIterationMethod";
 
     //closure
     public static final String PROPERTY_IGNORE_ORG_CLOSURE = "ignoreOrgClosure";
     public static final String PROPERTY_ORG_CLOSURE_STARTUP_ACTION = "orgClosureStartupAction";
     public static final String PROPERTY_SKIP_ORG_CLOSURE_STRUCTURE_CHECK = "skipOrgClosureStructureCheck";
     public static final String PROPERTY_STOP_ON_ORG_CLOSURE_STARTUP_FAILURE = "stopOnOrgClosureStartupFailure";
+
+	public static final String PROPERTY_SKIP_EXPLICIT_SCHEMA_VALIDATION = "skipExplicitSchemaValidation";
+	public static final String PROPERTY_MISSING_SCHEMA_ACTION = "missingSchemaAction";
+	public static final String PROPERTY_UPGRADEABLE_SCHEMA_ACTION = "upgradeableSchemaAction";
+	public static final String PROPERTY_INCOMPATIBLE_SCHEMA_ACTION = "incompatibleSchemaAction";
+	public static final String PROPERTY_SCHEMA_VERSION_IF_MISSING = "schemaVersionIfMissing";
+	public static final String PROPERTY_SCHEMA_VERSION_OVERRIDE = "schemaVersionOverride";
+	public static final String PROPERTY_SCHEMA_VARIANT = "schemaVariant";
+
+	public static final String PROPERTY_INITIALIZATION_FAIL_TIMEOUT = "initializationFailTimeout";
 
     private static final String DRIVER_H2 = Driver.class.getName();
     private static final String DRIVER_MYSQL = "com.mysql.cj.jdbc.Driver";
@@ -216,6 +367,7 @@ public class SqlRepositoryConfiguration {
 
     private boolean defaultIterativeSearchByPaging;
     private int defaultIterativeSearchByPagingBatchSize;
+	private final int maxObjectsForImplicitFetchAllIterationMethod;
 
     private final boolean iterativeSearchByPaging;
     private int iterativeSearchByPagingBatchSize;               // not final only because of testing
@@ -224,6 +376,16 @@ public class SqlRepositoryConfiguration {
     private final OrgClosureManager.StartupAction orgClosureStartupAction;
     private final boolean skipOrgClosureStructureCheck;
     private final boolean stopOnOrgClosureStartupFailure;
+
+    private final long initializationFailTimeout;
+
+    private boolean skipExplicitSchemaValidation;
+    @NotNull private final MissingSchemaAction missingSchemaAction;
+    @NotNull private final UpgradeableSchemaAction upgradeableSchemaAction;
+    @NotNull private final IncompatibleSchemaAction incompatibleSchemaAction;
+	private String schemaVersionIfMissing;
+	private String schemaVersionOverride;
+	private String schemaVariant;           // e.g. "utf8mb4" for MySQL/MariaDB
 
 	/*
 	 * Notes:
@@ -278,7 +440,17 @@ public class SqlRepositoryConfiguration {
 
         hibernateHbm2ddl = configuration.getString(PROPERTY_HIBERNATE_HBM2DDL, getDefaultHibernateHbm2ddl(database));
         jdbcUsername = configuration.getString(PROPERTY_JDBC_USERNAME, embedded ? DEFAULT_EMBEDDED_H2_JDBC_USERNAME : null);
-	    jdbcPassword = configuration.getString(PROPERTY_JDBC_PASSWORD, embedded ? DEFAULT_EMBEDDED_H2_JDBC_PASSWORD : null);
+
+	    String jdbcPasswordFile = configuration.getString(PROPERTY_JDBC_PASSWORD_FILE);
+	    if (jdbcPasswordFile != null) {
+		    try {
+			    jdbcPassword = readFile(jdbcPasswordFile);
+		    } catch (IOException e) {
+			    throw new SystemException("Couldn't read JDBC password from specified file '" + jdbcPasswordFile + "': " + e.getMessage(), e);
+		    }
+	    } else {
+		    jdbcPassword = configuration.getString(PROPERTY_JDBC_PASSWORD, embedded ? DEFAULT_EMBEDDED_H2_JDBC_PASSWORD : null);
+	    }
         port = configuration.getInt(PROPERTY_PORT, DEFAULT_EMBEDDED_H2_PORT);
         tcpSSL = configuration.getBoolean(PROPERTY_TCP_SSL, false);
         dropIfExists = configuration.getBoolean(PROPERTY_DROP_IF_EXISTS, false);
@@ -304,6 +476,8 @@ public class SqlRepositoryConfiguration {
         computeDefaultIterativeSearchParameters();
         iterativeSearchByPaging = configuration.getBoolean(PROPERTY_ITERATIVE_SEARCH_BY_PAGING, defaultIterativeSearchByPaging);
         iterativeSearchByPagingBatchSize = configuration.getInt(PROPERTY_ITERATIVE_SEARCH_BY_PAGING_BATCH_SIZE, defaultIterativeSearchByPagingBatchSize);
+        maxObjectsForImplicitFetchAllIterationMethod = configuration.getInt(PROPERTY_MAX_OBJECTS_FOR_IMPLICIT_FETCH_ALL_ITERATION_METHOD,
+		        DEFAULT_MAX_OBJECTS_FOR_IMPLICIT_FETCH_ALL_ITERATION_METHOD);
 
         ignoreOrgClosure = configuration.getBoolean(PROPERTY_IGNORE_ORG_CLOSURE, false);
         orgClosureStartupAction = OrgClosureManager.StartupAction.fromValue(
@@ -311,7 +485,40 @@ public class SqlRepositoryConfiguration {
 				        OrgClosureManager.StartupAction.REBUILD_IF_NEEDED.toString()));
         skipOrgClosureStructureCheck = configuration.getBoolean(PROPERTY_SKIP_ORG_CLOSURE_STRUCTURE_CHECK, false);
         stopOnOrgClosureStartupFailure = configuration.getBoolean(PROPERTY_STOP_ON_ORG_CLOSURE_STARTUP_FAILURE, true);
+
+        skipExplicitSchemaValidation = configuration.getBoolean(PROPERTY_SKIP_EXPLICIT_SCHEMA_VALIDATION,
+		        isAutoUpdate(hibernateHbm2ddl) || isValidate(hibernateHbm2ddl));
+
+        missingSchemaAction = defaultIfNull(MissingSchemaAction.fromValue(configuration.getString(PROPERTY_MISSING_SCHEMA_ACTION)),
+		        MissingSchemaAction.STOP);
+	    upgradeableSchemaAction = defaultIfNull(UpgradeableSchemaAction.fromValue(
+	    		configuration.getString(PROPERTY_UPGRADEABLE_SCHEMA_ACTION)), UpgradeableSchemaAction.STOP);
+	    incompatibleSchemaAction = defaultIfNull(IncompatibleSchemaAction
+			    .fromValue(configuration.getString(PROPERTY_INCOMPATIBLE_SCHEMA_ACTION)), IncompatibleSchemaAction.STOP);
+
+	    schemaVersionIfMissing = configuration.getString(PROPERTY_SCHEMA_VERSION_IF_MISSING);
+	    schemaVersionOverride = configuration.getString(PROPERTY_SCHEMA_VERSION_OVERRIDE);
+	    schemaVariant = configuration.getString(PROPERTY_SCHEMA_VARIANT);
+
+	    initializationFailTimeout = configuration.getLong(PROPERTY_INITIALIZATION_FAIL_TIMEOUT, 1L);
     }
+
+	private boolean isAutoUpdate(String hbm2ddl) {
+		assert hbm2ddl != null;
+		return HBM2DDL_UPDATE.equals(hbm2ddl) || HBM2DDL_CREATE.equals(hbm2ddl) || HBM2DDL_CREATE_DROP.equals(hbm2ddl);
+	}
+
+	private boolean isValidate(String hbm2ddl) {
+		assert hbm2ddl != null;
+		return HBM2DDL_VALIDATE.equals(hbm2ddl);
+	}
+
+	private String readFile(String filename) throws IOException {
+		try (FileReader reader = new FileReader(filename)) {
+			List<String> lines = IOUtils.readLines(reader);
+			return String.join("\n", lines);
+		}
+	}
 
 	private String getDefaultEmbeddedJdbcUrl() {
 		return getDefaultEmbeddedJdbcUrlPrefix()
@@ -400,7 +607,7 @@ public class SqlRepositoryConfiguration {
 	}
 
 	private static String getDefaultHibernateHbm2ddl(Database database) {
-		return database == H2 ? "update" : "validate";
+		return database == H2 ? HBM2DDL_UPDATE : HBM2DDL_NONE;
 	}
 
     private void computeDefaultConcurrencyParameters() {
@@ -455,15 +662,8 @@ public class SqlRepositoryConfiguration {
     }
 
     private void computeDefaultIterativeSearchParameters() {
-        if (isUsingH2()) {
-            defaultIterativeSearchByPaging = true;
-            defaultIterativeSearchByPagingBatchSize = 50;
-        } else if (isUsingMySqlCompatible()) {
-	        defaultIterativeSearchByPaging = true;
-	        defaultIterativeSearchByPagingBatchSize = 50;
-        } else {
-	        defaultIterativeSearchByPaging = false;
-        }
+	    defaultIterativeSearchByPaging = true;
+	    defaultIterativeSearchByPagingBatchSize = 50;
     }
 
     /**
@@ -649,7 +849,11 @@ public class SqlRepositoryConfiguration {
         this.iterativeSearchByPagingBatchSize = iterativeSearchByPagingBatchSize;
     }
 
-    public String getDataSource() {
+	public int getMaxObjectsForImplicitFetchAllIterationMethod() {
+		return maxObjectsForImplicitFetchAllIterationMethod;
+	}
+
+	public String getDataSource() {
         return dataSource;
     }
 
@@ -720,4 +924,39 @@ public class SqlRepositoryConfiguration {
     public Database getDatabase() {
         return database;
     }
+
+    @NotNull
+	public MissingSchemaAction getMissingSchemaAction() {
+		return missingSchemaAction;
+	}
+
+	@NotNull
+	public UpgradeableSchemaAction getUpgradeableSchemaAction() {
+		return upgradeableSchemaAction;
+	}
+
+	@NotNull
+	public IncompatibleSchemaAction getIncompatibleSchemaAction() {
+		return incompatibleSchemaAction;
+	}
+
+	public boolean isSkipExplicitSchemaValidation() {
+		return skipExplicitSchemaValidation;
+	}
+
+	public String getSchemaVersionIfMissing() {
+		return schemaVersionIfMissing;
+	}
+
+	public String getSchemaVersionOverride() {
+		return schemaVersionOverride;
+	}
+
+	public String getSchemaVariant() {
+		return schemaVariant;
+	}
+
+	public long getInitializationFailTimeout() {
+		return initializationFailTimeout;
+	}
 }

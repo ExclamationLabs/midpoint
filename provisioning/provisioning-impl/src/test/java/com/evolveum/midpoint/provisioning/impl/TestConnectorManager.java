@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Evolveum
+ * Copyright (c) 2017-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,19 +44,16 @@ import com.evolveum.midpoint.util.logging.TraceManager;
 @DirtiesContext
 public class TestConnectorManager extends AbstractIntegrationTest {
 
-	private static final String CONNID_FRAMEWORK_VERSION = "1.4.3.11";
+	private static final String CONNID_FRAMEWORK_VERSION = "1.5.0.0";
 
-	@Autowired
-	private ProvisioningService provisioningService;
-
-	@Autowired
-	private ConnectorManager connectorManager;
+	@Autowired private ProvisioningService provisioningService;
+	@Autowired private ConnectorManager connectorManager;
 
 	private static Trace LOGGER = TraceManager.getTrace(TestConnectorManager.class);
 
 	@Override
 	public void initSystem(Task initTask, OperationResult initResult) throws Exception {
-		// do NOT postInit proviosioning. postInit would start connector disovery
+		// do NOT postInit provisioning. postInit would start connector discovery
 		// we want to test the state before discovery
 //		provisioningService.postInit(initResult);
 	}
@@ -64,22 +61,21 @@ public class TestConnectorManager extends AbstractIntegrationTest {
 	@Test
 	public void test100ListConnectorFactories() throws Exception {
 		final String TEST_NAME = "test100ListConnectorFactories";
-		TestUtil.displayTestTitle(TEST_NAME);
+		displayTestTitle(TEST_NAME);
 
 		OperationResult result = new OperationResult(TestConnectorDiscovery.class.getName() + "." + TEST_NAME);
 
 		// WHEN
-		TestUtil.displayWhen(TEST_NAME);
+		displayWhen(TEST_NAME);
 		Collection<ConnectorFactory> connectorFactories = connectorManager.getConnectorFactories();
 
 		// THEN
-		TestUtil.displayThen(TEST_NAME);
+		displayThen(TEST_NAME);
 		assertNotNull("Null connector factories", connectorFactories);
 		assertFalse("No connector factories found", connectorFactories.isEmpty());
 		display("Found "+connectorFactories.size()+" connector factories");
 
-		result.computeStatus();
-		TestUtil.assertSuccess(result);
+		assertSuccess(result);
 
 
 		for (ConnectorFactory connectorFactory : connectorFactories) {
@@ -95,25 +91,24 @@ public class TestConnectorManager extends AbstractIntegrationTest {
 	@Test
 	public void test110SelfTest() throws Exception {
 		final String TEST_NAME = "test100ListConnectorFactories";
-		TestUtil.displayTestTitle(TEST_NAME);
+		displayTestTitle(TEST_NAME);
 
 		Task task = taskManager.createTaskInstance(TestConnectorDiscovery.class.getName() + "." + TEST_NAME);
 		OperationResult result = task.getResult();
 
 		// WHEN
-		TestUtil.displayWhen(TEST_NAME);
+		displayWhen(TEST_NAME);
 		connectorManager.connectorFrameworkSelfTest(result, task);
 
 		// THEN
-		TestUtil.displayThen(TEST_NAME);
-		result.computeStatus();
-		TestUtil.assertSuccess(result);
+		displayThen(TEST_NAME);
+		assertSuccess(result);
 	}
 
 	@Test
 	public void test120FrameworkVersion() throws Exception {
 		final String TEST_NAME = "test120FrameworkVersion";
-		TestUtil.displayTestTitle(TEST_NAME);
+		displayTestTitle(TEST_NAME);
 
 		// WHEN
 		String frameworkVersion = connectorManager.getFrameworkVersion();

@@ -23,8 +23,10 @@ import java.util.Map;
 import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.prism.Item;
+import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.prism.PrismValue;
 import com.evolveum.midpoint.prism.path.ItemPath;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import com.evolveum.midpoint.util.LocalizableMessage;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.jetbrains.annotations.NotNull;
@@ -499,6 +501,8 @@ public interface MidpointFunctions {
 	 * object.
 	 * </p>
 	 * 
+	 * @deprecated use searchShadowOwner instead
+	 * 
 	 * @param accountOid
 	 *            OID of the account to look for an owner
 	 * @return owner of the account or null
@@ -516,8 +520,13 @@ public interface MidpointFunctions {
 	 *             unknown error from underlying layers or other unexpected
 	 *             state
 	 */
+	@Deprecated
 	PrismObject<UserType> findShadowOwner(String accountOid) throws ObjectNotFoundException, SecurityViolationException, SchemaException, ConfigurationException, ExpressionEvaluationException, CommunicationException;
 
+	<F extends FocusType> PrismObject<F> searchShadowOwner(String accountOid)
+			throws ObjectNotFoundException, SecurityViolationException, SchemaException, ConfigurationException,
+			ExpressionEvaluationException, CommunicationException;
+	
 	/**
 	 * <p>
 	 * Search for objects.
@@ -884,10 +893,8 @@ public interface MidpointFunctions {
 	 *             wrong OID format
 	 */
 	OperationResult testResource(String resourceOid) throws ObjectNotFoundException;
-	
-	
 
-    List<String> toList(String... s);
+	List<String> toList(String... s);
 
     Collection<String> getManagersOids(UserType user) throws SchemaException, ObjectNotFoundException, SecurityViolationException;
 
@@ -1145,4 +1152,19 @@ public interface MidpointFunctions {
 	 */
 	@NotNull
 	Collection<PrismValue> collectAssignedFocusMappingsResults(@NotNull ItemPath path) throws SchemaException;
+	
+	<F extends FocusType> List<F> getFocusesByCorrelationRule(Class<F> type, String resourceOid, ShadowKindType kind, String intent, ShadowType shadow);
+
+	<F extends ObjectType> ModelContext<F> previewChanges(Collection<ObjectDelta<? extends ObjectType>> deltas,
+			ModelExecuteOptions options)
+			throws CommunicationException, ObjectNotFoundException, ObjectAlreadyExistsException, ConfigurationException,
+			SchemaException, SecurityViolationException, PolicyViolationException, ExpressionEvaluationException;
+
+	PrismContext getPrismContext();
+
+	RelationRegistry getRelationRegistry();
+
+	<T extends ObjectType> void applyDefinition(T object)
+			throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException,
+			ExpressionEvaluationException;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -92,6 +92,13 @@ public interface Definition extends Serializable, DebugDumpable, Revivable {
      * future release without any warning. Use at your own risk.
 	 */
 	boolean isExperimental();
+	
+	/**
+	 * Version of data model in which the item is likely to be removed.
+     * This annotation is used for deprecated item to indicate imminent incompatibility in future versions of data model.
+	 */
+	String getPlannedRemoval();
+	
 	/**
 	 * Elaborate items are complicated data structure that may deviate from
      * normal principles of the system. For example elaborate items may not
@@ -168,6 +175,24 @@ public interface Definition extends Serializable, DebugDumpable, Revivable {
 
 	// todo suspicious, please investigate and document
 	Class getTypeClass();
+	
+	/**
+	 * Returns generic definition annotation. Annotations are a method to
+	 * extend schema definitions. 
+	 * This may be annotation stored in the schema definition file (e.g. XSD)
+	 * or it may be a dynamic annotation determined at run-time.
+	 * 
+	 * Annotation value should be a prism-suported object. E.g. a prims "bean"
+	 * (JAXB annotated class), prism item, prism value or something like that.
+	 * 
+	 * EXPERIMENTAL. Hic sunt liones. This may change at any moment.
+	 * 
+	 * Note: annotations are only partially supported now (3.8).
+	 * They are somehow transient. E.g. they are not serialized to
+	 * XSD schema definitions (yet).
+	 */
+	<A> A getAnnotation(QName qname);
+	<A> void setAnnotation(QName qname, A value);
 
 	@NotNull
 	Definition clone();
@@ -175,4 +200,5 @@ public interface Definition extends Serializable, DebugDumpable, Revivable {
 	default String debugDump(int indent, IdentityHashMap<Definition,Object> seen) {
 		return debugDump(indent);
 	}
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,14 @@ package com.evolveum.midpoint.model.common.expression.functions;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.text.Normalizer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Date;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,8 +36,11 @@ import javax.naming.directory.Attributes;
 import javax.naming.ldap.LdapName;
 import javax.naming.ldap.Rdn;
 import javax.xml.datatype.XMLGregorianCalendar;
+import javax.xml.namespace.QName;
 
+import com.evolveum.midpoint.common.Clock;
 import com.evolveum.midpoint.prism.*;
+import com.evolveum.midpoint.util.QNameUtil;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import com.evolveum.prism.xml.ns._public.types_3.ItemPathType;
 import org.apache.commons.io.FileUtils;
@@ -79,6 +81,7 @@ import static java.util.Collections.emptyList;
 public class BasicExpressionFunctions {
 
     public static final String NAME_SEPARATOR = " ";
+    private final Charset UTF8_CHARSET = Charset.forName("UTF-8");
 
     public static final Trace LOGGER = TraceManager.getTrace(BasicExpressionFunctions.class);
 
@@ -86,13 +89,17 @@ public class BasicExpressionFunctions {
     private static String STRING_PATTERN_HONORIFIC_PREFIX_ENDS_WITH_DOT = "^(\\S+\\.)$";
     private static Pattern PATTERN_NICK_NAME = Pattern.compile("^([^\"]*)\"([^\"]+)\"([^\"]*)$");
 
-    private PrismContext prismContext;
-    private Protector protector;
+    private final PrismContext prismContext;
+    private final Protector protector;
+    private final Clock clock;
+    private final SecureRandom secureRandom;
 
-    public BasicExpressionFunctions(PrismContext prismContext, Protector protector) {
+    public BasicExpressionFunctions(PrismContext prismContext, Protector protector, Clock clock) {
         super();
         this.prismContext = prismContext;
         this.protector = protector;
+        this.clock = clock;
+        this.secureRandom = new SecureRandom();
     }
 
     /**
@@ -551,6 +558,16 @@ public class BasicExpressionFunctions {
         return ShadowUtil.getAttributeValues(shadow, attributeQname, String.class);
     }
 
+    public void setExtensionRealValues(PrismContainerValue<?> containerValue, Map<String, Object> map) throws SchemaException {
+        PrismContainer<Containerable> ext = containerValue.findOrCreateContainer(ObjectType.F_EXTENSION);
+        Map<QName, Object> qnameKeyedMap = new HashMap<>();
+        map.forEach((uri, value) -> qnameKeyedMap.put(QNameUtil.uriToQName(uri, true), value));
+        List<Item<?, ?>> items = ObjectTypeUtil.mapToExtensionItems(qnameKeyedMap, ext.getDefinition(), prismContext);
+        for (Item<?, ?> item : items) {
+            ext.getValue().addReplaceExisting(item);
+        }
+    }
+
     public <T> T getIdentifierValue(ShadowType shadow) throws SchemaException {
         if (shadow == null) {
             return null;
@@ -760,7 +777,7 @@ public class BasicExpressionFunctions {
     }
 
     public XMLGregorianCalendar currentDateTime() {
-        return XmlTypeConverter.createXMLGregorianCalendar(System.currentTimeMillis());
+        return clock.currentTimeXMLGregorianCalendar();
     }
 
     private ParsedFullName parseFullName(String fullName) {
@@ -1014,6 +1031,78 @@ public class BasicExpressionFunctions {
         }
         components[components.length - 1] = suffix;
         return composeDn(components);
+    }
+    
+    /**
+     * Hashes cleartext password in an (unofficial) LDAP password format. Supported algorithms: SSHA, SHA and MD5.
+     */
+    public String hashLdapPassword(ProtectedStringType protectedString, String alg) throws NoSuchAlgorithmException, EncryptionException {
+    	if (protectedString == null) {
+    		return null;
+    	}
+    	String clearString = protector.decryptString(protectedString);
+    	if (clearString == null) {
+    		return null;
+    	}
+    	return hashLdapPassword(clearString.getBytes(UTF8_CHARSET), alg);
+    }
+    
+    /**
+     * Hashes cleartext password in an (unofficial) LDAP password format. Supported algorithms: SSHA, SHA and MD5.
+     */
+    public String hashLdapPassword(String clearString, String alg) throws NoSuchAlgorithmException {
+    	if (clearString == null) {
+    		return null;
+    	}
+    	return hashLdapPassword(clearString.getBytes(UTF8_CHARSET), alg);
+    }
+
+    /**
+     * Hashes cleartext password in an (unofficial) LDAP password format. Supported algorithms: SSHA, SHA and MD5.
+     */
+    public String hashLdapPassword(byte[] clearBytes, String alg) throws NoSuchAlgorithmException {
+    	if (clearBytes == null) {
+    		return null;
+    	}
+    	
+        MessageDigest md = null;
+        
+    	try {
+            if (alg.equalsIgnoreCase("SSHA") || alg.equalsIgnoreCase("SHA")) {
+            		md = MessageDigest.getInstance("SHA-1");
+            } else if ( alg.equalsIgnoreCase("SMD5") || alg.equalsIgnoreCase("MD5") ) {
+                md = MessageDigest.getInstance("MD5");
+            }
+    	} catch (NoSuchAlgorithmException e) {
+            throw new NoSuchAlgorithmException("Could not find MessageDigest algorithm: "+alg, e);
+        }
+        
+        if (md == null) {
+            throw new NoSuchAlgorithmException("Unsupported MessageDigest algorithm: " + alg);
+        }
+
+        byte[] salt = {};
+        if (alg.equalsIgnoreCase("SSHA") || alg.equalsIgnoreCase("SMD5")) {
+            salt = new byte[8];
+            secureRandom.nextBytes(salt);
+        }
+
+        md.reset();
+        md.update(clearBytes);
+        md.update(salt);
+        byte[] hash = md.digest();
+
+        byte[] hashAndSalt = new byte[hash.length + salt.length];
+        System.arraycopy(hash, 0, hashAndSalt, 0, hash.length);
+        System.arraycopy(salt, 0, hashAndSalt, hash.length, salt.length);
+
+        StringBuilder resSb = new StringBuilder(alg.length() + hashAndSalt.length);
+        resSb.append('{');
+        resSb.append(alg);
+        resSb.append('}');
+        resSb.append(Base64.getEncoder().encodeToString(hashAndSalt));
+
+        return resSb.toString();
     }
 
     public static String debugDump(Object o) {

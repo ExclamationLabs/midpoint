@@ -23,8 +23,6 @@ import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.ObjectTypeUtil;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.exception.*;
-import com.evolveum.midpoint.util.logging.Trace;
-import com.evolveum.midpoint.util.logging.TraceManager;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.springframework.stereotype.Component;
 
@@ -42,7 +40,7 @@ public class ExclusionCertificationHandler extends BaseCertificationHandler {
 
     public static final String URI = AccessCertificationApiConstants.EXCLUSION_HANDLER_URI;
 
-    private static final transient Trace LOGGER = TraceManager.getTrace(ExclusionCertificationHandler.class);
+    //private static final transient Trace LOGGER = TraceManager.getTrace(ExclusionCertificationHandler.class);
 
     @PostConstruct
     public void init() {
@@ -57,11 +55,8 @@ public class ExclusionCertificationHandler extends BaseCertificationHandler {
     // converts assignments to cases
     @Override
     public <F extends FocusType> Collection<? extends AccessCertificationCaseType> createCasesForObject(PrismObject<F> objectPrism,
-            AccessCertificationCampaignType campaign, Task task, OperationResult parentResult)
-			throws ExpressionEvaluationException, ObjectNotFoundException, SchemaException {
-
+            AccessCertificationCampaignType campaign, Task task, OperationResult parentResult) {
 		F focus = objectPrism.asObjectable();
-
         List<AccessCertificationCaseType> caseList = new ArrayList<>();
 		for (AssignmentType assignment : focus.getAssignment()) {
 			if (assignment.getPolicySituation().contains(SchemaConstants.MODEL_POLICY_SITUATION_EXCLUSION_VIOLATION)) {
@@ -74,7 +69,7 @@ public class ExclusionCertificationHandler extends BaseCertificationHandler {
 	private void processAssignment(AssignmentType assignment, ObjectType object, List<AccessCertificationCaseType> caseList) {
 		AccessCertificationAssignmentCaseType assignmentCase = new AccessCertificationAssignmentCaseType(prismContext);
         assignmentCase.setAssignment(assignment.clone());
-        assignmentCase.setObjectRef(ObjectTypeUtil.createObjectRef(object));
+        assignmentCase.setObjectRef(ObjectTypeUtil.createObjectRef(object, prismContext));
         assignmentCase.setTenantRef(assignment.getTenantRef());
         assignmentCase.setOrgRef(assignment.getOrgRef());
         assignmentCase.setActivation(assignment.getActivation());

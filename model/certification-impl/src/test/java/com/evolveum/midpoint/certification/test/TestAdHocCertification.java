@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,9 +97,9 @@ public class TestAdHocCertification extends AbstractCertificationTest {
 
 		campaign = getCampaignWithCases(campaign.getOid());
         display("campaign", campaign);
-        assertAfterCampaignStart(campaign, assignmentCertificationDefinition, 1);		// beware, maybe not all details would match (in the future) - then adapt this test
-        assertPercentComplete(campaign, 0, 0, 0);      // no cases, no problems
-		assertCases(campaign.getOid(), 1);
+        assertSanityAfterCampaignStart(campaign, assignmentCertificationDefinition, 1);		// beware, maybe not all details would match (in the future) - then adapt this test
+        assertPercentCompleteAll(campaign, 0, 0, 0);      // no cases, no problems
+		assertCasesCount(campaign.getOid(), 1);
 	}
 
     @Test
@@ -115,7 +115,7 @@ public class TestAdHocCertification extends AbstractCertificationTest {
         // WHEN
         TestUtil.displayWhen(TEST_NAME);
         @SuppressWarnings({ "unchecked", "raw" })
-		ObjectDelta<UserType> delta = (ObjectDelta<UserType>) DeltaBuilder.deltaFor(UserType.class, prismContext)
+		ObjectDelta<UserType> delta = DeltaBuilder.deltaFor(UserType.class, prismContext)
 				.item(UserType.F_DESCRIPTION).replace("new description")
 				.item(UserType.F_ACTIVATION, ActivationType.F_ADMINISTRATIVE_STATUS).replace(ActivationStatusType.DISABLED)
 				.asObjectDelta(USER_INDIGO_OID);
@@ -135,7 +135,7 @@ public class TestAdHocCertification extends AbstractCertificationTest {
 
 		campaign = getCampaignWithCases(campaign.getOid());
         display("campaign", campaign);
-        assertAfterCampaignStart(campaign, modificationCertificationDefinition, 1);		// beware, maybe not all details would match (in the future) - then adapt this test
-        assertPercentComplete(campaign, 0, 0, 0);      // no cases, no problems
+        assertSanityAfterCampaignStart(campaign, modificationCertificationDefinition, 1);		// beware, maybe not all details would match (in the future) - then adapt this test
+        assertPercentCompleteAll(campaign, 0, 0, 0);      // no cases, no problems
 	}
 }

@@ -21,6 +21,7 @@ import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
 import com.evolveum.midpoint.gui.api.util.WebModelServiceUtils;
 import com.evolveum.midpoint.model.api.ModelService;
 import com.evolveum.midpoint.prism.PrismObject;
+import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
 import com.evolveum.midpoint.schema.result.OperationResult;
@@ -32,8 +33,6 @@ import com.evolveum.midpoint.util.logging.TraceManager;
 import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItem;
 import com.evolveum.midpoint.web.component.util.SelectableBean;
 import com.evolveum.midpoint.web.page.admin.users.PageOrgTree;
-import com.evolveum.midpoint.web.page.admin.users.PageUsers;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgType;
 import org.apache.wicket.Component;
 import org.apache.wicket.RestartResponseException;
@@ -59,17 +58,21 @@ public class OrgTreeProvider extends SortableTreeProvider<SelectableBean<OrgType
     private Component component;
     private IModel<String> rootOid;
     private SelectableBean<OrgType> root;
+    private List<OrgType> selectedOrgs = new ArrayList<>();
 
-    private List<SelectableBean<OrgType>> availableData;
+    private Map<String, SelectableBean<OrgType>> availableData;
 
-    public OrgTreeProvider(Component component, IModel<String> rootOid) {
+    public OrgTreeProvider(Component component, IModel<String> rootOid, List<OrgType> selectedOrgs) {
         this.component = component;
         this.rootOid = rootOid;
+        if (selectedOrgs != null) {
+            this.selectedOrgs.addAll(selectedOrgs);
+        }
     }
 
-    public List<SelectableBean<OrgType>> getAvailableData() {
+    public Map<String, SelectableBean<OrgType>> getAvailableData() {
 		if (availableData == null){
-			availableData = new ArrayList<>();
+			availableData = new HashMap<>();
 		}
     	return availableData;
 	}
@@ -108,12 +111,26 @@ public class OrgTreeProvider extends SortableTreeProvider<SelectableBean<OrgType
             LOGGER.debug("Loading fresh children for {}", node.getValue());
             OperationResult result = new OperationResult(LOAD_ORG_UNITS);
             try {
-                ObjectQuery query = QueryBuilder.queryFor(ObjectType.class, getPageBase().getPrismContext())
+                ObjectQuery query = QueryBuilder.queryFor(OrgType.class, getPageBase().getPrismContext())
                         .isDirectChildOf(nodeOid)
-                        .asc(ObjectType.F_NAME)
                         .build();
+                ObjectFilter customFilter = getCustomFilter();
+                if (customFilter != null){
+                    query.addFilter(customFilter);
+                }
                 Task task = getPageBase().createSimpleTask(LOAD_ORG_UNITS);
                 List<PrismObject<OrgType>> orgs = getModelService().searchObjects(OrgType.class, query, null, task, result);
+                Collections.sort(orgs, new Comparator<PrismObject<OrgType>>() {
+
+                    @Override
+                    public int compare(PrismObject<OrgType> o1, PrismObject<OrgType> o2) {
+                        String s1 = WebComponentUtil.getDisplayNameOrName(o1);
+                        String s2 = WebComponentUtil.getDisplayNameOrName(o2);
+
+                        return String.CASE_INSENSITIVE_ORDER.compare(s1, s2);
+                    }
+                });
+
                 LOGGER.debug("Found {} sub-orgs.", orgs.size());
                 children = new ArrayList<>();
                 for (PrismObject<OrgType> org : orgs) {
@@ -131,11 +148,17 @@ public class OrgTreeProvider extends SortableTreeProvider<SelectableBean<OrgType
                 getPageBase().showResult(result);
                 throw new RestartResponseException(PageOrgTree.class);
             }
-            getAvailableData().addAll(children);
+            children.forEach(orgUnit -> {
+                getAvailableData().putIfAbsent(orgUnit.getValue().getOid(), orgUnit);
+            });
         }
         LOGGER.debug("Finished getting children.");
         lastFetchOperation = System.currentTimeMillis();
         return children.iterator();
+    }
+
+    protected ObjectFilter getCustomFilter(){
+        return null;
     }
 
     private SelectableBean<OrgType> createObjectWrapper(SelectableBean<OrgType> parent, PrismObject<OrgType> unit) {
@@ -179,14 +202,13 @@ public class OrgTreeProvider extends SortableTreeProvider<SelectableBean<OrgType
 
         if (WebComponentUtil.showResultInPage(result)) {
             getPageBase().showResult(result);
-            throw new RestartResponseException(PageUsers.class);
         }
 
         List<SelectableBean<OrgType>> list = new ArrayList<>();
         if (root != null) {
             list.add(root);
-            if (!getAvailableData().contains(root)){
-            	getAvailableData().add(root);
+            if (!getAvailableData().containsKey(root.getValue().getOid())){
+            	getAvailableData().put(root.getValue().getOid(), root);
             }
 
         }
@@ -204,13 +226,12 @@ public class OrgTreeProvider extends SortableTreeProvider<SelectableBean<OrgType
     }
 
     public List<OrgType> getSelectedObjects(){
-    	List<OrgType> selectedOrgs = new ArrayList<>();
-    	for (SelectableBean<OrgType> selected : getAvailableData()){
+        List<OrgType> selectedOrgs = new ArrayList<>();
+    	for (SelectableBean<OrgType> selected : getAvailableData().values()){
     		if (selected.isSelected() && selected.getValue() != null) {
     			selectedOrgs.add(selected.getValue());
     		}
     	}
-
     	return selectedOrgs;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,9 +36,9 @@ import javax.naming.NameAlreadyBoundException;
 import javax.naming.NoPermissionException;
 import javax.naming.ServiceUnavailableException;
 import javax.naming.directory.AttributeInUseException;
-import javax.naming.directory.InvalidAttributeValueException;
 import javax.naming.directory.NoSuchAttributeException;
 import javax.naming.directory.SchemaViolationException;
+import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.util.exception.SystemException;
@@ -49,6 +49,7 @@ import org.identityconnectors.common.security.GuardedString;
 import org.identityconnectors.framework.common.exceptions.*;
 import org.identityconnectors.framework.common.objects.Attribute;
 import org.identityconnectors.framework.common.objects.OperationOptions;
+import org.identityconnectors.framework.common.objects.OperationalAttributes;
 import org.identityconnectors.framework.common.objects.Uid;
 import org.identityconnectors.framework.common.objects.filter.AttributeFilter;
 import org.identityconnectors.framework.common.objects.filter.CompositeFilter;
@@ -57,6 +58,7 @@ import org.identityconnectors.framework.common.objects.filter.Filter;
 import com.evolveum.midpoint.prism.PrismPropertyValue;
 import com.evolveum.midpoint.prism.crypto.EncryptionException;
 import com.evolveum.midpoint.prism.crypto.Protector;
+import com.evolveum.midpoint.prism.xml.XmlTypeConverter;
 import com.evolveum.midpoint.prism.xml.XsdTypeMapper;
 import com.evolveum.midpoint.provisioning.ucf.api.GenericFrameworkException;
 import com.evolveum.midpoint.schema.constants.SchemaConstants;
@@ -70,6 +72,7 @@ import com.evolveum.midpoint.util.PrettyPrinter;
 import com.evolveum.midpoint.util.exception.CommunicationException;
 import com.evolveum.midpoint.util.exception.ObjectAlreadyExistsException;
 import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
+import com.evolveum.midpoint.util.exception.PolicyViolationException;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.exception.SecurityViolationException;
 import com.evolveum.midpoint.util.logging.Trace;
@@ -174,6 +177,25 @@ public class ConnIdUtil {
 			connIdResult.recordFatalError("Configuration error: "+connIdException.getMessage(), newEx);
 			return newEx;
 		}
+		
+		if (connIdException instanceof InvalidAttributeValueException) {
+			// This is quite a special and flexible exception (one of the newer exceptions in ConnId).
+			// Therefore it desires a special handling.
+			Exception newEx;
+			InvalidAttributeValueException iave = (InvalidAttributeValueException)connIdException;
+			if (iave.getAffectedAttributeNames() == null || iave.getAffectedAttributeNames().isEmpty()) {
+				newEx = new SchemaException(iave.getMessage());
+			} else {
+				if (iave.getAffectedAttributeNames().contains(OperationalAttributes.PASSWORD_NAME)) {
+					newEx = new PolicyViolationException(iave.getMessage());
+				} else {
+					newEx = new SchemaException(iave.getMessage());
+				}
+			}
+			connIdResult.recordFatalError("Invalid attribute value: "+connIdException.getMessage(), newEx);
+			return newEx;
+		}
+		
         //fix of MiD-2645
         //exception brought by the connector is java.lang.RuntimeException with cause=CommunicationsException
         //this exception is to be analyzed here before the following if clause
@@ -205,7 +227,7 @@ public class ConnIdUtil {
 		if (connIdException instanceof ConnectorException && !connIdException.getClass().equals(ConnectorException.class)) {
         	// we have non generic connector exception
 			knownCause = processConnectorException((ConnectorException) connIdException, connIdResult);
-			LOGGER.error("LOOK FOR CONN ID EXCEPTION: {} -> {}", connIdException.getClass().getName(), knownCause.getClass().getName());
+//			LOGGER.error("LOOK FOR CONN ID EXCEPTION: {} -> {}", connIdException.getClass().getName(), knownCause.getClass().getName());
 			if (knownCause != null) {
 				return knownCause;
 			}
@@ -214,7 +236,7 @@ public class ConnIdUtil {
 		// Introspect the inner exceptions and look for known causes
 		knownCause = lookForKnownCause(connIdException, connIdException, connIdResult);
 		if (knownCause != null) {
-			LOGGER.error("LOOK FOR KNOWN EXCEPTION: {} -> {}", connIdException.getClass().getName(), knownCause.getClass().getName());
+//			LOGGER.error("LOOK FOR KNOWN EXCEPTION: {} -> {}", connIdException.getClass().getName(), knownCause.getClass().getName());
 			connIdResult.recordFatalError(knownCause);
 			return knownCause;
 		}
@@ -230,18 +252,18 @@ public class ConnIdUtil {
 			connIdResult.recordFatalError("Schema violation: "+connIdException.getMessage(), newEx);
 			return newEx;
 
-		} else if (connIdException instanceof UnknownHostException) {
+		} else if (connIdException instanceof java.net.UnknownHostException) {
 			Exception newEx = new CommunicationException(createMessageFromAllExceptions("Unknown host", connIdException));
 			connIdResult.recordFatalError("Unknown host: "+connIdException.getMessage(), newEx);
 			return newEx;
 
-		}  else if (connIdException instanceof InvalidAttributeValueException) {
+		}  else if (connIdException instanceof javax.naming.directory.InvalidAttributeValueException) {
 			Exception newEx = new SchemaException(createMessageFromAllExceptions(null, connIdException));
 			connIdResult.recordFatalError("Schema violation: "+connIdException.getMessage(), newEx);
 			return newEx;
 		}
 
-		LOGGER.error("FALLBACK: {} -> {}", connIdException.getClass().getName(), (knownCause != null ? knownCause.getClass().getName() : null));
+//		LOGGER.error("FALLBACK: {} -> {}", connIdException.getClass().getName(), (knownCause != null ? knownCause.getClass().getName() : null));
 
 		// Fallback
 		Exception newEx = new GenericFrameworkException(createMessageFromAllExceptions(null,connIdException));
@@ -310,7 +332,7 @@ public class ConnIdUtil {
 			connIdResult.recordFatalError(
 					"Security violation: " + connIdException.getMessage(), newEx);
 			return newEx;
-		} else if (connIdException instanceof org.identityconnectors.framework.common.exceptions.InvalidAttributeValueException) {
+		} else if (connIdException instanceof InvalidAttributeValueException) {
 			Exception newEx = new SchemaException(createMessageFromAllExceptions("Invalid attribute", connIdException));
 			connIdResult.recordFatalError("Invalid attribute: " + connIdException.getMessage(), newEx);
 			return newEx;
@@ -350,10 +372,10 @@ public class ConnIdUtil {
 			Exception newEx = new SchemaException(createMessageFromAllExceptions("Schema violation", ex));
 			parentResult.recordFatalError("Schema violation: "+ex.getMessage(), newEx);
 			return newEx;
-        } else if (ex instanceof InvalidAttributeValueException) {
+        } else if (ex instanceof javax.naming.directory.InvalidAttributeValueException) {
 			// This is thrown by LDAP connector and may be also throw by similar
 			// connectors
-			InvalidAttributeValueException e = (InvalidAttributeValueException) ex;
+        	javax.naming.directory.InvalidAttributeValueException e = (javax.naming.directory.InvalidAttributeValueException) ex;
 			Exception newEx = null;
 			if (e.getExplanation().contains("unique attribute conflict")){
 				newEx = new ObjectAlreadyExistsException(createMessageFromAllExceptions("Invalid attribute", ex));
@@ -617,6 +639,10 @@ public class ConnIdUtil {
 
 		if (value instanceof PrismPropertyValue) {
 			return convertValueToIcf(((PrismPropertyValue) value).getValue(), protector, propName);
+		}
+		
+		if (value instanceof XMLGregorianCalendar) {
+			return XmlTypeConverter.toZonedDateTime((XMLGregorianCalendar) value);
 		}
 
 		if (value instanceof ProtectedStringType) {

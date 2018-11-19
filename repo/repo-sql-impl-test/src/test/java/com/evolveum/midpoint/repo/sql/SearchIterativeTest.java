@@ -18,6 +18,9 @@ package com.evolveum.midpoint.repo.sql;
 
 import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.polystring.PolyString;
+import com.evolveum.midpoint.prism.query.ObjectPaging;
+import com.evolveum.midpoint.prism.query.ObjectQuery;
+import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
 import com.evolveum.midpoint.prism.util.PrismTestUtil;
 import com.evolveum.midpoint.schema.MidPointPrismContextFactory;
 import com.evolveum.midpoint.schema.ResultHandler;
@@ -49,6 +52,7 @@ import static org.testng.AssertJUnit.assertTrue;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public class SearchIterativeTest extends BaseSQLRepoTest {
 
+    @SuppressWarnings("unused")
     private static final Trace LOGGER = TraceManager.getTrace(SearchIterativeTest.class);
     private static final int BASE = 100000;
     private static final int COUNT = 500;
@@ -62,7 +66,7 @@ public class SearchIterativeTest extends BaseSQLRepoTest {
         createObjects();
     }
 
-    protected void createObjects() throws com.evolveum.midpoint.util.exception.ObjectAlreadyExistsException, com.evolveum.midpoint.util.exception.SchemaException {
+    private void createObjects() throws com.evolveum.midpoint.util.exception.ObjectAlreadyExistsException, com.evolveum.midpoint.util.exception.SchemaException {
         OperationResult result = new OperationResult("add objects");
         for (int i = BASE; i < BASE + COUNT; i++) {
             UserType user = prismContext.getSchemaRegistry().findObjectDefinitionByCompileTimeClass(UserType.class).instantiate().asObjectable();
@@ -77,17 +81,14 @@ public class SearchIterativeTest extends BaseSQLRepoTest {
     }
 
     @Test
-    public void test100SimpleIteration() throws Exception {
-        OperationResult result = new OperationResult("test100SimpleIteration");
+    public void test100SimpleSequentialIteration() throws Exception {
+        OperationResult result = new OperationResult("test100SimpleSequentialIteration");
 
         final List<PrismObject<UserType>> objects = new ArrayList<>();
 
-        ResultHandler handler = new ResultHandler() {
-            @Override
-            public boolean handle(PrismObject object, OperationResult parentResult) {
-                objects.add(object);
-                return true;
-            }
+        ResultHandler<UserType> handler = (object, parentResult) -> {
+            objects.add(object);
+            return true;
         };
 
         repositoryService.searchObjectsIterative(UserType.class, null, handler, null, true, result);
@@ -98,17 +99,71 @@ public class SearchIterativeTest extends BaseSQLRepoTest {
     }
 
     @Test
-    public void test105SimpleIterationNoSequence() throws Exception {
-        OperationResult result = new OperationResult("test105SimpleIterationNoSequence");
+    public void test102SimpleSequentialIterationWithMaxSize() throws Exception {
+        OperationResult result = new OperationResult("test102SimpleSequentialIterationWithMaxSize");
 
         final List<PrismObject<UserType>> objects = new ArrayList<>();
 
-        ResultHandler handler = new ResultHandler() {
-            @Override
-            public boolean handle(PrismObject object, OperationResult parentResult) {
-                objects.add(object);
-                return true;
-            }
+        ResultHandler<UserType> handler = (object, parentResult) -> {
+            objects.add(object);
+            return true;
+        };
+
+        ObjectQuery query = ObjectQuery.createObjectQuery(ObjectPaging.createPaging(null, 70));
+        repositoryService.searchObjectsIterative(UserType.class, query, handler, null, true, result);
+        result.recomputeStatus();
+
+        assertTrue(result.isSuccess());
+        assertObjects(objects, 70);
+    }
+
+    @Test
+    public void test103SimpleSequentialIterationWithCustomPagingLarge() throws Exception {
+        OperationResult result = new OperationResult("test103SimpleSequentialIterationWithCustomPagingLarge");
+
+        final List<PrismObject<UserType>> objects = new ArrayList<>();
+
+        ResultHandler<UserType> handler = (object, parentResult) -> {
+            objects.add(object);
+            return true;
+        };
+
+        ObjectQuery query = ObjectQuery.createObjectQuery(ObjectPaging.createPaging(1, null));
+        repositoryService.searchObjectsIterative(UserType.class, query, handler, null, true, result);
+        result.recomputeStatus();
+
+        assertTrue(result.isSuccess());
+        assertObjects(objects, COUNT - 1);
+    }
+
+    @Test
+    public void test104SimpleSequentialIterationWithCustomPagingSmall() throws Exception {
+        OperationResult result = new OperationResult("test104SimpleSequentialIterationWithCustomPagingSmall");
+
+        final List<PrismObject<UserType>> objects = new ArrayList<>();
+
+        ResultHandler<UserType> handler = (object, parentResult) -> {
+            objects.add(object);
+            return true;
+        };
+
+        ObjectQuery query = ObjectQuery.createObjectQuery(ObjectPaging.createPaging(1, 200));
+        repositoryService.searchObjectsIterative(UserType.class, query, handler, null, true, result);
+        result.recomputeStatus();
+
+        assertTrue(result.isSuccess());
+        assertObjects(objects, 200);
+    }
+
+    @Test
+    public void test105SimpleNonSequentialIteration() throws Exception {
+        OperationResult result = new OperationResult("test105SimpleNonSequentialIteration");
+
+        final List<PrismObject<UserType>> objects = new ArrayList<>();
+
+        ResultHandler<UserType> handler = (object, parentResult) -> {
+            objects.add(object);
+            return true;
         };
 
         repositoryService.searchObjectsIterative(UserType.class, null, handler, null, false, result);
@@ -143,17 +198,14 @@ public class SearchIterativeTest extends BaseSQLRepoTest {
 
         final List<PrismObject<UserType>> objects = new ArrayList<>();
 
-        ResultHandler handler = new ResultHandler() {
-            @Override
-            public boolean handle(PrismObject object, OperationResult parentResult) {
-                objects.add(object);
-                try {
-                    repositoryService.deleteObject(UserType.class, object.getOid(), parentResult);
-                } catch (ObjectNotFoundException e) {
-                    throw new SystemException(e);
-                }
-                return true;
+        ResultHandler<UserType> handler = (object, parentResult) -> {
+            objects.add(object);
+            try {
+                repositoryService.deleteObject(UserType.class, object.getOid(), parentResult);
+            } catch (ObjectNotFoundException e) {
+                throw new SystemException(e);
             }
+            return true;
         };
 
         repositoryService.searchObjectsIterative(UserType.class, null, handler, null, true, result);
@@ -174,20 +226,17 @@ public class SearchIterativeTest extends BaseSQLRepoTest {
 
         final List<PrismObject<UserType>> objects = new ArrayList<>();
 
-        ResultHandler handler = new ResultHandler() {
-            @Override
-            public boolean handle(PrismObject object, OperationResult parentResult) {
-                objects.add(object);
-                try {
-                    int number = Integer.parseInt(((UserType) object.asObjectable()).getCostCenter());
-                    if (number % 2 == 0) {
-                        repositoryService.deleteObject(UserType.class, object.getOid(), parentResult);
-                    }
-                } catch (ObjectNotFoundException e) {
-                    throw new SystemException(e);
+        ResultHandler<UserType> handler = (object, parentResult) -> {
+            objects.add(object);
+            try {
+                int number = Integer.parseInt(object.asObjectable().getCostCenter());
+                if (number % 2 == 0) {
+                    repositoryService.deleteObject(UserType.class, object.getOid(), parentResult);
                 }
-                return true;
+            } catch (ObjectNotFoundException e) {
+                throw new SystemException(e);
             }
+            return true;
         };
 
         repositoryService.searchObjectsIterative(UserType.class, null, handler, null, true, result);
@@ -198,35 +247,40 @@ public class SearchIterativeTest extends BaseSQLRepoTest {
 
         int count = repositoryService.countObjects(UserType.class, null, null, result);
         assertEquals("Wrong # of objects after operation", COUNT/2, count);
+
+        ObjectQuery query = QueryBuilder.queryFor(UserType.class, prismContext)
+                .asc(UserType.F_NAME)
+                .build();
+        List<PrismObject<UserType>> objectsAfter = repositoryService.searchObjects(UserType.class, query, null, result);
+        objectsAfter.forEach(o -> System.out.println("Exists: " + o.asObjectable().getName()));
     }
 
     @Test
     public void test130AddOneForOne() throws Exception {
+
         OperationResult result = new OperationResult("test130AddOneForOne");
 
         final List<PrismObject<UserType>> objects = new ArrayList<>();
 
-        ResultHandler handler = new ResultHandler() {
-            @Override
-            public boolean handle(PrismObject object, OperationResult parentResult) {
-                objects.add(object);
-                System.out.print("Got object " + object.getOid());
-                try {
-                    int number = Integer.parseInt(((UserType) object.asObjectable()).getCostCenter());
-                    if (number >= 0) {
-                        UserType user = prismContext.getSchemaRegistry().findObjectDefinitionByCompileTimeClass(UserType.class).instantiate().asObjectable();
-                        user.setOid("user-" + (2*BASE + COUNT - number) + "-FF");
-                        user.setName(new PolyStringType(new PolyString("user-new-" + number)));
-                        user.setCostCenter(String.valueOf(-number));
-                        repositoryService.addObject(user.asPrismObject(), null, parentResult);
-                        System.out.print(" ... creating object " + user.getOid());
-                    }
-                } catch (ObjectAlreadyExistsException|SchemaException e) {
-                    throw new SystemException(e);
+        ResultHandler<UserType> handler = (object, parentResult) -> {
+            objects.add(object);
+            System.out.print("Got object " + object.getOid());
+            LOGGER.info("Got object {} ({})", object.getOid(), object.asObjectable().getName().getOrig());
+            try {
+                int number = Integer.parseInt(object.asObjectable().getCostCenter());
+                if (number >= 0) {
+                    UserType user = prismContext.getSchemaRegistry().findObjectDefinitionByCompileTimeClass(UserType.class).instantiate().asObjectable();
+                    user.setOid("user-" + (2*BASE + COUNT - number) + "-FF");
+                    user.setName(new PolyStringType(new PolyString("user-new-" + number)));
+                    user.setCostCenter(String.valueOf(-number));
+                    repositoryService.addObject(user.asPrismObject(), null, parentResult);
+                    System.out.print(" ... creating object " + user.getOid());
                 }
-                System.out.println();
-                return true;
+            } catch (ObjectAlreadyExistsException|SchemaException e) {
+                throw new SystemException(e);
             }
+            System.out.println();
+            return true;
         };
 
         repositoryService.searchObjectsIterative(UserType.class, null, handler, null, true, result);

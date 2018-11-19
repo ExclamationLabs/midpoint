@@ -1,0 +1,122 @@
+/**
+ * Copyright (c) 2018 Evolveum
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.evolveum.midpoint.test.asserter;
+
+import org.testng.AssertJUnit;
+
+import com.evolveum.midpoint.prism.PrismContext;
+import com.evolveum.midpoint.prism.PrismObject;
+import com.evolveum.midpoint.prism.crypto.Protector;
+import com.evolveum.midpoint.schema.result.OperationResult;
+import com.evolveum.midpoint.schema.util.SimpleObjectResolver;
+import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
+import com.evolveum.midpoint.util.exception.SchemaException;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
+
+/**
+ * @author Radovan Semancik
+ *
+ */
+public abstract class AbstractAsserter<RA> {
+	
+	private String details;
+	private RA returnAsserter;
+	private PrismContext prismContext;
+	private SimpleObjectResolver objectResolver;
+	private Protector protector;
+	
+	public AbstractAsserter() {
+		this(null);
+	}
+	
+	public AbstractAsserter(String details) {
+		super();
+		this.details = details;
+	}
+	
+	public AbstractAsserter(RA returnAsserter, String details) {
+		super();
+		this.returnAsserter = returnAsserter;
+		this.details = details;
+	}
+	
+	protected PrismContext getPrismContext() {
+		return prismContext;
+	}
+
+	public void setPrismContext(PrismContext prismContext) {
+		this.prismContext = prismContext;
+	}
+
+	protected SimpleObjectResolver getObjectResolver() {
+		return objectResolver;
+	}
+
+	public void setObjectResolver(SimpleObjectResolver objectResolver) {
+		this.objectResolver = objectResolver;
+	}
+
+	protected Protector getProtector() {
+		return protector;
+	}
+
+	public void setProtector(Protector protector) {
+		this.protector = protector;
+	}
+
+	protected String getDetails() {
+		return details;
+	}
+
+	protected void fail(String message) {
+		AssertJUnit.fail(message);
+	}
+
+	protected String descWithDetails(Object o) {
+		if (o == null) {
+			if (details == null) {
+				return "null";
+			} else {
+				return "null("+details+")";
+			}
+		}
+		if (details == null) {
+			return o.toString();
+		} else {
+			return o.toString()+" ("+details+")";
+		}
+	}
+	
+	public RA end() {
+		return returnAsserter;
+	}
+	
+	protected <O extends ObjectType> PrismObject<O> resolveObject(Class<O> type, String oid) throws ObjectNotFoundException, SchemaException {
+		if (objectResolver == null) {
+			throw new IllegalStateException("Cannot resolve object "+type.getSimpleName()+" "+oid+" because there is no resolver");
+		}
+		OperationResult result = new OperationResult("AbstractAsserter.resolveObject");
+		return objectResolver.getObject(type, oid, null, result);
+	}
+	
+	abstract protected String desc();
+	
+	protected <T> void copySetupTo(AbstractAsserter<T> other) {
+		other.setPrismContext(this.getPrismContext());
+		other.setObjectResolver(this.getObjectResolver());
+		other.setProtector(this.getProtector());
+	}
+}

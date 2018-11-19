@@ -38,6 +38,7 @@ import com.evolveum.midpoint.model.impl.lens.LensUtil;
 import com.evolveum.midpoint.model.impl.lens.projector.credentials.ProjectionCredentialsProcessor;
 import com.evolveum.midpoint.model.impl.lens.projector.focus.AssignmentProcessor;
 import com.evolveum.midpoint.model.impl.lens.projector.focus.FocusProcessor;
+import com.evolveum.midpoint.model.impl.util.ModelImplUtils;
 import com.evolveum.midpoint.prism.xml.XmlTypeConverter;
 import com.evolveum.midpoint.repo.api.PreconditionViolationException;
 import com.evolveum.midpoint.schema.ResourceShadowDiscriminator;
@@ -45,7 +46,6 @@ import com.evolveum.midpoint.schema.internals.InternalCounters;
 import com.evolveum.midpoint.schema.internals.InternalMonitor;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.result.OperationResultStatus;
-import com.evolveum.midpoint.schema.util.ExceptionUtil;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.exception.CommunicationException;
 import com.evolveum.midpoint.util.exception.ConfigurationException;
@@ -327,7 +327,7 @@ public class Projector {
 				return;
 	    	}
 	
-	    	if (projectionContext.isThombstone()) {
+	    	if (projectionContext.isTombstone()) {
 	    		result.recordStatus(OperationResultStatus.NOT_APPLICABLE, "Skipping projection because it is a thombstone");
 				return;
 	    	}
@@ -358,7 +358,7 @@ public class Projector {
 					},
 					partialProcessingOptions::getProjectionValues);
 	
-	    	if (projectionContext.isThombstone()) {
+	    	if (projectionContext.isTombstone()) {
 	    		result.recordStatus(OperationResultStatus.NOT_APPLICABLE, "Skipping projection because it is a thombstone");
 				return;
 	    	}
@@ -410,33 +410,8 @@ public class Projector {
 		} catch (ObjectNotFoundException | CommunicationException | SchemaException | ConfigurationException | SecurityViolationException
     			| PolicyViolationException | ExpressionEvaluationException | ObjectAlreadyExistsException | RuntimeException | Error e) {
 
-			result.recordFatalError(e);
-
-			ResourceType resourceType = projectionContext.getResource();
-			if (resourceType == null) {
-				throw e;
-			} else {
-				ErrorSelectorType errorSelector = null;
-				if (resourceType.getConsistency() != null) {
-					errorSelector = resourceType.getConsistency().getConnectorErrorCriticality();
-				}
-				if (errorSelector == null) {
-					if (e instanceof CommunicationException) {
-						// Just continue evaluation. The error is recorded in the result.
-						// The consistency mechanism has (most likely) already done the best.
-						// We cannot do any better.
-					} else {
-						throw e;
-					}
-				} else {
-					if (ExceptionUtil.isSelected(errorSelector, e, true)) {
-						throw e;
-					} else {
-						LOGGER.warn("Exception {} selected as non-critical in {}, continuing evaluation; exception message: {}", e.getClass().getSimpleName(), resourceType, e.getMessage());
-						// Just continue evaluation. The error is recorded in the result.
-					}
-				}
-			}
+			projectionContext.setSynchronizationPolicyDecision(SynchronizationPolicyDecision.BROKEN);
+			ModelImplUtils.handleConnectorErrorCriticality(projectionContext.getResource(), e, result);
     	}
 
 

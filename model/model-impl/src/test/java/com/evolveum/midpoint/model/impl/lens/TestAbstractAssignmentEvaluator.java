@@ -37,7 +37,9 @@ import javax.xml.namespace.QName;
 import com.evolveum.midpoint.model.impl.lens.projector.Projector;
 import com.evolveum.midpoint.prism.delta.DeltaSetTriple;
 import com.evolveum.midpoint.prism.xml.XmlTypeConverter;
+import com.evolveum.midpoint.schema.RelationRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.annotation.DirtiesContext.ClassMode;
 import org.springframework.test.context.ContextConfiguration;
@@ -63,14 +65,14 @@ import com.evolveum.midpoint.prism.delta.builder.DeltaBuilder;
 import com.evolveum.midpoint.prism.path.IdItemPathSegment;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.prism.path.NameItemPathSegment;
+import com.evolveum.midpoint.prism.util.ItemDeltaItem;
+import com.evolveum.midpoint.prism.util.ObjectDeltaObject;
 import com.evolveum.midpoint.prism.util.PrismAsserts;
 import com.evolveum.midpoint.repo.api.RepositoryService;
-import com.evolveum.midpoint.repo.common.expression.ItemDeltaItem;
-import com.evolveum.midpoint.repo.common.expression.ObjectDeltaObject;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.schema.constants.MidPointConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.util.ActivationUtil;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.test.util.TestUtil;
 import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
@@ -89,10 +91,14 @@ public abstract class TestAbstractAssignmentEvaluator extends AbstractLensTest {
 	private RepositoryService repositoryService;
 
 	@Autowired
+	@Qualifier("modelObjectResolver")
 	private ObjectResolver objectResolver;
 
 	@Autowired
 	private SystemObjectCache systemObjectCache;
+
+	@Autowired
+	private RelationRegistry relationRegistry;
 
 	@Autowired
 	private Clock clock;
@@ -1000,6 +1006,7 @@ public abstract class TestAbstractAssignmentEvaluator extends AbstractLensTest {
 				.focusOdo(focusOdo)
 				.objectResolver(objectResolver)
 				.systemObjectCache(systemObjectCache)
+				.relationRegistry(relationRegistry)
 				.prismContext(prismContext)
 				.activationComputer(activationComputer)
 				.now(clock.currentTimeXMLGregorianCalendar())

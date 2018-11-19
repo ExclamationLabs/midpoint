@@ -1,6 +1,23 @@
+/*
+ * Copyright (c) 2018 Evolveum
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.evolveum.midpoint.web.component.assignment;
 
 import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
+import com.evolveum.midpoint.gui.impl.component.MultivalueContainerDetailsPanel;
+import com.evolveum.midpoint.gui.impl.session.ObjectTabStorage;
 import com.evolveum.midpoint.prism.query.AndFilter;
 import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.prism.query.ObjectPaging;
@@ -9,11 +26,11 @@ import com.evolveum.midpoint.prism.query.builder.QueryBuilder;
 import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
-import com.evolveum.midpoint.web.component.form.Form;
+import com.evolveum.midpoint.web.component.prism.ContainerValuePanel;
 import com.evolveum.midpoint.web.component.prism.ContainerValueWrapper;
 import com.evolveum.midpoint.web.component.prism.ContainerWrapper;
 import com.evolveum.midpoint.web.component.prism.ValueStatus;
-import com.evolveum.midpoint.web.session.AssignmentsTabStorage;
+import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
 import com.evolveum.midpoint.web.session.UserProfileStorage;
 import com.evolveum.midpoint.web.util.ExpressionUtil;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
@@ -23,6 +40,8 @@ import org.apache.wicket.extensions.markup.html.repeater.data.grid.ICellPopulato
 import org.apache.wicket.extensions.markup.html.repeater.data.table.AbstractColumn;
 import org.apache.wicket.extensions.markup.html.repeater.data.table.IColumn;
 import org.apache.wicket.markup.html.basic.Label;
+import org.apache.wicket.markup.html.list.ListItem;
+import org.apache.wicket.markup.html.panel.Fragment;
 import org.apache.wicket.markup.repeater.Item;
 import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.Model;
@@ -37,8 +56,11 @@ import java.util.List;
 public class InducedEntitlementsPanel extends InducementsPanel{
 
     private static final long serialVersionUID = 1L;
+    
+    private static final String ID_ASSIGNMENT_DETAILS = "assignmentDetails";
 
     private static final Trace LOGGER = TraceManager.getTrace(InducedEntitlementsPanel.class);
+    
     private static final String DOT_CLASS = InducedEntitlementsPanel.class.getName() + ".";
     private static final String OPERATION_LOAD_SHADOW_DISPLAY_NAME = DOT_CLASS + "loadShadowDisplayName";
 
@@ -48,8 +70,8 @@ public class InducedEntitlementsPanel extends InducementsPanel{
     }
 
     @Override
-    protected void initPaging() {
-        getInducedEntitlementsTabStorage().setPaging(ObjectPaging.createPaging(0, getItemsPerPage()));
+    protected void initCustomPaging() {
+        getInducedEntitlementsTabStorage().setPaging(ObjectPaging.createPaging(0, ((int) getParentPage().getItemsPerPage(UserProfileStorage.TableId.INDUCED_ENTITLEMENTS_TAB_TABLE))));
     }
 
     @Override
@@ -57,12 +79,7 @@ public class InducedEntitlementsPanel extends InducementsPanel{
         return UserProfileStorage.TableId.INDUCED_ENTITLEMENTS_TAB_TABLE;
     }
 
-    @Override
-    protected int getItemsPerPage() {
-        return (int) getParentPage().getItemsPerPage(UserProfileStorage.TableId.INDUCED_ENTITLEMENTS_TAB_TABLE);
-    }
-
-    private AssignmentsTabStorage getInducedEntitlementsTabStorage(){
+    private ObjectTabStorage getInducedEntitlementsTabStorage(){
         return getParentPage().getSessionStorage().getInducedEntitlementsTabStorage();
     }
 
@@ -108,32 +125,40 @@ public class InducedEntitlementsPanel extends InducementsPanel{
 
     @Override
     protected ObjectQuery createObjectQuery() {
-        ObjectQuery query = super.createObjectQuery();
-        ObjectFilter filter = query.getFilter();
-        ObjectQuery entitlementsQuery = QueryBuilder.queryFor(AssignmentType.class, getParentPage().getPrismContext())
+        return QueryBuilder.queryFor(AssignmentType.class, getParentPage().getPrismContext())
                 .exists(AssignmentType.F_CONSTRUCTION)
                 .build();
-        if (filter != null){
-            query.setFilter(AndFilter.createAnd(filter, entitlementsQuery.getFilter()));
-        } else {
-            query.setFilter(entitlementsQuery.getFilter());
-        }
-        return query;
     }
-
+    
     @Override
-    protected InducementDetailsPanel createDetailsPanel(String idAssignmentDetails, Form<?> form, IModel<ContainerValueWrapper<AssignmentType>> model) {
-        return new InducedEntitlementDetailsPanel(ID_ASSIGNMENT_DETAILS, form, model);
+	protected Fragment getCustomSpecificContainers(String contentAreaId, ContainerValueWrapper<AssignmentType> modelObject) {
+		Fragment specificContainers = new Fragment(contentAreaId, AssignmentPanel.ID_SPECIFIC_CONTAINERS_FRAGMENT, this);
+		specificContainers.add(getConstructionAssociationPanel(modelObject));
+		
+		specificContainers.add(super.getBasicContainerPanel(ID_ASSIGNMENT_DETAILS, new Model(modelObject)));
+		return specificContainers;
+	}
+    
+    
+    
+    @Override
+    protected ContainerValuePanel getBasicContainerPanel(String idPanel,
+    		IModel<ContainerValueWrapper<AssignmentType>> model) {
+    	ContainerValuePanel panel = super.getBasicContainerPanel(idPanel, model);
+    	panel.add(new VisibleEnableBehaviour() {
+    		@Override
+    		public boolean isVisible() {
+    			return false;
+    		}
+    	});
+    	return panel;
     }
-
-    @Override
-    protected Class getDefaultNewAssignmentFocusType(){
-        return ResourceType.class;
-    }
-
-    @Override
-    protected boolean isRelationVisible() {
-        return false;
+    
+    private ConstructionAssociationPanel getConstructionAssociationPanel(ContainerValueWrapper<AssignmentType> modelObject) {
+    	ContainerWrapper<ConstructionType> constructionContainer = modelObject.findContainerWrapper(modelObject.getPath().append((AssignmentType.F_CONSTRUCTION)));
+        ConstructionAssociationPanel constructionDetailsPanel = new ConstructionAssociationPanel(AssignmentPanel.ID_SPECIFIC_CONTAINER, Model.of(constructionContainer));
+        constructionDetailsPanel.setOutputMarkupId(true);
+        return constructionDetailsPanel;
     }
 
     protected List<ObjectTypes> getObjectTypesList(){
@@ -205,7 +230,7 @@ public class InducedEntitlementsPanel extends InducementsPanel{
     }
 
     @Override
-    protected List<ContainerValueWrapper<AssignmentType>> postSearch(List<ContainerValueWrapper<AssignmentType>> assignments) {
+    protected List<ContainerValueWrapper<AssignmentType>> customPostSearch(List<ContainerValueWrapper<AssignmentType>> assignments) {
         List<ContainerValueWrapper<AssignmentType>> filteredAssignments = new ArrayList<>();
         if (assignments == null){
             return filteredAssignments;

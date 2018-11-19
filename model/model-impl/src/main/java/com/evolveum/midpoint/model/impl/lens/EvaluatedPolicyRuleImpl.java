@@ -22,6 +22,7 @@ import com.evolveum.midpoint.model.impl.lens.projector.policy.ObjectPolicyRuleEv
 import com.evolveum.midpoint.model.impl.lens.projector.policy.ObjectState;
 import com.evolveum.midpoint.model.impl.lens.projector.policy.PolicyRuleEvaluationContext;
 import com.evolveum.midpoint.prism.*;
+import com.evolveum.midpoint.prism.util.CloneUtil;
 import com.evolveum.midpoint.prism.util.PrismPrettyPrinter;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
 import com.evolveum.midpoint.repo.common.expression.ExpressionVariables;
@@ -49,6 +50,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static com.evolveum.midpoint.schema.constants.ExpressionConstants.VAR_RULE_EVALUATION_CONTEXT;
@@ -64,8 +66,8 @@ public class EvaluatedPolicyRuleImpl implements EvaluatedPolicyRule {
 	private static final Trace LOGGER = TraceManager.getTrace(EvaluatedPolicyRuleImpl.class);
 
 	@NotNull private final PolicyRuleType policyRuleType;
-	private final Collection<EvaluatedPolicyRuleTrigger<?>> triggers = new ArrayList<>();
-	private final Collection<PolicyExceptionType> policyExceptions = new ArrayList<>();
+	@NotNull private final Collection<EvaluatedPolicyRuleTrigger<?>> triggers = new ArrayList<>();
+	@NotNull private final Collection<PolicyExceptionType> policyExceptions = new ArrayList<>();
 
 	/**
 	 * Information about exact place where the rule was found. This can be important for rules that are
@@ -92,6 +94,10 @@ public class EvaluatedPolicyRuleImpl implements EvaluatedPolicyRule {
 		this.assignmentPath = assignmentPath;
 		this.prismContextForDebugDump = prismContext;
 		this.directOwner = computeDirectOwner();
+	}
+
+	public EvaluatedPolicyRuleImpl clone() {
+		return new EvaluatedPolicyRuleImpl(CloneUtil.clone(policyRuleType), CloneUtil.clone(assignmentPath), prismContextForDebugDump);
 	}
 
 	private ObjectType computeDirectOwner() {
@@ -151,6 +157,11 @@ public class EvaluatedPolicyRuleImpl implements EvaluatedPolicyRule {
 
 	void addTriggers(Collection<EvaluatedPolicyRuleTrigger<?>> triggers) {
 		this.triggers.addAll(triggers);
+	}
+
+	@Override
+	public void addTrigger(@NotNull EvaluatedPolicyRuleTrigger<?> trigger) {
+		triggers.add(trigger);
 	}
 
 	@NotNull
@@ -325,7 +336,8 @@ public class EvaluatedPolicyRuleImpl implements EvaluatedPolicyRule {
 	 */
 
 	@Override
-	public void addToEvaluatedPolicyRuleTypes(Collection<EvaluatedPolicyRuleType> rules, PolicyRuleExternalizationOptions options) {
+	public void addToEvaluatedPolicyRuleTypes(Collection<EvaluatedPolicyRuleType> rules, PolicyRuleExternalizationOptions options,
+			Predicate<EvaluatedPolicyRuleTrigger<?>> triggerSelector, PrismContext prismContext) {
 		EvaluatedPolicyRuleType rv = new EvaluatedPolicyRuleType();
 		rv.setRuleName(getName());
 		boolean isFull = options.getTriggeredRulesStorageStrategy() == FULL;
@@ -333,16 +345,19 @@ public class EvaluatedPolicyRuleImpl implements EvaluatedPolicyRule {
 			rv.setAssignmentPath(assignmentPath.toAssignmentPathType(options.isIncludeAssignmentsContent()));
 		}
 		if (isFull && directOwner != null) {
-			rv.setDirectOwnerRef(ObjectTypeUtil.createObjectRef(directOwner));
+			rv.setDirectOwnerRef(ObjectTypeUtil.createObjectRef(directOwner, prismContext));
 			rv.setDirectOwnerDisplayName(ObjectTypeUtil.getDisplayName(directOwner));
 		}
 		for (EvaluatedPolicyRuleTrigger<?> trigger : triggers) {
+			if (triggerSelector != null && !triggerSelector.test(trigger)) {
+				continue;
+			}
 			if (trigger instanceof EvaluatedSituationTrigger && trigger.isHidden()) {
 				for (EvaluatedPolicyRule sourceRule : ((EvaluatedSituationTrigger) trigger).getSourceRules()) {
-					sourceRule.addToEvaluatedPolicyRuleTypes(rules, options);
+					sourceRule.addToEvaluatedPolicyRuleTypes(rules, options, null, prismContext);
 				}
 			} else {
-				rv.getTrigger().add(trigger.toEvaluatedPolicyRuleTriggerType(options));
+				rv.getTrigger().add(trigger.toEvaluatedPolicyRuleTriggerType(options, prismContext));
 			}
 		}
 		if (rv.getTrigger().isEmpty()) {

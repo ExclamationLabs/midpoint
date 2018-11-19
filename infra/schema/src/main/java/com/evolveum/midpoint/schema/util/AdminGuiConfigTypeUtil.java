@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright (c) 2015-2017 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,6 @@ import com.evolveum.midpoint.schema.constants.ObjectTypes;
 import com.evolveum.midpoint.util.QNameUtil;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 
-import org.apache.commons.collections.map.HashedMap;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -57,8 +56,8 @@ public class AdminGuiConfigTypeUtil {
 		if (adminGuiConfiguration == null) {
 			return;
 		}
-		composite.getAdditionalMenuLink().addAll(adminGuiConfiguration.getAdditionalMenuLink());
-		composite.getUserDashboardLink().addAll(adminGuiConfiguration.getUserDashboardLink());
+		adminGuiConfiguration.getAdditionalMenuLink().forEach(additionalMenuLink -> composite.getAdditionalMenuLink().add(additionalMenuLink.clone()));
+		adminGuiConfiguration.getUserDashboardLink().forEach(userDashboardLink -> composite.getUserDashboardLink().add(userDashboardLink.clone()));
 		if (adminGuiConfiguration.getDefaultTimezone() != null) {
 			composite.setDefaultTimezone(adminGuiConfiguration.getDefaultTimezone());
 		}
@@ -69,14 +68,14 @@ public class AdminGuiConfigTypeUtil {
 			composite.setEnableExperimentalFeatures(adminGuiConfiguration.isEnableExperimentalFeatures());
 		}
 		if (adminGuiConfiguration.getDefaultExportSettings() != null) {
-			composite.setDefaultExportSettings(adminGuiConfiguration.getDefaultExportSettings());
+			composite.setDefaultExportSettings(adminGuiConfiguration.getDefaultExportSettings().clone());
 		}
 		if (adminGuiConfiguration.getObjectLists() != null) {
 			if (composite.getObjectLists() == null) {
 				composite.setObjectLists(adminGuiConfiguration.getObjectLists().clone());
 			} else {
-				for (GuiObjectListType objectList: adminGuiConfiguration.getObjectLists().getObjectList()) {
-					mergeList(composite.getObjectLists(), objectList);
+				for (GuiObjectListViewType objectList: adminGuiConfiguration.getObjectLists().getObjectList()) {
+					mergeList(composite.getObjectLists(), objectList.clone());
 				}
 			}
 		}
@@ -85,7 +84,7 @@ public class AdminGuiConfigTypeUtil {
 				composite.setObjectForms(adminGuiConfiguration.getObjectForms().clone());
 			} else {
 				for (ObjectFormType objectForm: adminGuiConfiguration.getObjectForms().getObjectForm()) {
-					joinForms(composite.getObjectForms(), objectForm);
+					joinForms(composite.getObjectForms(), objectForm.clone());
 				}
 			}
 		}
@@ -108,10 +107,10 @@ public class AdminGuiConfigTypeUtil {
 			}
 		}
 		for (UserInterfaceFeatureType feature: adminGuiConfiguration.getFeature()) {
-			mergeFeature(composite.getFeature(), feature);
+			mergeFeature(composite.getFeature(), feature.clone());
 		}
 		if (composite.getObjectLists() != null && composite.getObjectLists().getObjectList() != null){
-			for (GuiObjectListType objectListType : composite.getObjectLists().getObjectList()){
+			for (GuiObjectListViewType objectListType : composite.getObjectLists().getObjectList()){
 				if (objectListType.getColumn() != null) {
 //					objectListType.getColumn().clear();
 //					objectListType.getColumn().addAll(orderCustomColumns(objectListType.getColumn()));
@@ -125,27 +124,32 @@ public class AdminGuiConfigTypeUtil {
 		if (adminGuiConfiguration.getFeedbackMessagesHook() != null) {
 			composite.setFeedbackMessagesHook(adminGuiConfiguration.getFeedbackMessagesHook().clone());
 		}
+
+		if (adminGuiConfiguration.getRoleManagement() != null &&
+				adminGuiConfiguration.getRoleManagement().getAssignmentApprovalRequestLimit() != null) {
+			if (composite.getRoleManagement() != null && composite.getRoleManagement().getAssignmentApprovalRequestLimit() != null) {
+				// the greater value wins (so it is possible to give an exception to selected users)
+				Integer newValue = Math.max(
+						adminGuiConfiguration.getRoleManagement().getAssignmentApprovalRequestLimit(),
+						composite.getRoleManagement().getAssignmentApprovalRequestLimit());
+				composite.getRoleManagement().setAssignmentApprovalRequestLimit(newValue);
+			} else {
+				if (composite.getRoleManagement() == null) {
+					composite.setRoleManagement(new AdminGuiConfigurationRoleManagementType());
+				}
+				composite.getRoleManagement().setAssignmentApprovalRequestLimit(
+						adminGuiConfiguration.getRoleManagement().getAssignmentApprovalRequestLimit());
+			}
+		}
 	}
 
 	private static void joinForms(ObjectFormsType objectForms, ObjectFormType newForm) {
-		Iterator<ObjectFormType> iterator = objectForms.getObjectForm().iterator();
-		while (iterator.hasNext()) {
-			ObjectFormType currentForm = iterator.next();
-			if (isTheSameObjectForm(currentForm, newForm)) {
-				iterator.remove();
-			}
-		}
+		objectForms.getObjectForm().removeIf(currentForm -> isTheSameObjectForm(currentForm, newForm));
 		objectForms.getObjectForm().add(newForm.clone());
 	}
 
 	private static void joinObjectDetails(GuiObjectDetailsSetType objectDetailsSet, GuiObjectDetailsPageType newObjectDetails) {
-		Iterator<GuiObjectDetailsPageType> iterator = objectDetailsSet.getObjectDetailsPage().iterator();
-		while (iterator.hasNext()) {
-			GuiObjectDetailsPageType currentDetails = iterator.next();
-			if (isTheSameObjectType(currentDetails, newObjectDetails)) {
-				iterator.remove();
-			}
-		}
+		objectDetailsSet.getObjectDetailsPage().removeIf(currentDetails -> isTheSameObjectType(currentDetails, newObjectDetails));
 		objectDetailsSet.getObjectDetailsPage().add(newObjectDetails.clone());
 	}
 
@@ -185,7 +189,7 @@ public class AdminGuiConfigTypeUtil {
 		return false;
 	}
 
-	private static void mergeList(GuiObjectListsType objectLists, GuiObjectListType newList) {
+	private static void mergeList(GuiObjectListViewsType objectLists, GuiObjectListViewType newList) {
 		// We support only the default object lists now, so simply replace the existing definition with the
 		// latest definition. We will need a more sophisticated merging later.
 		objectLists.getObjectList().removeIf(currentList -> currentList.getType().equals(newList.getType()));
@@ -306,13 +310,12 @@ public class AdminGuiConfigTypeUtil {
 		if (customColumns == null || customColumns.size() == 0){
 			return new ArrayList<>();
 		}
-		List<GuiObjectColumnType> customColumnsList = new ArrayList<>();
-		customColumnsList.addAll(customColumns);
+		List<GuiObjectColumnType> customColumnsList = new ArrayList<>(customColumns);
 		List<String> previousColumnValues = new ArrayList<>();
 		previousColumnValues.add(null);
 		previousColumnValues.add("");
 
-		Map<String, String> columnRefsMap = new HashedMap();
+		Map<String, String> columnRefsMap = new HashMap<>();
 		for (GuiObjectColumnType column : customColumns){
 			columnRefsMap.put(column.getName(), column.getPreviousColumn() == null ? "" : column.getPreviousColumn());
 		}
@@ -335,13 +338,8 @@ public class AdminGuiConfigTypeUtil {
 				index++;
 			}
 			if (index - sortFrom > 1){
-				Collections.sort(customColumnsList.subList(sortFrom, index - 1), new Comparator<GuiObjectColumnType>() {
-
-					@Override
-					public int compare(GuiObjectColumnType o1, GuiObjectColumnType o2) {
-						return String.CASE_INSENSITIVE_ORDER.compare(o1.getName(), o2.getName());
-					}
-				});
+				customColumnsList.subList(sortFrom, index - 1)
+						.sort((o1, o2) -> String.CASE_INSENSITIVE_ORDER.compare(o1.getName(), o2.getName()));
 			}
 			previousColumnValues.clear();
 			previousColumnValues.addAll(temp);

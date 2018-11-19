@@ -27,6 +27,7 @@ import com.evolveum.midpoint.prism.crypto.Protector;
 import com.evolveum.midpoint.repo.api.RepositoryService;
 import com.evolveum.midpoint.repo.common.CacheRegistry;
 import com.evolveum.midpoint.repo.common.Cacheable;
+import com.evolveum.midpoint.repo.common.ObjectResolver;
 import com.evolveum.midpoint.repo.common.expression.ExpressionFactory;
 import com.evolveum.midpoint.repo.common.expression.ExpressionSyntaxException;
 import com.evolveum.midpoint.schema.GetOperationOptions;
@@ -34,7 +35,6 @@ import com.evolveum.midpoint.schema.ResultHandler;
 import com.evolveum.midpoint.schema.SelectorOptions;
 import com.evolveum.midpoint.schema.constants.MidPointConstants;
 import com.evolveum.midpoint.schema.result.OperationResult;
-import com.evolveum.midpoint.schema.util.ObjectResolver;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.util.logging.Trace;
@@ -62,11 +62,11 @@ public class ScriptExpressionFactory implements Cacheable{
 
 	private Map<String, FunctionLibrary> customFunctionLibraryCache;
 	
-	private CacheRegistry cahceRegistry;
+	private CacheRegistry cacheRegistry;
 	
 	@PostConstruct
 	public void register() {
-		cahceRegistry.registerCacheableService(this);
+		cacheRegistry.registerCacheableService(this);
 	}
 	
 	public ScriptExpressionFactory(PrismContext prismContext, Protector protector, RepositoryService repositoryService) {
@@ -101,12 +101,12 @@ public class ScriptExpressionFactory implements Cacheable{
 		return evaluatorMap;
 	}
 	
-	public CacheRegistry geCachetRegistry() {
-		return cahceRegistry;
+	public CacheRegistry geCacheRegistry() {
+		return cacheRegistry;
 	}
 	
 	public void setCacheRegistry(CacheRegistry registry) {
-		this.cahceRegistry = registry;
+		this.cacheRegistry = registry;
 	}
 
 	public ScriptExpression createScriptExpression(ScriptExpressionEvaluatorType expressionType, ItemDefinition outputDefinition,
@@ -149,7 +149,7 @@ public class ScriptExpressionFactory implements Cacheable{
 		};
 		try {
 			repositoryService.searchObjectsIterative(FunctionLibraryType.class, null, functionLibraryHandler,
-					SelectorOptions.createCollection(GetOperationOptions.createReadOnly()), false, subResult);
+					SelectorOptions.createCollection(GetOperationOptions.createReadOnly()), true, subResult);
 			subResult.recordSuccessIfUnknown();
 		} catch (SchemaException | RuntimeException e) {
 			subResult.recordFatalError("Failed to initialize custom functions", e);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017 Evolveum
+ * Copyright (c) 2010-2018 Evolveum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -318,6 +318,19 @@ public class RefinedObjectClassDefinitionImpl implements RefinedObjectClassDefin
 		return schemaHandlingObjectTypeDefinitionType.getVolatility();
 	}
 
+	@Override
+	public ProjectionPolicyType getProjection() {
+		if (schemaHandlingObjectTypeDefinitionType == null) {
+			return null;
+		}
+		return schemaHandlingObjectTypeDefinitionType.getProjection();
+	}
+	
+	@Override
+	public boolean canRepresent(QName specTypeQName) {
+		return originalObjectClassDefinition.canRepresent(specTypeQName);
+	}
+	
 	//endregion
 
 	//region Generating and matching artifacts ========================================================
@@ -781,6 +794,11 @@ public class RefinedObjectClassDefinitionImpl implements RefinedObjectClassDefin
 	}
 	
 	@Override
+	public String getPlannedRemoval() {
+		return originalObjectClassDefinition.getPlannedRemoval();
+	}
+	
+	@Override
 	public boolean isElaborate() {
 		return originalObjectClassDefinition.isElaborate();
 	}
@@ -976,7 +994,7 @@ public class RefinedObjectClassDefinitionImpl implements RefinedObjectClassDefin
         if (rOcDef.schemaHandlingObjectTypeDefinitionType.getBaseContext() != null) {
         	rOcDef.setBaseContext(rOcDef.schemaHandlingObjectTypeDefinitionType.getBaseContext());
         }
-
+       
         return rOcDef;
 	}
 
@@ -1346,6 +1364,16 @@ public class RefinedObjectClassDefinitionImpl implements RefinedObjectClassDefin
 		return shared;
 	}
 
+	@Override
+	public <A> A getAnnotation(QName qname) {
+		return originalObjectClassDefinition.getAnnotation(qname);
+	}
+
+	@Override
+	public <A> void setAnnotation(QName qname, A value) {
+		throw new UnsupportedOperationException("TODO");
+	}
+	
 	@Override
 	public Integer getInstantiationOrder() {
 		return null;
