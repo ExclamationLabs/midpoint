@@ -18,15 +18,19 @@ package com.evolveum.midpoint.web.page.admin.cases;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.function.Function;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import com.evolveum.midpoint.web.component.input.TextPanel;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 import org.apache.wicket.AttributeModifier;
 import org.apache.wicket.Component;
 import org.apache.wicket.ajax.AjaxRequestTarget;
+import org.apache.wicket.ajax.form.OnChangeAjaxBehavior;
 import org.apache.wicket.extensions.markup.html.repeater.data.grid.ICellPopulator;
 import org.apache.wicket.extensions.markup.html.repeater.data.sort.SortOrder;
 import org.apache.wicket.extensions.markup.html.repeater.data.table.DataTable;
@@ -69,6 +73,7 @@ import com.evolveum.midpoint.web.component.data.Table;
 import com.evolveum.midpoint.web.component.data.column.IsolatedCheckBoxPanel;
 import com.evolveum.midpoint.web.component.data.column.LinkColumn;
 import com.evolveum.midpoint.web.component.form.multivalue.MultiValueChoosePanel;
+import com.evolveum.midpoint.web.component.input.DropDownChoicePanel;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
 import com.evolveum.midpoint.web.page.admin.cases.dto.CaseWorkItemDto;
 import com.evolveum.midpoint.web.page.admin.cases.dto.CaseWorkItemDtoProvider;
@@ -77,15 +82,10 @@ import com.evolveum.midpoint.web.page.admin.dto.ObjectViewDto;
 import com.evolveum.midpoint.web.page.admin.reports.component.SingleValueChoosePanel;
 import com.evolveum.midpoint.web.security.SecurityUtils;
 import com.evolveum.midpoint.web.session.UserProfileStorage;
+import com.evolveum.midpoint.web.util.StringResourceChoiceRenderer;
 import com.evolveum.midpoint.web.util.TooltipBehavior;
 import com.evolveum.midpoint.wf.util.QueryUtils;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.CaseType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.CaseWorkItemType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.OtherPrivilegesLimitationType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.ResourceType;
-import com.evolveum.midpoint.xml.ns._public.common.common_3.UserType;
+
 
 /**
  * @author bpowers
@@ -104,12 +104,21 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
     private static final String ID_SEARCH_FILTER_RESOURCE = "filterResource";
     private static final String ID_SEARCH_FILTER_ASSIGNEE_CONTAINER = "filterAssigneeContainer";
     private static final String ID_SEARCH_FILTER_ASSIGNEE = "filterAssignee";
-    private static final String ID_SEARCH_FILTER_INCLUDE_CLOSED_CASES = "filterIncludeClosedCases";
+    private static final String ID_SEARCH_FILTER_CASES = "filterCases";
+    private static final String ID_SEARCH_FILTER_OUTCOME_ITEMS = "filterOutcomeItems";
+    private static final String ID_SEARCH_FILTER_DESCRIPTION = "filterDescription";
     // Data Table
     private static final String ID_CASE_WORK_ITEMS_TABLE = "caseWorkItemsTable";
     private static final String ID_BUTTON_BAR = "buttonBar";
     // Buttons
     private static final String ID_CREATE_CASE_BUTTON = "createCaseButton";
+
+    protected static final String SEARCH_FILTER_CASES_CLOSED = "closed";
+    protected static final String SEARCH_FILTER_CASES_OPEN = "open";
+	protected static final String SEARCH_FILTER_CASES_ANY = "any";
+
+	protected static final List<String> SEARCH_FILTER_CASES_VALUES = Arrays.asList(SEARCH_FILTER_CASES_OPEN,
+    SEARCH_FILTER_CASES_CLOSED, SEARCH_FILTER_CASES_ANY);
 
     private boolean all;
 
@@ -142,15 +151,54 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         } else {
             // not authorized to see all => sees only allocated to him (not quite what is expected, but sufficient for the time being)
             query = QueryUtils.filterForAssignees(q, SecurityUtils.getPrincipalUser(),
-                    OtherPrivilegesLimitationType.F_APPROVAL_WORK_ITEMS, getRelationRegistry())
-                    .and().item(CaseWorkItemType.F_CLOSE_TIMESTAMP).isNull().build();
+                    OtherPrivilegesLimitationType.F_APPROVAL_WORK_ITEMS, getRelationRegistry()).build();
         }
-        IsolatedCheckBoxPanel includeClosedCases = (IsolatedCheckBoxPanel) getCaseWorkItemsSearchField(ID_SEARCH_FILTER_INCLUDE_CLOSED_CASES);
-        if (includeClosedCases == null || !includeClosedCases.getValue()) {
+
+        // State Filter
+        DropDownChoicePanel<String> filterCasesChoice = (DropDownChoicePanel<String>) getCaseWorkItemsSearchField(ID_SEARCH_FILTER_CASES);
+        if (filterCasesChoice == null || filterCasesChoice.getModel().getObject().equals(SEARCH_FILTER_CASES_OPEN)) {
+            // Open Case Work Items
             query.addFilter(
                 QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
-                            .item(PrismConstants.T_PARENT, CaseType.F_STATE).eq("open").build().getFilter()
+                            .item(PrismConstants.T_PARENT, CaseType.F_STATE).eq(SEARCH_FILTER_CASES_OPEN).build().getFilter()
             );
+        } else if(filterCasesChoice.getModel().getObject().equals(SEARCH_FILTER_CASES_CLOSED)) {
+            // Closed Case Work Items
+            query.addFilter(
+                QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
+                            .item(PrismConstants.T_PARENT, CaseType.F_STATE).eq(SEARCH_FILTER_CASES_CLOSED).build().getFilter()
+            );
+
+            // WorkItem Outcome Filter - only applicable for closed case work items
+            IsolatedCheckBoxPanel onlyOutcomeItems = (IsolatedCheckBoxPanel) getCaseWorkItemsSearchField(ID_SEARCH_FILTER_OUTCOME_ITEMS);
+            if (onlyOutcomeItems != null && onlyOutcomeItems.getValue()) {
+                query.addFilter(
+                        QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
+                                .item(AbstractWorkItemType.F_OUTPUT, AbstractWorkItemOutputType.F_OUTCOME).eq(OperationResultStatusType.SUCCESS.value())
+                                .build().getFilter()
+                );
+            }
+        } else {
+            // Open or Closed case work items
+
+            // WorkItem Outcome Filter
+            IsolatedCheckBoxPanel onlyOutcomeItems = (IsolatedCheckBoxPanel) getCaseWorkItemsSearchField(ID_SEARCH_FILTER_OUTCOME_ITEMS);
+            if (onlyOutcomeItems != null && onlyOutcomeItems.getValue()) {
+                query.addFilter(
+                        QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
+                                .block()
+                                    // Either Open cases work items
+                                    .item(PrismConstants.T_PARENT, CaseType.F_STATE).eq(SEARCH_FILTER_CASES_OPEN)
+                                    .or()
+                                        .block()
+                                            // or directly closed case work items
+                                            .item(PrismConstants.T_PARENT, CaseType.F_STATE).eq(SEARCH_FILTER_CASES_CLOSED)
+                                            .and().item(AbstractWorkItemType.F_OUTPUT, AbstractWorkItemOutputType.F_OUTCOME).eq(OperationResultStatusType.SUCCESS.value())
+                                        .endBlock()
+                                .endBlock()
+                                .build().getFilter()
+                );
+            }
         }
 
         // Resource Filter
@@ -168,6 +216,16 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
                     );
                 }
             }
+        }
+
+        // Description Filter
+        TextPanel<String> descriptionChoice = (TextPanel) getCaseWorkItemsSearchField(ID_SEARCH_FILTER_DESCRIPTION);
+        if (descriptionChoice != null) {
+            query.addFilter(
+                    QueryBuilder.queryFor(CaseWorkItemType.class, getPrismContext())
+                            .item(PrismConstants.T_PARENT, CaseType.F_DESCRIPTION).contains(descriptionChoice.getBaseFormComponent().getValue()).matchingCaseIgnore()
+                            .build().getFilter()
+            );
         }
 
         // Assignee Filter
@@ -388,14 +446,35 @@ public abstract class PageCaseWorkItems extends PageAdminCaseWorkItems {
         });
         searchFilterForm.add(assigneeContainer);
 
-        IsolatedCheckBoxPanel includeClosedCases = new IsolatedCheckBoxPanel(ID_SEARCH_FILTER_INCLUDE_CLOSED_CASES, new Model<Boolean>(false)) {
+        TextPanel<String> description = new TextPanel<>(ID_SEARCH_FILTER_DESCRIPTION, new Model<String>(""));
+        description.getBaseFormComponent().add(new OnChangeAjaxBehavior() {
             private static final long serialVersionUID = 1L;
 
+            @Override
+            protected void onUpdate(AjaxRequestTarget target) {
+                searchFilterPerformed(target);
+            }
+        });
+        searchFilterForm.add(description);
+
+        DropDownChoicePanel<String> filterCases = new DropDownChoicePanel<String> (ID_SEARCH_FILTER_CASES, Model.of(SEARCH_FILTER_CASES_OPEN), Model.ofList(SEARCH_FILTER_CASES_VALUES), new StringResourceChoiceRenderer("PageCaseWorkItems.search.caseState.value"));
+        filterCases.getBaseFormComponent().add(new OnChangeAjaxBehavior() {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			protected void onUpdate(AjaxRequestTarget target) {
+				searchFilterPerformed(target);
+			}
+		});
+        searchFilterForm.add(filterCases);
+
+        IsolatedCheckBoxPanel onlyOutcomeItems = new IsolatedCheckBoxPanel(ID_SEARCH_FILTER_OUTCOME_ITEMS, new Model<Boolean>(true)) {
+            private static final long serialVersionUID = 1L;
             public void onUpdate(AjaxRequestTarget target) {
                 searchFilterPerformed(target);
             }
         };
-        searchFilterForm.add(includeClosedCases);
+        searchFilterForm.add(onlyOutcomeItems);
     }
 
     private boolean isAuthorizedToSeeAllCases() {
