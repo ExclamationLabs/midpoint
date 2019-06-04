@@ -1272,27 +1272,33 @@ public abstract class ShadowCache {
 							if (pendingDelta.isModify()) {
 								PrismContainer<ShadowAttributesType> shadowAttributesContainer = repoShadow.findContainer(ShadowType.F_ATTRIBUTES);
 								ResourceAttributeContainer resourceAttributeContainer = ResourceAttributeContainer.convertFromContainer(shadowAttributesContainer, ctx.getObjectClassDefinition());
-								ResourceAttribute<?> resourceNamingAttribute = resourceAttributeContainer.getNamingAttribute();
-								QName namingAttributeElement = resourceNamingAttribute.getElementName();
+								ResourceAttributeContainerDefinition resourceAttrDefinition = resourceAttributeContainer.getDefinition();
 
-								for (ItemDelta<?, ?> pendingModification: pendingDelta.getModifications()) {
+								if(resourceAttrDefinition != null){
+									ResourceAttributeDefinition namingAttribute = resourceAttrDefinition.getNamingAttribute();
+									if(namingAttribute != null){
+										for (ItemDelta<?, ?> pendingModification: pendingDelta.getModifications()) {
 
-									//Update the shadow name if the modified attribute is the naming attribute
-									if (pendingModification.getElementName().equals(namingAttributeElement)) {
-										Collection<?> valuesToReplace =  pendingModification.getValuesToReplace();
-										Stream<?> valueStream = valuesToReplace.stream();
-										Optional<?> valueToReplace = valueStream.findFirst();
+											//Update the shadow name if the modified attribute is the naming attribute
+											if (pendingModification.getElementName().getLocalPart().equals(namingAttribute.getName().getLocalPart())) {
+												Collection<?> valuesToReplace = pendingModification.getValuesToReplace();
+												Stream<?> valueStream = valuesToReplace.stream();
+												Optional<?> valueToReplace = valueStream.findFirst();
 
-										if (valuesToReplace.size() == 1 && valueToReplace.isPresent()) {
-											// Add naming attribute change delta
-											PropertyDelta<PolyString> nameDelta = shadowDelta.createPropertyModification(new ItemPath(ShadowType.F_NAME));
-											nameDelta.setValuesToReplace(new PrismPropertyValue<>(new PolyString(((PrismPropertyValue<String>)valueToReplace.get()).getValue())));
-											shadowDelta.addModification(nameDelta);
+												if (valuesToReplace.size() == 1 && valueToReplace.isPresent()) {
+													// Add naming attribute change delta
+													PropertyDelta<PolyString> nameDelta = shadowDelta.createPropertyModification(new ItemPath(ShadowType.F_NAME));
+													nameDelta.setValuesToReplace(new PrismPropertyValue<>(new PolyString(((PrismPropertyValue<String>)valueToReplace.get()).getValue())));
+													shadowDelta.addModification(nameDelta);
+												}
+
+											}
+											shadowDelta.addModification(pendingModification.clone());
 										}
-
 									}
-									shadowDelta.addModification(pendingModification.clone());
 								}
+
+
 							}
 							
 							if (pendingDelta.isDelete()) {
