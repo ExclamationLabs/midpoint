@@ -57,6 +57,7 @@ import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItemAction;
 import com.evolveum.midpoint.web.component.refresh.AutoRefreshDto;
 import com.evolveum.midpoint.web.component.refresh.AutoRefreshPanel;
 import com.evolveum.midpoint.web.component.refresh.Refreshable;
+import com.evolveum.midpoint.web.page.admin.reports.dto.ReportDeleteDialogDto;
 import com.evolveum.midpoint.web.page.admin.server.dto.*;
 import com.evolveum.midpoint.web.session.TasksStorage;
 import com.evolveum.midpoint.web.session.UserProfileStorage;
@@ -614,14 +615,14 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 						Date date = getCurrentRuntime(rowModel);
 						TaskDto task = rowModel.getObject();
 						if (task.getRawExecutionStatus() == TaskExecutionStatus.CLOSED && date != null) {
-							((DateLabelComponent) item.get(componentId)).setBefore(createStringResource("pageTasks.task.closedAt").getString());
+							((DateLabelComponent) item.get(componentId)).setBefore(createStringResource("pageTasks.task.closedAt").getString() + " ");
 						} else if (date != null) {
 							((DateLabelComponent) item.get(componentId))
 									.setBefore(WebComponentUtil.formatDurationWordsForLocal(date.getTime(), true, true, PageTasks.this));
 						}
 						return date;
 					}
-				}, DateLabelComponent.MEDIUM_MEDIUM_STYLE);
+				}, WebComponentUtil.getShortDateTimeFormat(PageTasks.this));
 				item.add(dateLabel);
 			}
 
@@ -633,7 +634,8 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 				if (date != null) {
 					if (task.getRawExecutionStatus() == TaskExecutionStatus.CLOSED) {
 						displayValue =
-								createStringResource("pageTasks.task.closedAt").getString() + WebComponentUtil.getLocalizedDate(date, DateLabelComponent.LONG_MEDIUM_STYLE);
+								createStringResource("pageTasks.task.closedAt").getString() +
+										WebComponentUtil.getShortDateTimeFormattedValue(date, PageTasks.this);
 					} else {
 						displayValue = WebComponentUtil.formatDurationWordsForLocal(date.getTime(), true, true, PageTasks.this);
 					}
@@ -998,6 +1000,20 @@ public class PageTasks extends PageAdminTasks implements Refreshable {
 
 				PageBase page = (PageBase) component.getPage();
 				page.navigateToNext(PageTaskEdit.class, parameters);
+			}
+
+			@Override
+			protected IModel createLinkModel(IModel<TaskDto> rowModel) {
+				PageBase page = (PageBase) component.getPage();
+				IModel<String> taskNameModel = page.createStringResource(rowModel.getObject().getName());
+				String taskName = taskNameModel != null && StringUtils.isNotEmpty(taskNameModel.getObject()) ?
+						taskNameModel.getObject() : "";
+
+				if (StringUtils.isNotEmpty(taskName)){
+					return Model.of(taskName);
+				} else {
+					return super.createLinkModel(rowModel);
+				}
 			}
 
 			@Override

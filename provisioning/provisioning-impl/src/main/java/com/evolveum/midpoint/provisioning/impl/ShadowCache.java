@@ -292,9 +292,7 @@ public class ShadowCache {
 				}
 			}
 			
-			if (LOGGER.isTraceEnabled()) {
-				LOGGER.trace("Shadow returned by ResouceObjectConverter:\n{}", resourceShadow.debugDump(1));
-			}
+			LOGGER.trace("Shadow returned by ResourceObjectConverter:\n{}", resourceShadow.debugDumpLazily(1));
 
 			// Resource shadow may have different auxiliary object classes than
 			// the original repo shadow. Make sure we have the definition that 
@@ -307,14 +305,6 @@ public class ShadowCache {
 
 			resourceManager.modifyResourceAvailabilityStatus(resource.asPrismObject(),
 					AvailabilityStatusType.UP, parentResult);
-			// try to apply changes to the account only if the resource if UP
-			if (isCompensate(rootOptions) && repositoryShadow.asObjectable().getObjectChange() != null
-					&& repositoryShadow.asObjectable().getFailedOperationType() != null
-					&& resource.getOperationalState() != null && resource.getOperationalState()
-							.getLastAvailabilityStatus() == AvailabilityStatusType.UP) {
-				throw new GenericConnectorException(
-						"Found changes that have been not applied to the resource object yet. Trying to apply them now.");
-			}
 
 			if (LOGGER.isTraceEnabled()) {
 				LOGGER.trace("Shadow from repository:\n{}", repositoryShadow.debugDump(1));
@@ -1315,7 +1305,7 @@ public class ShadowCache {
 	/**
 	 * Used to quickly and efficiently refresh shadow before GET operations. 
 	 */
-	private PrismObject<ShadowType> refreshShadowQick(ProvisioningContext ctx, 
+	private PrismObject<ShadowType> refreshShadowQick(ProvisioningContext ctx,
 			PrismObject<ShadowType> repoShadow, 
 			XMLGregorianCalendar now, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException, ExpressionEvaluationException, EncryptionException {
 
@@ -2405,17 +2395,17 @@ public class ShadowCache {
 					continue;
 				}
 				boolean isSuccess = processSynchronization(shadowCtx, change, parentResult);
-                                
+
                                 boolean retryUnhandledError = true;
                                 if (task.getExtension() != null) {
                                       PrismProperty tokenRetryUnhandledErrProperty = task.getExtensionProperty(SchemaConstants.SYNC_TOKEN_RETRY_UNHANDLED);
-                                      
+
                                       if (tokenRetryUnhandledErrProperty != null) {
-                                          retryUnhandledError = (boolean) tokenRetryUnhandledErrProperty.getRealValue(); 
-                                      }                                                                     
-                                }     
-                                
-				if (!retryUnhandledError || isSuccess) {                                    
+                                          retryUnhandledError = (boolean) tokenRetryUnhandledErrProperty.getRealValue();
+                                      }
+                                }
+
+				if (!retryUnhandledError || isSuccess) {
 					// get updated token from change, create property modification from new token and replace old token with the new one
 					task.setExtensionProperty(change.getToken());
 					processedChanges++;
@@ -2449,7 +2439,7 @@ public class ShadowCache {
 		try {
 			ResourceObjectShadowChangeDescription shadowChangeDescription = createResourceShadowChangeDescription(
 					change, ctx.getResource(), ctx.getChannel());
-	
+
 			if (LOGGER.isTraceEnabled()) {
 				LOGGER.trace("Created resource object shadow change description {}",
 						SchemaDebugUtil.prettyPrint(shadowChangeDescription));
@@ -2480,7 +2470,7 @@ public class ShadowCache {
 				// shadows is much easier.
 //				deleteShadowFromRepoIfNeeded(change, result);
 				successfull = true;
-	
+
 			} else {
 				successfull = false;
 				saveAccountResult(shadowChangeDescription, change, notifyChangeResult, result);
@@ -2489,13 +2479,13 @@ public class ShadowCache {
 			if (result.isUnknown()) {
 				result.computeStatus();
 			}
-			
+
 		} catch (SchemaException | ObjectNotFoundException | ObjectAlreadyExistsException |
 				CommunicationException | ConfigurationException | ExpressionEvaluationException | RuntimeException | Error e) {
 			result.recordFatalError(e);
 			throw e;
 		}
-			
+
 		return successfull;
 	}
 
@@ -2644,7 +2634,7 @@ public class ShadowCache {
 			if (change.getObjectDelta() != null && change.getObjectDelta().getOid() == null) {
 				change.getObjectDelta().setOid(oldShadow.getOid());
 			}
-			
+
 			if (change.getObjectDelta() != null && change.getObjectDelta().isDelete()) {
 				PrismObject<ShadowType> currentShadow = change.getCurrentShadow();
 				if (currentShadow == null) {
@@ -2656,7 +2646,7 @@ public class ShadowCache {
 					shadowManager.markShadowTombstone(currentShadow, parentResult);
 				}
 			}
-			
+
 		} else {
 			LOGGER.debug(
 					"No old shadow for synchronization event {}, the shadow must be gone in the meantime (this is probably harmless)",
@@ -2804,7 +2794,7 @@ public class ShadowCache {
 					if (rEntitlementAssociation == null) {
 						if (LOGGER.isTraceEnabled()) {
 							LOGGER.trace("Entitlement association with name {} couldn't be found in {} {}\nresource shadow:\n{}\nrepo shadow:\n{}",
-									new Object[]{ associationName, ctx.getObjectClassDefinition(), ctx.getDesc(), 
+									new Object[]{ associationName, ctx.getObjectClassDefinition(), ctx.getDesc(),
 											resourceShadow.debugDump(1), repoShadow==null?null:repoShadow.debugDump(1)});
 							LOGGER.trace("Full refined definition: {}", ctx.getObjectClassDefinition().debugDump());
 						}
@@ -2963,7 +2953,7 @@ public class ShadowCache {
 					throws SchemaException, ObjectNotFoundException, ConfigurationException,
 					CommunicationException, ExpressionEvaluationException {
 		try {
-			ItemDelta.accept(modifications, 
+			ItemDelta.accept(modifications,
 					(visitable) -> {
 						try {
 							preprocessEntitlement(ctx, (PrismContainerValue<ShadowAssociationType>) visitable, desc,
@@ -3140,7 +3130,7 @@ public class ShadowCache {
 		return XmlTypeConverter.isAfterInterval(requestTimestamp, operationGroupingInterval, now);
 	}
 
-	public <T> ItemComparisonResult compare(PrismObject<ShadowType> repositoryShadow, ItemPath path, T expectedValue, Task task, OperationResult parentResult) 
+	public <T> ItemComparisonResult compare(PrismObject<ShadowType> repositoryShadow, ItemPath path, T expectedValue, Task task, OperationResult parentResult)
 				throws ObjectNotFoundException, CommunicationException, SchemaException, ConfigurationException, SecurityViolationException, ExpressionEvaluationException, EncryptionException {
 		
 		if (!path.equals(SchemaConstants.PATH_PASSWORD_VALUE)) {

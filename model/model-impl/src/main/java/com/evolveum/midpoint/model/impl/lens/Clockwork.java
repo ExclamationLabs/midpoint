@@ -378,23 +378,30 @@ public class Clockwork {
 
 	private void enterAssociationSearchExpressionEvaluatorCache() {
 		AssociationSearchExpressionEvaluatorCache cache = AssociationSearchExpressionEvaluatorCache.enterCache();
-		AssociationSearchExpressionCacheInvalidator invalidator = new AssociationSearchExpressionCacheInvalidator(cache);
-		cache.setClientContextInformation(invalidator);
-		changeNotificationDispatcher.registerNotificationListener((ResourceObjectChangeListener) invalidator);
-		changeNotificationDispatcher.registerNotificationListener((ResourceOperationListener) invalidator);
+		if (cache.getClientContextInformation() == null) {
+			AssociationSearchExpressionCacheInvalidator invalidator = new AssociationSearchExpressionCacheInvalidator(cache);
+			cache.setClientContextInformation(invalidator);
+			changeNotificationDispatcher.registerNotificationListener((ResourceObjectChangeListener) invalidator);
+			changeNotificationDispatcher.registerNotificationListener((ResourceOperationListener) invalidator);
+		}
 	}
 
 	private void exitAssociationSearchExpressionEvaluatorCache() {
 		AssociationSearchExpressionEvaluatorCache cache = AssociationSearchExpressionEvaluatorCache.exitCache();
 		if (cache == null) {
-			return;			// shouldn't occur
+			LOGGER.error("exitAssociationSearchExpressionEvaluatorCache: cache instance was not found for the current thread");
+			return;
 		}
-		Object invalidator = cache.getClientContextInformation();
-		if (invalidator == null || !(invalidator instanceof AssociationSearchExpressionCacheInvalidator)) {
-			return;			// shouldn't occur either
+		if (cache.getEntryCount() <= 0) {
+			Object invalidator = cache.getClientContextInformation();
+			if (!(invalidator instanceof AssociationSearchExpressionCacheInvalidator)) {
+				LOGGER.error("exitAssociationSearchExpressionEvaluatorCache: expected {}, got {} instead",
+						AssociationSearchExpressionCacheInvalidator.class, invalidator);
+				return;
+			}
+			changeNotificationDispatcher.unregisterNotificationListener((ResourceObjectChangeListener) invalidator);
+			changeNotificationDispatcher.unregisterNotificationListener((ResourceOperationListener) invalidator);
 		}
-		changeNotificationDispatcher.unregisterNotificationListener((ResourceObjectChangeListener) invalidator);
-		changeNotificationDispatcher.unregisterNotificationListener((ResourceOperationListener) invalidator);
 	}
 
 	private <F extends ObjectType> int getMaxClicks(LensContext<F> context, OperationResult result) throws SchemaException, ObjectNotFoundException {
@@ -931,7 +938,7 @@ public class Clockwork {
 			}
 		} catch (ObjectNotFoundException e) {
 			if (!deletedOk) {
-				throw e;
+				LoggingUtils.logExceptionAsWarning(LOGGER, "Couldn't record operation execution because the object {} is gone", e, oid);
 			} else {
 				LOGGER.trace("Object {} deleted but this was expected.", oid);
 				result.deleteLastSubresultIfError();

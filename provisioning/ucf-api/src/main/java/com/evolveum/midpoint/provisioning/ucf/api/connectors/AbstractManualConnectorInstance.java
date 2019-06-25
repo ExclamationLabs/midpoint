@@ -46,6 +46,7 @@ import com.evolveum.midpoint.schema.result.AsynchronousOperationReturnValue;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.schema.statistics.ConnectorOperationalStatus;
 import com.evolveum.midpoint.task.api.StateReporter;
+import com.evolveum.midpoint.util.annotation.Experimental;
 import com.evolveum.midpoint.util.exception.CommunicationException;
 import com.evolveum.midpoint.util.exception.ConfigurationException;
 import com.evolveum.midpoint.util.exception.ObjectAlreadyExistsException;
@@ -76,6 +77,7 @@ import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.UpdateCapabi
  * @author Radovan Semancik
  */
 @ManagedConnector
+@Experimental
 public abstract class AbstractManualConnectorInstance extends AbstractManagedConnectorInstance implements AsynchronousOperationQueryable {
 
 	private static final String OPERATION_ADD = AbstractManualConnectorInstance.class.getName() + ".addObject";
@@ -293,7 +295,7 @@ public abstract class AbstractManualConnectorInstance extends AbstractManagedCon
 	}
 
 	@Override
-	public ResourceSchema fetchResourceSchema(List<QName> generateObjectClasses, OperationResult parentResult)
+	public ResourceSchema fetchResourceSchema(OperationResult parentResult)
 			throws CommunicationException, GenericFrameworkException, ConfigurationException {
 		// Schema discovery is not supported. Schema must be defined manually. Or other connector has to provide it.
 		InternalMonitor.recordConnectorOperation("schea");

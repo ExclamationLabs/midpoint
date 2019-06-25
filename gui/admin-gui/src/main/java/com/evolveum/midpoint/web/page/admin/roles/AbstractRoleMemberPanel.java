@@ -26,6 +26,7 @@ import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.web.component.AjaxIconButton;
 import com.evolveum.midpoint.web.component.data.column.ColumnMenuAction;
+import com.evolveum.midpoint.web.component.data.column.ColumnUtils;
 import com.evolveum.midpoint.web.component.menu.cog.ButtonInlineMenuItem;
 import com.evolveum.midpoint.web.component.menu.cog.InlineMenuItemAction;
 import com.evolveum.midpoint.web.page.admin.configuration.component.HeaderMenuAction;
@@ -194,8 +195,11 @@ public abstract class AbstractRoleMemberPanel<R extends AbstractRoleType> extend
 		form.add(memberContainer);
 
 		PageBase pageBase =  getPageBase();
+		Class type = getMemberPanelStorage() != null && getMemberPanelStorage().getType() != null ?
+				getMemberPanelStorage().getType().getClassDefinition() : ObjectType.class;
 		MainObjectListPanel<ObjectType> childrenListPanel = new MainObjectListPanel<ObjectType>(
-				ID_MEMBER_TABLE, ObjectType.class, getTableId(getComplexTypeQName()), getSearchOptions(), pageBase) {
+				ID_MEMBER_TABLE, type
+				, getTableId(getComplexTypeQName()), getSearchOptions(), pageBase) {
 
 			private static final long serialVersionUID = 1L;
 
@@ -238,6 +242,11 @@ public abstract class AbstractRoleMemberPanel<R extends AbstractRoleType> extend
 			}
 
 			@Override
+			protected IColumn<SelectableBean<ObjectType>, String> createIconColumn(){
+				return (IColumn) ColumnUtils.createIconColumn(ObjectType.class);
+			}
+
+			@Override
             protected List<IColumn<SelectableBean<ObjectType>, String>> createColumns() {
                 return createMembersColumns();
             }
@@ -249,7 +258,8 @@ public abstract class AbstractRoleMemberPanel<R extends AbstractRoleType> extend
 
             @Override
             protected Search createSearch() {
-                return SearchFactory.createSearch(getDefaultObjectType(), pageBase);
+                return getMemberPanelStorage() != null && getMemberPanelStorage().getSearch() != null ?
+						getMemberPanelStorage().getSearch() : SearchFactory.createSearch(getDefaultObjectType(), pageBase);
             }
 
             @Override
@@ -403,7 +413,15 @@ public abstract class AbstractRoleMemberPanel<R extends AbstractRoleType> extend
                     };
                 }
 
-            });
+                @Override
+				public IModel<String> getConfirmationMessageModel() {
+					if (CollectionUtils.isNotEmpty(getMemberTable().getSelectedObjects())) {
+						return AbstractRoleMemberPanel.this.createStringResource("abstractRoleMemberPanel.deleteSelectedMembersConfirmationLabel");
+					}
+					return null;
+				}
+
+			});
         }
         return menu;
 	}
@@ -419,7 +437,7 @@ public abstract class AbstractRoleMemberPanel<R extends AbstractRoleType> extend
 		return WebComponentUtil.isAuthorized(memeberAuthz.get(action));
 	}
 	
-	protected <O extends ObjectType> void assignMembers(AjaxRequestTarget target, List<QName> availableRelationList) {
+	protected void assignMembers(AjaxRequestTarget target, List<QName> availableRelationList) {
 		MemberOperationsHelper.assignMembers(getPageBase(), getModelObject(), target, availableRelationList);
 	}
 
@@ -456,35 +474,46 @@ public abstract class AbstractRoleMemberPanel<R extends AbstractRoleType> extend
 	}
 	
 	private void deleteMembersPerformed(AjaxRequestTarget target) {
-		QueryScope scope = getQueryScope(false);
-		ChooseFocusTypeAndRelationDialogPanel chooseTypePopupContent = new ChooseFocusTypeAndRelationDialogPanel(getPageBase().getMainPopupBodyId(),
+		if (CollectionUtils.isNotEmpty(getMemberTable().getSelectedObjects())) {
+			deleteMembersPerformed(ObjectType.COMPLEX_TYPE, QueryScope.SELECTED, null, target);
+		} else {
+
+			QueryScope scope = getQueryScope(false);
+			ChooseFocusTypeAndRelationDialogPanel chooseTypePopupContent = new ChooseFocusTypeAndRelationDialogPanel(getPageBase().getMainPopupBodyId(),
 					createStringResource("abstractRoleMemberPanel.deleteAllMembersConfirmationLabel")) {
-			private static final long serialVersionUID = 1L;
+				private static final long serialVersionUID = 1L;
 
-			@Override
-			protected List<QName> getSupportedObjectTypes() {
-				return AbstractRoleMemberPanel.this.getSupportedObjectTypes(true);
-			}
+				@Override
+				protected List<QName> getSupportedObjectTypes() {
+					return AbstractRoleMemberPanel.this.getSupportedObjectTypes(true);
+				}
 
-			@Override
-			protected List<QName> getSupportedRelations() {
-				return AbstractRoleMemberPanel.this.getSupportedRelations();
-			}
+				@Override
+				protected List<QName> getSupportedRelations() {
+					return AbstractRoleMemberPanel.this.getSupportedRelations();
+				}
 
-			protected void okPerformed(QName type, Collection<QName> relations, AjaxRequestTarget target) {
-				deleteMembersPerformed(type, scope, relations, target);
+				protected void okPerformed(QName type, Collection<QName> relations, AjaxRequestTarget target) {
+					if (relations == null || relations.isEmpty()) {
+						getSession().warn("No relation was selected. Cannot perform delete members");
+						target.add(this);
+						target.add(getPageBase().getFeedbackPanel());
+						return;
+					}
 
-			}
+					deleteMembersPerformed(type, scope, relations, target);
 
-			@Override
-			protected boolean isFocusTypeSelectorVisible() {
-				return !QueryScope.SELECTED.equals(scope);
-			}
+				}
 
-		};
+				@Override
+				protected boolean isFocusTypeSelectorVisible() {
+					return !QueryScope.SELECTED.equals(scope);
+				}
 
-		getPageBase().showMainPopup(chooseTypePopupContent, target);
-		
+			};
+
+			getPageBase().showMainPopup(chooseTypePopupContent, target);
+		}
 	}
 	
 	protected void createFocusMemberPerformed(AjaxRequestTarget target) {
@@ -524,12 +553,6 @@ public abstract class AbstractRoleMemberPanel<R extends AbstractRoleType> extend
 	}
 	
 	protected void deleteMembersPerformed(QName type, QueryScope scope, Collection<QName> relations, AjaxRequestTarget target) {
-		if (relations == null || relations.isEmpty()) {
-			getSession().warn("No relation was selected. Cannot perform delete members");
-			target.add(this);
-			target.add(getPageBase().getFeedbackPanel());
-			return;
-		}
 		MemberOperationsHelper.deleteMembersPerformed(getPageBase(), scope, getActionQuery(scope, relations), type, target);
 	}
 

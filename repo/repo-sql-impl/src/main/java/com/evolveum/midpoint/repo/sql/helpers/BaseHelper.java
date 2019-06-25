@@ -102,7 +102,7 @@ public class BaseHelper {
 			session.setHibernateFlushMode(FlushMode.MANUAL);
 
 			LOGGER.trace("Marking transaction as read only.");
-			session.doWork(connection -> connection.createStatement().execute("SET TRANSACTION READ ONLY"));
+				session.doWork(connection -> connection.createStatement().execute("SET TRANSACTION READ ONLY"));
 		}
 		return session;
 	}
@@ -135,6 +135,10 @@ public class BaseHelper {
 	}
 
 	public void cleanupSessionAndResult(Session session, OperationResult result) {
+	    if (session != null && session.getTransaction().isActive()) {
+            session.getTransaction().commit();
+        }
+
 		if (session != null && session.isOpen()) {
 			session.close();
 		}
@@ -236,17 +240,15 @@ public class BaseHelper {
 
 	private boolean isExceptionRelatedToSerializationInternal(Throwable ex) {
 
-		if (ex instanceof PessimisticLockException
-				|| ex instanceof LockAcquisitionException
-				|| ex instanceof HibernateOptimisticLockingFailureException
-				|| ex instanceof StaleObjectStateException) {                       // todo the last one is questionable
-			return true;
-		}
-		if (ExceptionUtil.findCause(ex, SerializationRelatedException.class) != null) {
+		if (ExceptionUtil.findCause(ex, SerializationRelatedException.class) != null
+				|| ExceptionUtil.findCause(ex, PessimisticLockException.class) != null
+				|| ExceptionUtil.findCause(ex, LockAcquisitionException.class) != null
+				|| ExceptionUtil.findCause(ex, HibernateOptimisticLockingFailureException.class) != null
+				|| ExceptionUtil.findCause(ex, StaleObjectStateException.class) != null) {  // todo the last one is questionable
 			return true;
 		}
 
-		// it's not locking exception (optimistic, pesimistic lock or simple lock acquisition) understood by hibernate
+		// it's not locking exception (optimistic, pessimistic lock or simple lock acquisition) understood by hibernate
 		// however, it still could be such exception... wrapped in e.g. TransactionException
 		// so we have a look inside - we try to find SQLException there
 

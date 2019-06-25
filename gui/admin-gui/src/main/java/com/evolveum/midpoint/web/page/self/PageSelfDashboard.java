@@ -200,7 +200,14 @@ public class PageSelfDashboard extends PageSelf {
                     protected Component getMainComponent(String markupId) {
 						ISortableDataProvider provider = new ListDataProvider(this,
                                 new PropertyModel<List<WorkItemDto>>(getModel(), CallableResult.F_VALUE));
-						return new WorkItemsPanel(markupId, provider, null, 10, WorkItemsPanel.View.DASHBOARD);
+						return new WorkItemsPanel(markupId, provider, null, 10, WorkItemsPanel.View.DASHBOARD){
+                            private static final long serialVersionUID = 1L;
+
+                            @Override
+                            protected boolean isFooterVisible(long providerSize, int pageSize){
+                                return providerSize > pageSize;
+                            }
+                        };
                     }
                 };
 
@@ -241,7 +248,14 @@ public class PageSelfDashboard extends PageSelf {
                     protected Component getMainComponent(String markupId) {
 						ISortableDataProvider provider = new ListDataProvider(this,
                                 new PropertyModel<List<ProcessInstanceDto>>(getModel(), CallableResult.F_VALUE));
-                        return new ProcessInstancesPanel(markupId, provider, null, 10, ProcessInstancesPanel.View.DASHBOARD, null);
+                        return new ProcessInstancesPanel(markupId, provider, null, 10, ProcessInstancesPanel.View.DASHBOARD, null){
+                            private static final long serialVersionUID = 1L;
+
+                            @Override
+                            protected boolean isFooterVisible(long providerSize, int pageSize){
+                                return providerSize > pageSize;
+                            }
+                        };
                     }
                 };
 
@@ -297,7 +311,7 @@ public class PageSelfDashboard extends PageSelf {
                             new ItemPath(T_PARENT, WfContextType.F_TARGET_REF));
             List<WorkItemType> workItems = getModelService().searchContainers(WorkItemType.class, query, options, task, result);
             for (WorkItemType workItem : workItems) {
-                list.add(new WorkItemDto(workItem));
+                list.add(new WorkItemDto(workItem, PageSelfDashboard.this));
             }
         } catch (Exception e) {
             result.recordFatalError("Couldn't get list of work items.", e);

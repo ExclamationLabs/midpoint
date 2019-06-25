@@ -33,6 +33,7 @@ import com.evolveum.midpoint.web.component.data.column.IconColumn;
 import com.evolveum.midpoint.web.component.data.column.LinkColumn;
 import com.evolveum.midpoint.web.page.admin.workflow.PageWorkItem;
 import com.evolveum.midpoint.web.page.admin.workflow.PageWorkItems;
+import com.evolveum.midpoint.web.page.admin.workflow.dto.ProtectedWorkItemId;
 import com.evolveum.midpoint.web.page.admin.workflow.dto.WorkItemDtoProvider;
 import com.evolveum.midpoint.web.page.admin.workflow.dto.WorkItemDto;
 import com.evolveum.midpoint.web.session.UserProfileStorage;
@@ -115,7 +116,7 @@ public class WorkItemsPanel extends BasePanel {
 							public Date getObject() {
 								return rowModel.getObject().getStartedDate();
 							}
-						}, DateLabelComponent.LONG_MEDIUM_STYLE));
+						}, WebComponentUtil.getShortDateTimeFormat(WorkItemsPanel.this.getPageBase())));
 					}
 				});
 			}
@@ -131,7 +132,7 @@ public class WorkItemsPanel extends BasePanel {
                             public Date getObject() {
                                 return rowModel.getObject().getCreatedDate();
                             }
-                        }, DateLabelComponent.LONG_MEDIUM_STYLE));
+                        }, WebComponentUtil.getShortDateTimeFormat(WorkItemsPanel.this.getPageBase())));
                     }
             });
 			columns.add(new AbstractColumn<WorkItemDto, String>(createStringResource("WorkItemsPanel.deadline")){
@@ -146,7 +147,7 @@ public class WorkItemsPanel extends BasePanel {
                             public Date getObject() {
                                 return rowModel.getObject().getDeadlineDate();
                             }
-                        }, DateLabelComponent.LONG_MEDIUM_STYLE));
+                        }, WebComponentUtil.getShortDateTimeFormat(WorkItemsPanel.this.getPageBase())));
                     }
             });
 			columns.add(new PropertyColumn<>(createStringResource("WorkItemsPanel.escalationLevel"),
@@ -169,7 +170,7 @@ public class WorkItemsPanel extends BasePanel {
 
 			@Override
 			protected boolean isFooterVisible(long providerSize, int pageSize){
-				return providerSize > pageSize;
+				return WorkItemsPanel.this.isFooterVisible(providerSize, pageSize);
 			}
 		};
 		workItemsTable.setAdditionalBoxCssClasses("without-box-header-top-border");
@@ -194,7 +195,8 @@ public class WorkItemsPanel extends BasePanel {
 				@Override
 				public void onClick(AjaxRequestTarget target, IModel<WorkItemDto> rowModel) {
 					PageParameters parameters = new PageParameters();
-					parameters.add(OnePageParameterEncoder.PARAMETER, rowModel.getObject().getWorkItemId());
+					parameters.add(OnePageParameterEncoder.PARAMETER,
+							ProtectedWorkItemId.createExternalForm(rowModel.getObject().getWorkItem()));
 					PageWorkItem page = Session.get().getPageFactory().newPage(PageWorkItem.class, parameters);
 					page.setPowerDonor(determinePowerDonor());
 					getPageBase().navigateToNext(page);
@@ -351,4 +353,7 @@ public class WorkItemsPanel extends BasePanel {
 		};
 	}
 
+	protected boolean isFooterVisible(long providerSize, int pageSize){
+		return true;
+	}
 }

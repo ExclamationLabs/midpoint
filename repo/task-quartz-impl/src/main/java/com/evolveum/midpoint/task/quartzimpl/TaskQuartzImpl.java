@@ -567,6 +567,7 @@ public class TaskQuartzImpl implements Task {
 		setResultImmediate(getResult(), new OperationResult("dummy"));
 	}
 
+	@Override
 	public void setResultTransient(OperationResult result) {
 		this.taskResult = result;
 		this.taskPrism.asObjectable().setResult(result != null ? result.createOperationResultType() : null);
@@ -3179,6 +3180,7 @@ public class TaskQuartzImpl implements Task {
 		List<ItemDelta<?, ?>> deltas = new ArrayList<>();
 		if (taskResult != null) {
 			addIgnoreNull(deltas, setResultAndPrepareDelta(taskResult));
+			addIgnoreNull(deltas, setResultStatusTypeAndPrepareDelta(taskResult.getStatus() != null ? taskResult.getStatus().createStatusType() : null));
 		}
 		addIgnoreNull(deltas, setExecutionStatusAndPrepareDelta(TaskExecutionStatus.CLOSED));
 		addIgnoreNull(deltas, setCompletionTimestampAndPrepareDelta(System.currentTimeMillis()));

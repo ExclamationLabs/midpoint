@@ -990,6 +990,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		assertCounterIncrement(InternalCounters.RESOURCE_SCHEMA_PARSE_COUNT, 0);
 		assertCounterIncrement(InternalCounters.CONNECTOR_CAPABILITIES_FETCH_COUNT, 0);
 		assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT, 0);
+		assertCounterIncrement(InternalCounters.CONNECTOR_INSTANCE_CONFIGURATION_COUNT, 0);
 		assertCounterIncrement(InternalCounters.CONNECTOR_SCHEMA_PARSE_COUNT, 0);
 	}
 
@@ -1000,6 +1001,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		rememberCounter(InternalCounters.RESOURCE_SCHEMA_PARSE_COUNT);
 		rememberCounter(InternalCounters.CONNECTOR_CAPABILITIES_FETCH_COUNT);
 		rememberCounter(InternalCounters.CONNECTOR_INSTANCE_INITIALIZATION_COUNT);
+		rememberCounter(InternalCounters.CONNECTOR_INSTANCE_CONFIGURATION_COUNT);
 		rememberCounter(InternalCounters.CONNECTOR_SCHEMA_PARSE_COUNT);
 	}
 
@@ -1140,6 +1142,12 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 				.itemWithDef(attrDef, ShadowType.F_ATTRIBUTES, attrDef.getName()).eq(attributeValue)
 				.and().item(ShadowType.F_OBJECT_CLASS).eq(rAccount.getTypeName())
 				.and().item(ShadowType.F_RESOURCE_REF).ref(resource.getOid())
+				.build();
+	}
+	
+	protected ObjectQuery createOrgSubtreeQuery(String orgOid) throws SchemaException {
+		return queryFor(ObjectType.class)
+				.isChildOf(orgOid)
 				.build();
 	}
 
@@ -1743,7 +1751,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		if (result.isUnknown()) {
 			result.computeStatus();
 		}
-		display("Operation result status", result.getStatus());
+		display("Operation " + result.getOperation() + " result status", result.getStatus());
 		TestUtil.assertSuccess(result);
 	}
 	
@@ -1751,7 +1759,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		if (result.isUnknown()) {
 			result.computeStatus();
 		}
-		display("Operation result status", result.getStatus());
+		display("Operation " + result.getOperation() + " result status", result.getStatus());
 		TestUtil.assertResultStatus(result, OperationResultStatus.HANDLED_ERROR);
 	}
 	
@@ -1759,7 +1767,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		if (result.isUnknown()) {
 			result.computeStatus();
 		}
-		display("Operation result status", result.getStatus());
+		display("Operation " + result.getOperation() + " result status", result.getStatus());
 		TestUtil.assertSuccess(result, depth);
 	}
 
@@ -1774,7 +1782,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 		if (result.isUnknown()) {
 			result.computeStatus();
 		}
-		assertEquals("Unexpected result status", expectedStatus, result.getStatus());
+		assertEquals("Unexpected operation " + result.getOperation() + " result status", expectedStatus, result.getStatus());
 	}
 
 	protected String assertInProgress(OperationResult result) {
@@ -1782,7 +1790,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestNGSpringContex
 			result.computeStatus();
 		}
 		if (!OperationResultStatus.IN_PROGRESS.equals(result.getStatus())) {
-			String message = "Expected IN_PROGRESS, but result status was " + result.getStatus();
+			String message = "Expected operation " + result.getOperation() + " status IN_PROGRESS, but result status was " + result.getStatus();
 			display (message, result);
 			fail(message);
 		}
