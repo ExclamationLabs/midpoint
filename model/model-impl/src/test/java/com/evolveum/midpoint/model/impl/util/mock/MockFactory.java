@@ -8,6 +8,14 @@ package com.evolveum.midpoint.model.impl.util.mock;
 
 import java.util.*;
 
+import com.evolveum.midpoint.schema.processor.ResourceSchema;
+
+import com.evolveum.midpoint.util.exception.ConfigurationException;
+import com.evolveum.midpoint.util.exception.ObjectNotFoundException;
+import com.evolveum.midpoint.util.exception.SchemaException;
+
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.CapabilityCollectionType;
+
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -185,6 +193,11 @@ public class MockFactory {
             }
 
             @Override
+            public @Nullable ResourceSchema fetchSchema(@NotNull PrismObject<ResourceType> resource, @NotNull OperationResult parentResult) {
+                return null;
+            }
+
+            @Override
             public Set<ConnectorType> discoverConnectors(ConnectorHostType hostType, OperationResult parentResult) {
                 return null;
             }
@@ -299,6 +312,18 @@ public class MockFactory {
                     @NotNull Task task,
                     @NotNull OperationResult result) {
                 return null;
+            }
+
+            @Override
+            public void expandConfigurationObject(
+                    @NotNull PrismObject<? extends ObjectType> configurationObject,
+                    @NotNull Task task,
+                    @NotNull OperationResult result) throws SchemaException, ConfigurationException, ObjectNotFoundException {
+            }
+
+            @Override
+            public CapabilityCollectionType getNativeCapabilities(@NotNull String connOid, OperationResult result) {
+                return new CapabilityCollectionType();
             }
         };
     }

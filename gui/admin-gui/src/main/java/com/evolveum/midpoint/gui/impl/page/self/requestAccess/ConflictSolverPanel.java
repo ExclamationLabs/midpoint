@@ -9,9 +9,12 @@ package com.evolveum.midpoint.gui.impl.page.self.requestAccess;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.apache.wicket.ajax.AjaxRequestTarget;
+import org.apache.wicket.ajax.markup.html.AjaxLink;
+import org.apache.wicket.markup.html.WebMarkupContainer;
 import org.apache.wicket.markup.html.list.ListItem;
 import org.apache.wicket.markup.html.list.ListView;
 import org.apache.wicket.model.IModel;
@@ -21,6 +24,7 @@ import com.evolveum.midpoint.gui.api.component.Badge;
 import com.evolveum.midpoint.gui.api.component.BasePanel;
 import com.evolveum.midpoint.gui.api.component.Toggle;
 import com.evolveum.midpoint.gui.api.component.TogglePanel;
+import com.evolveum.midpoint.web.component.util.VisibleBehaviour;
 
 /**
  * Created by Viliam Repan (lazyman).
@@ -29,6 +33,8 @@ public class ConflictSolverPanel extends BasePanel<RequestAccess> {
 
     private static final long serialVersionUID = 1L;
 
+    private static final String ID_DONE_CARD = "doneCard";
+    private static final String ID_BACK_TO_SUMMARY = "backToSummary";
     private static final String ID_TOGGLE = "toggle";
     private static final String ID_ITEMS = "items";
     private static final String ID_ITEM = "item";
@@ -43,6 +49,19 @@ public class ConflictSolverPanel extends BasePanel<RequestAccess> {
 
     private void initLayout() {
         setOutputMarkupId(true);
+
+        WebMarkupContainer doneCard = new WebMarkupContainer(ID_DONE_CARD);
+        doneCard.add(new VisibleBehaviour(() -> getModelObject().isAllConflictsSolved()));
+        add(doneCard);
+
+        AjaxLink backToSummary = new AjaxLink<>(ID_BACK_TO_SUMMARY) {
+            @Override
+            public void onClick(AjaxRequestTarget target) {
+                backToSummaryPerformed(target);
+            }
+        };
+        doneCard.add(backToSummary);
+
         IModel<List<Toggle<ConflictState>>> toggleModel = () -> {
             List<Toggle<ConflictState>> list = new ArrayList<>();
 
@@ -58,6 +77,9 @@ public class ConflictSolverPanel extends BasePanel<RequestAccess> {
                         break;
                     case SOLVED:
                         badgeCss = Badge.State.SUCCESS.getCss();
+                        break;
+                    case SKIPPED:
+                        badgeCss = Badge.State.PRIMARY.getCss();
                         break;
                 }
 
@@ -104,7 +126,7 @@ public class ConflictSolverPanel extends BasePanel<RequestAccess> {
 
                     @Override
                     protected void fixConflictPerformed(AjaxRequestTarget target, IModel<ConflictItem> itemToKeep) {
-                        ConflictSolverPanel.this.fixConflictPerformed(target, item.getModel(), itemToKeep);
+                        ConflictSolverPanel.this.solveConflictPerformed(target, item.getModel(), itemToKeep);
                     }
                 });
             }
@@ -112,17 +134,23 @@ public class ConflictSolverPanel extends BasePanel<RequestAccess> {
         add(items);
     }
 
-    private void fixConflictPerformed(AjaxRequestTarget target, IModel<Conflict> conflict, IModel<ConflictItem> itemToKeep) {
-        //todo implement conflict fix
+    private void solveConflictPerformed(AjaxRequestTarget target, IModel<Conflict> conflictModel, IModel<ConflictItem> itemToKeepModel) {
+        Conflict conflict = conflictModel.getObject();
+        ConflictItem itemToKeep = itemToKeepModel.getObject();
 
-        conflict.getObject().setState(ConflictState.SOLVED);
-
-        // switch to "SOLVED" items if there are no more "UNRESOLVED" items
-        long count = getModelObject().getConflicts().stream().filter(c -> ConflictState.UNRESOLVED.equals(c.getState())).count();
-        if (count == 0) {
-            this.selected.setObject(ConflictState.SOLVED);
+        ConflictItem toRemove;
+        if (Objects.equals(conflict.getAdded(), itemToKeep)) {
+            toRemove = conflict.getExclusion();
+        } else {
+            toRemove = conflict.getAdded();
         }
 
+        getModelObject().solveConflict(conflict, toRemove);
+
         target.add(this);
+    }
+
+    protected void backToSummaryPerformed(AjaxRequestTarget target) {
+
     }
 }

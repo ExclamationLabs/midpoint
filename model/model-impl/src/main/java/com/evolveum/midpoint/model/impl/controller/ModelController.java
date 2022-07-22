@@ -20,7 +20,11 @@ import javax.xml.namespace.QName;
 
 import com.evolveum.midpoint.cases.api.CaseManager;
 
+import com.evolveum.midpoint.provisioning.api.*;
+import com.evolveum.midpoint.schema.processor.ResourceSchema;
 import com.evolveum.midpoint.schema.util.*;
+
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.CapabilityCollectionType;
 
 import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
@@ -58,10 +62,6 @@ import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.prism.polystring.PolyString;
 import com.evolveum.midpoint.prism.query.*;
 import com.evolveum.midpoint.prism.util.CloneUtil;
-import com.evolveum.midpoint.provisioning.api.EventDispatcher;
-import com.evolveum.midpoint.provisioning.api.ExternalResourceEvent;
-import com.evolveum.midpoint.provisioning.api.ProvisioningOperationOptions;
-import com.evolveum.midpoint.provisioning.api.ProvisioningService;
 import com.evolveum.midpoint.repo.api.RepoAddOptions;
 import com.evolveum.midpoint.repo.api.RepositoryService;
 import com.evolveum.midpoint.repo.common.activity.TaskActivityManager;
@@ -1440,6 +1440,98 @@ public class ModelController implements ModelService, TaskService, CaseService, 
             throw ex;
         } finally {
             exitModelMethod();
+        }
+    }
+
+    @Override
+    public OperationResult testResource(PrismObject<ResourceType> resource, Task task, OperationResult result)
+            throws ObjectNotFoundException, SchemaException, ConfigurationException {
+        Validate.notNull(resource, "Resource must not be null.");
+        LOGGER.trace("Testing resource: {}", resource);
+
+        enterModelMethod();
+        try {
+            OperationResult testResult = provisioning.testResource(resource, task, result);
+            LOGGER.debug("Finished testing resource: {}, result: {} ", resource, testResult.getStatus());
+            LOGGER.trace("Test result:\n{}", lazy(() -> testResult.dump(false)));
+            return testResult;
+        } finally {
+            exitModelMethod();
+        }
+    }
+
+    @Override
+    public OperationResult testResourcePartialConfiguration(PrismObject<ResourceType> resource, Task task, OperationResult result)
+            throws ObjectNotFoundException, SchemaException, ConfigurationException {
+        Validate.notNull(resource, "Resource must not be null.");
+        LOGGER.trace("Testing partial configuration of resource: {}", resource);
+
+        enterModelMethodNoRepoCache();
+        try {
+            OperationResult testResult = provisioning.testPartialConfiguration(resource, task, result);
+            LOGGER.debug("Finished testing partial configuration of resource: {}, result: {} ", resource, testResult.getStatus());
+            LOGGER.trace("Test result:\n{}", lazy(() -> testResult.dump(false)));
+            return testResult;
+        } finally {
+            exitModelMethodNoRepoCache();
+        }
+    }
+
+    @Override
+    public DiscoveredConfiguration discoverResourceConnectorConfiguration(
+            PrismObject<ResourceType> resource, OperationResult result) {
+
+        Validate.notNull(resource, "Resource must not be null.");
+        LOGGER.trace("Discover connector configuration for resource: {}", resource);
+
+        enterModelMethodNoRepoCache();
+        try {
+            @NotNull DiscoveredConfiguration discoverConfiguration = provisioning.discoverConfiguration(resource, result);
+            LOGGER.debug("Finished discover connector configuration for resource: {}, result: {} ", resource, result.getStatus());
+            LOGGER.trace("Discover connector configuration result:\n{}", lazy(() -> result.dump(false)));
+            return discoverConfiguration;
+        } finally {
+            exitModelMethodNoRepoCache();
+        }
+    }
+
+    @Override
+    public @Nullable ResourceSchema fetchSchema(
+            @NotNull PrismObject<ResourceType> resource, @NotNull OperationResult result) {
+        Validate.notNull(resource, "Resource must not be null.");
+        LOGGER.trace("Fetch schema by connector configuration from resource: {}", resource);
+
+        enterModelMethodNoRepoCache();
+        try {
+            @Nullable ResourceSchema schema = provisioning.fetchSchema(resource, result);
+            LOGGER.debug(
+                    "Finished fetch schema by connector configuration from resource: {}, result: {} ",
+                    resource,
+                    result.getStatus());
+            LOGGER.trace("Fetch schema by connector configuration result:\n{}", lazy(() -> result.dump(false)));
+            return schema;
+        } finally {
+            exitModelMethodNoRepoCache();
+        }
+    }
+
+    @Override
+    public @Nullable CapabilityCollectionType getNativeCapabilities(@NotNull String connOid, OperationResult result)
+            throws SchemaException, CommunicationException, ConfigurationException, ObjectNotFoundException {
+        Validate.notNull(connOid, "ConnOid must not be null.");
+        LOGGER.trace("Getting native capabilities by connector oid: {}", connOid);
+
+        enterModelMethodNoRepoCache();
+        try {
+            CapabilityCollectionType capability = provisioning.getNativeCapabilities(connOid, result);
+            LOGGER.debug(
+                    "Finished getting native capabilities by connector oid: {}, result: {} ",
+                    connOid,
+                    result.getStatus());
+            LOGGER.trace("Getting native capabilities by connector oid:\n{}", lazy(() -> result.dump(false)));
+            return capability;
+        } finally {
+            exitModelMethodNoRepoCache();
         }
     }
 

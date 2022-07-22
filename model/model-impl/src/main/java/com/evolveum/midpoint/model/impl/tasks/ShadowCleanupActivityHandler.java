@@ -14,13 +14,11 @@ import java.util.Date;
 import javax.xml.datatype.Duration;
 import javax.xml.namespace.QName;
 
-import com.evolveum.midpoint.model.impl.sync.tasks.ProcessingScope;
-import com.evolveum.midpoint.repo.common.activity.run.SearchBasedActivityRun;
-
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 
 import com.evolveum.midpoint.model.api.ModelPublicConstants;
+import com.evolveum.midpoint.model.impl.sync.tasks.ProcessingScope;
 import com.evolveum.midpoint.model.impl.tasks.simple.SimpleActivityHandler;
 import com.evolveum.midpoint.prism.PrismContext;
 import com.evolveum.midpoint.prism.PrismObject;
@@ -28,12 +26,13 @@ import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.prism.xml.XmlTypeConverter;
 import com.evolveum.midpoint.provisioning.api.ResourceObjectShadowChangeDescription;
-import com.evolveum.midpoint.repo.common.activity.run.ActivityRunException;
 import com.evolveum.midpoint.repo.common.activity.definition.AbstractWorkDefinition;
 import com.evolveum.midpoint.repo.common.activity.definition.ResourceObjectSetSpecificationProvider;
 import com.evolveum.midpoint.repo.common.activity.definition.WorkDefinitionFactory.WorkDefinitionSupplier;
-import com.evolveum.midpoint.repo.common.activity.run.ActivityRunInstantiationContext;
 import com.evolveum.midpoint.repo.common.activity.run.ActivityReportingCharacteristics;
+import com.evolveum.midpoint.repo.common.activity.run.ActivityRunException;
+import com.evolveum.midpoint.repo.common.activity.run.ActivityRunInstantiationContext;
+import com.evolveum.midpoint.repo.common.activity.run.SearchBasedActivityRun;
 import com.evolveum.midpoint.repo.common.activity.run.processing.ItemProcessingRequest;
 import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.SelectorOptions;
@@ -58,9 +57,9 @@ import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 @Component
 public class ShadowCleanupActivityHandler
         extends SimpleActivityHandler<
-            ShadowType,
-            ShadowCleanupActivityHandler.MyWorkDefinition,
-            ShadowCleanupActivityHandler> {
+        ShadowType,
+        ShadowCleanupActivityHandler.MyWorkDefinition,
+        ShadowCleanupActivityHandler> {
 
     private static final String LEGACY_HANDLER_URI = ModelPublicConstants.DELETE_NOT_UPDATE_SHADOW_TASK_HANDLER_URI;
 
@@ -162,7 +161,7 @@ public class ShadowCleanupActivityHandler
 
         @Override
         public Collection<SelectorOptions<GetOperationOptions>> customizeSearchOptions(
-                Collection<SelectorOptions<GetOperationOptions>> configuredOptions, OperationResult result) throws CommonException {
+                Collection<SelectorOptions<GetOperationOptions>> configuredOptions, OperationResult result) {
             return GetOperationOptions.updateToNoFetch(configuredOptions);
         }
 
@@ -192,7 +191,8 @@ public class ShadowCleanupActivityHandler
             if (source instanceof LegacyWorkDefinitionSource) {
                 LegacyWorkDefinitionSource legacy = (LegacyWorkDefinitionSource) source;
                 shadows = ResourceObjectSetUtil.fromLegacySource(legacy);
-                interval = legacy.getExtensionItemRealValue(SchemaConstants.LEGACY_NOT_UPDATED_DURATION_PROPERTY_NAME, Duration.class);
+                interval = legacy.getExtensionItemRealValue(
+                        SchemaConstants.LEGACY_NOT_UPDATED_DURATION_PROPERTY_NAME, Duration.class);
             } else {
                 ShadowCleanupWorkDefinitionType typedDefinition = (ShadowCleanupWorkDefinitionType)
                         ((TypedWorkDefinitionWrapper) source).getTypedDefinition();
@@ -218,8 +218,8 @@ public class ShadowCleanupActivityHandler
 
         @Override
         protected void debugDumpContent(StringBuilder sb, int indent) {
-            DebugUtil.debugDumpWithLabelLn(sb, "shadows", shadows, indent+1);
-            DebugUtil.debugDumpWithLabelLn(sb, "interval", String.valueOf(interval), indent+1);
+            DebugUtil.debugDumpWithLabelLn(sb, "shadows", shadows, indent + 1);
+            DebugUtil.debugDumpWithLabelLn(sb, "interval", String.valueOf(interval), indent + 1);
         }
     }
 }

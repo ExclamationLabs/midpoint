@@ -9,8 +9,7 @@ package com.evolveum.midpoint.repo.sqale.func;
 import static org.assertj.core.api.Assertions.*;
 import static org.testng.Assert.*;
 
-import static com.evolveum.midpoint.prism.PrismConstants.T_OBJECT_REFERENCE;
-import static com.evolveum.midpoint.prism.PrismConstants.T_PARENT;
+import static com.evolveum.midpoint.prism.PrismConstants.*;
 import static com.evolveum.midpoint.prism.xml.XmlTypeConverter.createXMLGregorianCalendar;
 import static com.evolveum.midpoint.schema.constants.SchemaConstants.ORG_DEFAULT;
 import static com.evolveum.midpoint.util.MiscUtil.asXMLGregorianCalendar;
@@ -208,6 +207,7 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
                         .modifyTimestamp(asXMLGregorianCalendar(2L)))
                 .subtype("workerA")
                 .subtype("workerC")
+                .employeeNumber("user1")
                 .policySituation("situationA")
                 .policySituation("situationC")
                 .activation(new ActivationType()
@@ -313,15 +313,6 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
                 .parentOrgRef(orgXOid, OrgType.COMPLEX_TYPE, relation2)
                 .parentOrgRef(org21Oid, OrgType.COMPLEX_TYPE, relation1)
                 .policySituation("situationA")
-                .assignment(new AssignmentType()
-                        .lifecycleState("ls-user3-ass1")
-                        .metadata(new MetadataType()
-                                .creatorRef(user2Oid, UserType.COMPLEX_TYPE, ORG_DEFAULT)
-                                .createApproverRef(user1Oid, UserType.COMPLEX_TYPE, ORG_DEFAULT))
-                        .activation(new ActivationType()
-                                .validFrom("2021-01-01T00:00:00Z"))
-                        .subtype("ass-subtype-1")
-                        .subtype("ass-subtype-2"))
                 .linkRef(shadow1Oid, ShadowType.COMPLEX_TYPE)
                 .assignment(new AssignmentType()
                         .lifecycleState("ls-user3-ass2")
@@ -339,6 +330,18 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
         addExtensionValue(user3Extension, "int", 10);
         addExtensionValue(user3Extension, "dateTime", // 2021-10-02 ~19PM
                 asXMLGregorianCalendar(1633_200_000_000L));
+        ExtensionType user3AssignmentExtension = new ExtensionType();
+        user3.assignment(new AssignmentType()
+                .lifecycleState("ls-user3-ass1")
+                .metadata(new MetadataType()
+                        .creatorRef(user2Oid, UserType.COMPLEX_TYPE, ORG_DEFAULT)
+                        .createApproverRef(user1Oid, UserType.COMPLEX_TYPE, ORG_DEFAULT))
+                .activation(new ActivationType()
+                        .validFrom("2021-01-01T00:00:00Z"))
+                .subtype("ass-subtype-1")
+                .subtype("ass-subtype-2")
+                .extension(user3AssignmentExtension));
+        addExtensionValue(user3AssignmentExtension, "integer", BigInteger.valueOf(48));
         user3Oid = repositoryService.addObject(user3.asPrismObject(), null, result);
 
         user4Oid = repositoryService.addObject(
@@ -477,6 +480,18 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
         assertThat(subresult).isNotNull();
         assertThat(subresult.getOperation()).isEqualTo("SqaleRepositoryService.searchObjects");
         assertThat(subresult.getStatus()).isEqualTo(OperationResultStatus.SUCCESS);
+    }
+
+    @Test
+    public void test101SearchAllObjectsWithNullQuery() throws Exception {
+        when("searching all objects with null query");
+        OperationResult operationResult = createOperationResult();
+        SearchResultList<ObjectType> result =
+                searchObjects(ObjectType.class, (ObjectQuery) null, operationResult);
+
+        then("all objects are returned");
+        assertThat(result).hasSize((int) count(QObject.CLASS));
+        assertThatOperationResult(operationResult).isSuccess();
     }
 
     @Test
@@ -1848,10 +1863,10 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
                 f -> f.not().block()
                         // both AND parts must match user1, this ine is norm, so -- is ignored
                         .item(UserType.F_EXTENSION, new QName("poly")).ge("pOlY--vAlUe")
-                        .matching(new QName(PolyStringItemFilterProcessor.NORM_IGNORE_CASE))
+                        .matching(PolyStringItemFilterProcessor.NORM_IGNORE_CASE)
                         .and()
                         .item(UserType.F_EXTENSION, new QName("poly")).le("pOlY-vAlUe")
-                        .matching(new QName(PolyStringItemFilterProcessor.ORIG_IGNORE_CASE))
+                        .matching(PolyStringItemFilterProcessor.ORIG_IGNORE_CASE)
                         .endBlock(),
                 creatorOid, modifierOid, user2Oid, user3Oid, user4Oid);
     }
@@ -2025,9 +2040,23 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
     }
 
     @Test
-    public void test602SearchContainerWithOwnedByParent() throws SchemaException {
+    public void test602SearchContainerWithNestedOwnedBy() throws SchemaException {
         SearchResultList<AccessCertificationWorkItemType> result = searchContainerTest(
-                "by parent using exists", AccessCertificationWorkItemType.class,
+                "by parent and its parent using ownedBy", AccessCertificationWorkItemType.class,
+                f -> f.ownedBy(AccessCertificationCaseType.class)
+                        .ownedBy(AccessCertificationCampaignType.class)
+                        .id(accCertCampaign1Oid));
+
+        // Finds all WIs from both AccCertCampaigns of accCertCampaign1.
+        assertThat(result)
+                .extracting(a -> a.getStageNumber())
+                .containsExactlyInAnyOrder(11, 12, 21, 22);
+    }
+
+    @Test
+    public void test603SearchContainerWithNestedOwnedByComplexCondition() throws SchemaException {
+        SearchResultList<AccessCertificationWorkItemType> result = searchContainerTest(
+                "by parent and its parent using ownedBy and complex filter", AccessCertificationWorkItemType.class,
                 f -> f.ownedBy(AccessCertificationCaseType.class)
                         .block()
                         .id(1)
@@ -2043,7 +2072,7 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
     }
 
     @Test
-    public void test603SearchContainerWithExistsParent() throws SchemaException {
+    public void test604SearchContainerWithExistsParent() throws SchemaException {
         SearchResultList<AccessCertificationWorkItemType> result = searchContainerTest(
                 "by parent using exists", AccessCertificationWorkItemType.class,
                 f -> f.exists(T_PARENT)
@@ -2060,7 +2089,7 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
     }
 
     @Test
-    public void test604SearchAccessCertificationCaseContainer() throws SchemaException {
+    public void test605SearchAccessCertificationCaseContainer() throws SchemaException {
         SearchResultList<AccessCertificationCaseType> result = searchContainerTest(
                 "by stage number", AccessCertificationCaseType.class,
                 f -> f.item(AccessCertificationCaseType.F_STAGE_NUMBER).gt(1));
@@ -2070,7 +2099,7 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
     }
 
     @Test
-    public void test605SearchCaseWorkItemContainer() throws SchemaException {
+    public void test606SearchCaseWorkItemContainer() throws SchemaException {
         SearchResultList<CaseWorkItemType> result = searchContainerTest(
                 "by stage number", CaseWorkItemType.class,
                 f -> f.item(CaseWorkItemType.F_STAGE_NUMBER).eq(1));
@@ -2088,6 +2117,53 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
                 .matches(wi -> wi.getPerformerRef().getRelation().equals(ORG_DEFAULT))
                 .matches(wi -> wi.getOutput().getOutcome().equals("OUTCOME one"));
         // multi-value refs are not fetched yet
+    }
+
+    @Test
+    public void test607SearchContainerByParentItemCondition() throws SchemaException {
+        // Single level parent is OK, otherwise use ownedBy().
+        SearchResultList<AccessCertificationCaseType> result = searchContainerTest(
+                "by parent with specified stage number (using item)", AccessCertificationCaseType.class,
+                f -> f.item(T_PARENT, AccessCertificationCampaignType.F_STAGE_NUMBER).eq(0));
+
+        // We're asserting stage numbers of the containers, not the parent:
+        assertThat(result)
+                .extracting(a -> a.getStageNumber())
+                .containsExactlyInAnyOrder(1, 2);
+    }
+
+    @Test
+    public void test608SearchContainerByParentsParent() throws SchemaException {
+        SearchResultList<AccessCertificationWorkItemType> result = searchContainerTest(
+                "by parent with specified stage number (using exists)", AccessCertificationWorkItemType.class,
+                f -> f.exists(T_PARENT)
+                        .block() // block is important, .exists(..).exists(..) fails during filter construction
+                        .exists(T_PARENT)
+                        .item(AccessCertificationCampaignType.F_STAGE_NUMBER).eq(0)
+                        .endBlock());
+
+        assertThat(result)
+                .extracting(a -> a.getStageNumber())
+                .containsExactlyInAnyOrder(11, 12, 21, 22);
+    }
+
+    @Test
+    public void test609SearchContainerByParentUnsupportedCases() {
+        // Unsure what repo would do, but both these cases fail during filter construction in Prism.
+        assertThatThrownBy(() ->
+                searchContainerTest(
+                        "by parent with specified stage number (using exists)", AccessCertificationWorkItemType.class,
+                        f -> f.exists(T_PARENT, T_PARENT)
+                                .item(AccessCertificationCampaignType.F_STAGE_NUMBER).eq(0)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageStartingWith("Couldn't find definition for parent for");
+
+        assertThatThrownBy(() ->
+                searchContainerTest(
+                        "by value filter with parent/parent", AccessCertificationWorkItemType.class,
+                        f -> f.item(T_PARENT, T_PARENT, AccessCertificationCampaignType.F_STAGE_NUMBER).eq(0)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageStartingWith("Couldn't find definition for parent for");
     }
 
     @Test
@@ -2125,6 +2201,17 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
     }
 
     @Test
+    public void test617SearchAssignmentsByUserName() throws SchemaException {
+        SearchResultList<AssignmentType> result = searchContainerTest(
+                "by user name", AssignmentType.class,
+                f -> f.ownedBy(UserType.class, F_ASSIGNMENT)
+                        .item(F_NAME).eq("user-3"));
+        assertThat(result)
+                .extracting(a -> a.getLifecycleState())
+                .containsExactlyInAnyOrder("ls-user3-ass1", "ls-user3-ass2");
+    }
+
+    @Test
     public void test618OrderByMultiValueReferenceTargetPropertyIsNotPossible() {
         assertThatThrownBy(() -> searchContainerTest(
                 "having any approver (with order)", AssignmentType.class,
@@ -2139,7 +2226,7 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
     }
 
     @Test
-    public void test620OrderBySingleValueReferenceTargetPropertyIsSupported() throws SchemaException {
+    public void test620ContainerOrderBySingleValueReferenceTargetPropertyIsSupported() throws SchemaException {
         SearchResultList<AssignmentType> result = searchContainerTest(
                 "having creator ref name and order by it", AssignmentType.class,
                 f -> f.not().item(AssignmentType.F_METADATA, MetadataType.F_CREATOR_REF,
@@ -2150,6 +2237,17 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
         assertThat(result)
                 .extracting(a -> a.getLifecycleState())
                 .containsExactly("ls-user3-ass2", "ls-user3-ass1");
+    }
+
+    @Test
+    public void test621AssignmentSearchOrderByExtensionAttribute() throws SchemaException {
+        SearchResultList<AssignmentType> result = searchContainerTest(
+                "having not-null extension/integer, order by that extension item", AssignmentType.class,
+                f -> f.not().item(AssignmentType.F_EXTENSION, new ItemName("integer")).isNull()
+                        .asc(AssignmentType.F_EXTENSION, new ItemName("integer")));
+        assertThat(result)
+                .extracting(a -> a.getLifecycleState())
+                .containsExactly("assignment1-3-ext", "ls-user3-ass1");
     }
 
     @Test
@@ -2259,12 +2357,14 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
                 user4Oid);
     }
 
-    @Test(expectedExceptions = SystemException.class)
-    public void test820SearchUsersWithReferencedPath() throws SchemaException {
-        searchUsersTest("fullName does not equals fname",
-                f -> f.not().item(ObjectType.F_METADATA, MetadataType.F_CREATE_TIMESTAMP)
-                        .eq().item(UserType.F_ASSIGNMENT, AssignmentType.F_METADATA, MetadataType.F_CREATE_TIMESTAMP),
-                user1Oid, user2Oid, user3Oid, user4Oid);
+    @Test
+    public void test820SearchUsersWithReferencedPath() {
+        assertThatThrownBy(() ->
+                searchUsersTest("fullName does not equals fname",
+                        f -> f.not().item(ObjectType.F_METADATA, MetadataType.F_CREATE_TIMESTAMP)
+                                .eq().item(UserType.F_ASSIGNMENT, AssignmentType.F_METADATA, MetadataType.F_CREATE_TIMESTAMP),
+                        user1Oid, user2Oid, user3Oid, user4Oid))
+                .isInstanceOf(SystemException.class);
         // Should fail because right-hand side nesting into multivalue container is not supported
     }
     // endregion
@@ -2613,6 +2713,8 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
     @Test
     public void test982SearchRoleReferencedByUserAssignmentWithComplexFilterNoMatch() throws SchemaException {
         searchObjectTest("referenced by an assignment of the user specified by complex filter (no match)", RoleType.class,
+//                f -> f.referencedBy(AssignmentType.class, AssignmentType.F_TARGET_REF)
+//                        .ownedBy(UserType.class, F_ASSIGNMENT)
                 f -> f.referencedBy(UserType.class,
                                 ItemPath.create(UserType.F_ASSIGNMENT, AssignmentType.F_TARGET_REF))
                         .block()
@@ -2624,11 +2726,30 @@ public class SqaleRepoSearchTest extends SqaleRepoBaseTest {
 
     @Test
     public void test985SearchRoleReferencedByUserAssignment() throws SchemaException {
-        searchObjectTest("Org by Assignment ownedBy user", RoleType.class,
+        searchObjectTest("by Assignment ownedBy user", RoleType.class,
                 f -> f.referencedBy(AssignmentType.class, AssignmentType.F_TARGET_REF)
                         .ownedBy(UserType.class)
                         .id(user3Oid),
                 roleAvIOid);
+    }
+
+    @Test(description = "MID-7746")
+    public void test990SearchResourceByAdministrativeOperationalStateAdministrativeAvailabilityStatus() throws SchemaException {
+        searchObjectTest("by administrativeOperationalState/administrativeAvailabilityStatus", ResourceType.class,
+                f -> f.item(ResourceType.F_ADMINISTRATIVE_OPERATIONAL_STATE,
+                                AdministrativeOperationalStateType.F_ADMINISTRATIVE_AVAILABILITY_STATUS)
+                        .eq(AdministrativeAvailabilityStatusType.MAINTENANCE));
+        // nothing found, but the query is OK :-)
+    }
+
+    @Test(description = "MID-8005")
+    public void test991SearchObjectWithStringIgnoreCaseWithoutNamespace()
+            throws SchemaException {
+        searchUsersTest("with string item matching ignore-case comparison",
+                f -> f.item(UserType.F_EMPLOYEE_NUMBER).contains("USer1")
+                        // Use QName without namespace
+                        .matching(new QName(STRING_IGNORE_CASE_MATCHING_RULE_NAME.getLocalPart())),
+                user1Oid);
     }
     // endregion
 }

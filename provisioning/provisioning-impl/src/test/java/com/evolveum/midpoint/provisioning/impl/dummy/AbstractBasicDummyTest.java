@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.namespace.QName;
 
@@ -571,10 +572,12 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
 
         assertThat(suggestions)
                 .as("suggested properties")
-                .hasSize(2);
+                .hasSize(1);
         suggestions.forEach(suggestion -> {
-            assertTrue("Unexpected value of suggestion " + suggestion.getRealValue() + ", expected: " + expectedSuggestions,
-                    expectedSuggestions.contains((String) suggestion.getRealValue()));
+            Collection<?> suggestionValues = suggestion.getDefinition().getSuggestedValues().stream()
+                    .map(displayVal -> displayVal.getValue()).collect(Collectors.toList());
+            assertTrue("Unexpected value of suggestion " + suggestion.getDefinition().getSuggestedValues() + ", expected: " + expectedSuggestions,
+                    expectedSuggestions.containsAll(suggestionValues));
         });
 
         assertEquals("Was created entry connector in cache", cachedConnectorsCount, getSizeOfConnectorCache());
@@ -715,8 +718,7 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
         assertTrue("Broken caching",
                 refinedSchema == ResourceSchemaFactory.getCompleteSchema(resourceBean));
 
-        ResourceObjectTypeDefinition accountDef =
-                ResourceSchemaTestUtil.findDefaultOrAnyObjectTypeDefinition(refinedSchema, ShadowKindType.ACCOUNT);
+        ResourceObjectDefinition accountDef = refinedSchema.findDefaultDefinitionForKind(ShadowKindType.ACCOUNT);
         assertNotNull("Account definition is missing", accountDef);
         assertNotNull("Null identifiers in account", accountDef.getPrimaryIdentifiers());
         assertFalse("Empty identifiers in account", accountDef.getPrimaryIdentifiers().isEmpty());
@@ -726,9 +728,10 @@ public class AbstractBasicDummyTest extends AbstractDummyTest {
         assertFalse("No nativeObjectClass in account",
                 StringUtils.isEmpty(accountDef.getObjectClassDefinition().getNativeObjectClass()));
 
-        assertEquals("Unexpected kind in account definition", ShadowKindType.ACCOUNT, accountDef.getKind());
-        assertTrue("Account definition in not default", accountDef.isDefaultForKind());
-        assertEquals("Wrong intent in account definition", SchemaConstants.INTENT_DEFAULT, accountDef.getIntent());
+        ResourceObjectTypeDefinition accountTypeDef = accountDef.getTypeDefinition();
+        assertEquals("Unexpected kind in account definition", ShadowKindType.ACCOUNT, accountTypeDef.getKind());
+        assertTrue("Account definition in not default", accountTypeDef.isDefaultForKind());
+        assertEquals("Wrong intent in account definition", SchemaConstants.INTENT_DEFAULT, accountTypeDef.getIntent());
         assertFalse("Account definition is deprecated", accountDef.isDeprecated());
         assertFalse("Account definition in auxiliary",
                 accountDef.getObjectClassDefinition().isAuxiliary());

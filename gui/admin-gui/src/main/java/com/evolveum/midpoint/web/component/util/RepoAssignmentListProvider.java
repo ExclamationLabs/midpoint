@@ -8,15 +8,17 @@ package com.evolveum.midpoint.web.component.util;
 
 import com.evolveum.midpoint.gui.api.prism.wrapper.PrismContainerValueWrapper;
 import com.evolveum.midpoint.gui.api.util.WebModelServiceUtils;
+import com.evolveum.midpoint.prism.ItemPathParser;
 import com.evolveum.midpoint.prism.Objectable;
 import com.evolveum.midpoint.prism.PrismConstants;
 import com.evolveum.midpoint.prism.PrismObject;
-import com.evolveum.midpoint.prism.impl.query.builder.QueryBuilder;
 import com.evolveum.midpoint.prism.path.ItemPath;
+import com.evolveum.midpoint.prism.query.FullTextFilter;
 import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.prism.query.ObjectOrdering;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
 import com.evolveum.midpoint.prism.query.OrderDirection;
+import com.evolveum.midpoint.schema.SchemaConstantsGenerated;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.task.api.Task;
 import com.evolveum.midpoint.util.exception.SchemaException;
@@ -38,11 +40,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import javax.xml.namespace.QName;
+
 public class RepoAssignmentListProvider extends ContainerListDataProvider<AssignmentType> {
 
     private static final long serialVersionUID = 1L;
 
-    private static final String TARGET_NAME_STRING = "targetRef.targetName.orig";
+    public static final String TARGET_NAME_STRING = "targetRef.targetName.orig";
     private static final ItemPath TARGET_NAME_PATH = ItemPath.create(AssignmentType.F_TARGET_REF, PrismConstants.T_OBJECT_REFERENCE, ObjectType.F_NAME);
 
 
@@ -80,7 +84,7 @@ public class RepoAssignmentListProvider extends ContainerListDataProvider<Assign
             // No filtering were done
             return null;
         }
-        var builder = QueryBuilder.queryFor(AssignmentType.class, getPrismContext());
+        var builder = getPrismContext().queryFor(AssignmentType.class);
         if (filtered.isEmpty()) {
             return builder.none().buildFilter();
         }
@@ -154,9 +158,6 @@ public class RepoAssignmentListProvider extends ContainerListDataProvider<Assign
             OperationResult result) throws SchemaException {
         for (PrismContainerValueWrapper<AssignmentType> item : model.getObject()) {
             if (Objects.equals(item.getRealValue().getId(),object.getId())) {
-                if (ValueStatus.DELETED == item.getStatus()) {
-                    return null;
-                }
                 postProcessWrapper(item);
                 return item;
             }
@@ -186,12 +187,18 @@ public class RepoAssignmentListProvider extends ContainerListDataProvider<Assign
             return super.createObjectOrderings(sortParam);
         }
         String property = sortParam.getProperty();
-        if (!TARGET_NAME_STRING.equals(property)) {
-            return super.createObjectOrderings(sortParam);
+        final ItemPath path;
+        if (TARGET_NAME_STRING.equals(property)) {
+            path = TARGET_NAME_PATH;
+        } else if (property.contains("/")) {
+            // Try to parse it as item path for now
+            path = getPrismContext().itemPathParser().asItemPath(property);
+        } else {
+            path = ItemPath.create(new QName(SchemaConstantsGenerated.NS_COMMON, sortParam.getProperty()));
         }
         OrderDirection order = sortParam.isAscending() ? OrderDirection.ASCENDING : OrderDirection.DESCENDING;
         return Collections.singletonList(
-                getPrismContext().queryFactory().createOrdering(TARGET_NAME_PATH, order));
+                getPrismContext().queryFactory().createOrdering(path, order));
     }
 
     /**
@@ -202,22 +209,29 @@ public class RepoAssignmentListProvider extends ContainerListDataProvider<Assign
      *   - Optionally adds id filter if AssignmentPanel has postFilter implemented
      *
      */
-    @Override
+   @Override
     public ObjectQuery getQuery() {
+        var search = getSearchModel();
+        var orig = search.getObject() == null ? null : search.getObject().createObjectQuery(getVariables(), getPageBase(), null);
+
+        if (orig != null && orig.getFilter() instanceof FullTextFilter) {
+                // User entered full text filter, lets make sure it is invoked on targetRef
+                orig = getPrismContext().queryFor(getType()).exists(AssignmentType.F_TARGET_REF, PrismConstants.T_OBJECT_REFERENCE)
+                        .filter(orig.getFilter())
+                        .build();
+        }
+
+        orig = mergeQueries(orig, getCustomizeContentQuery());
         var idFilter = postFilterIds();
-        var orig  = super.getQuery();
         ObjectFilter filter = orig != null ? orig.getFilter() : null;
         if (orig != null) {
             // We have user entered filter
             if (idFilter != null) {
                 // PostFilter filtered data, so we need to search only in these data
-                filter = QueryBuilder.queryFor(getType(), getPrismContext())
-                        .filter(orig.getFilter())
+                filter = getPrismContext().queryFor(getType())
+                        .filter(filter)
                         .and().filter(idFilter)
                         .buildFilter();
-            } else {
-                // postFilter did not filter data, so use only provided top filter
-                filter = orig.getFilter();
             }
         } else {
             //
@@ -225,17 +239,28 @@ public class RepoAssignmentListProvider extends ContainerListDataProvider<Assign
         }
 
         if (filter != null) {
-            return QueryBuilder.queryFor(AssignmentType.class, getPrismContext())
+            return getPrismContext().queryFor(AssignmentType.class)
                 .filter(filter)
                 .and()
                     .ownedBy(objectType, path)
                     .id(oid)
                 .build();
         }
-        return QueryBuilder.queryFor(AssignmentType.class, getPrismContext())
+        return getPrismContext().queryFor(AssignmentType.class)
                 .ownedBy(objectType, path)
                     .id(oid)
                 .build();
+    }
+
+    private ObjectQuery mergeQueries(ObjectQuery origQuery, ObjectQuery query) {
+        if (query != null) {
+            if (origQuery == null) {
+                return query;
+            } else {
+                origQuery.addFilter(query.getFilter());
+            }
+        }
+        return origQuery;
     }
 
     @Override

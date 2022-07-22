@@ -180,13 +180,15 @@ public class ConnIdConfigurationTransformer {
 
             PrismContext prismContext = PrismContext.get();
             QName qNameOfType = propertyDef.getTypeName();
-            MutableItemDefinition def;
+            MutablePrismPropertyDefinition def = prismContext.definitionFactory().createPropertyDefinition(qNameOfProperty, qNameOfType);
             if (ValueListOpenness.OPEN.equals(values.getOpenness())) {
-                def = prismContext.definitionFactory().createPropertyDefinition(qNameOfProperty, qNameOfType);
+                Collection suggestedValues = values.getValues().stream()
+                        .map((value) -> new DisplayableValueImpl<>(value, null, null)).collect(Collectors.toList());
+                def.setSuggestedValues(suggestedValues);
             } else if (ValueListOpenness.CLOSED.equals(values.getOpenness())) {
                 Collection allowedValues = values.getValues().stream()
                         .map((value) -> new DisplayableValueImpl<>(value, null, null)).collect(Collectors.toList());
-                def = prismContext.definitionFactory().createPropertyDefinition(qNameOfProperty, qNameOfType, allowedValues, null).toMutable();
+                def.setAllowedValues(allowedValues);
             } else {
                 LOGGER.debug("Suggestion " + propertyName + " contains unsupported type of ValueListOpenness: " + values.getOpenness());
                 continue;
@@ -204,28 +206,10 @@ public class ConnIdConfigurationTransformer {
             def.setHelp(propertyDef.getHelp());
             def.setDisplayOrder(propertyDef.getDisplayOrder());
             def.setDocumentation(propertyDef.getDocumentation());
+            def.setMaxOccurs(propertyDef.isMultiValue() ? -1 : 1);
 
-            if (propertyDef.isMultiValue()) {
-                def.setMaxOccurs(-1);
-                //noinspection unchecked
-                PrismProperty<Object> property = (PrismProperty<Object>) def.instantiate();
-                for (Object value : values.getValues()) {
-                    PrismPropertyValue<Object> propertyValue = prismContext.itemFactory().createPropertyValue();
-                    propertyValue.setValue(value);
-                    property.add(propertyValue);
-                }
-                convertedSuggestions.add(property);
-            } else {
-                def.setMaxOccurs(1);
-                for (Object value : values.getValues()) {
-                    //noinspection unchecked
-                    PrismProperty<Object> property = (PrismProperty<Object>) def.instantiate();
-                    PrismPropertyValue<Object> propertyValue = prismContext.itemFactory().createPropertyValue();
-                    propertyValue.setValue(value);
-                    property.add(propertyValue);
-                    convertedSuggestions.add(property);
-                }
-            }
+            PrismProperty<Object> property = (PrismProperty<Object>) def.instantiate();
+            convertedSuggestions.add(property);
         }
         return convertedSuggestions;
     }

@@ -10,18 +10,19 @@ package com.evolveum.midpoint.gui.impl.page.self.requestAccess;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.evolveum.midpoint.gui.api.model.LoadableModel;
-
+import org.apache.commons.lang3.StringUtils;
 import org.apache.wicket.ajax.AjaxRequestTarget;
 import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.Model;
 
 import com.evolveum.midpoint.gui.api.component.Badge;
 import com.evolveum.midpoint.gui.api.component.wizard.WizardStepPanel;
+import com.evolveum.midpoint.gui.api.page.PageBase;
+import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
+import com.evolveum.midpoint.schema.result.OperationResult;
+import com.evolveum.midpoint.schema.result.OperationResultStatus;
 import com.evolveum.midpoint.web.component.util.VisibleBehaviour;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
-
-import org.apache.wicket.request.mapper.parameter.PageParameters;
 
 /**
  * Created by Viliam Repan (lazyman).
@@ -103,6 +104,8 @@ public class ShoppingCartPanel extends WizardStepPanel<RequestAccess> {
     private void initLayout() {
         CartSummaryPanel cartSummary = new CartSummaryPanel(ID_CART_SUMMARY, getWizard(), getModel()) {
 
+            private static final long serialVersionUID = 1L;
+
             @Override
             protected void openConflictPerformed(AjaxRequestTarget target) {
                 ShoppingCartPanel.this.openConflictPerformed(target);
@@ -116,7 +119,15 @@ public class ShoppingCartPanel extends WizardStepPanel<RequestAccess> {
         cartSummary.add(new VisibleBehaviour(() -> state.getObject() == State.SUMMARY));
         add(cartSummary);
 
-        ConflictSolverPanel conflictSolver = new ConflictSolverPanel(ID_CONFLICT_SOLVER, getModel());
+        ConflictSolverPanel conflictSolver = new ConflictSolverPanel(ID_CONFLICT_SOLVER, getModel()) {
+
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            protected void backToSummaryPerformed(AjaxRequestTarget target) {
+                ShoppingCartPanel.this.onBackPerformed(target);
+            }
+        };
         conflictSolver.add(new VisibleBehaviour(() -> state.getObject() == State.CONFLICTS));
         add(conflictSolver);
     }
@@ -128,7 +139,43 @@ public class ShoppingCartPanel extends WizardStepPanel<RequestAccess> {
     }
 
     protected void submitPerformed(AjaxRequestTarget target) {
-        // todo implement
+        RequestAccess requestAccess = getModelObject();
+        OperationResult result = requestAccess.submitRequest(getPageBase());
+
+        PageBase page = getPageBase();
+        if (result == null) {
+            page.warn(getString("ShoppingCartPanel.nothingToSubmit"));
+            target.add(page.getFeedbackPanel());
+            return;
+        }
+
+        page.showResult(result);
+
+        if (hasBackgroundTaskOperation(result)) {
+            result.setMessage(getString("ShoppingCartPanel.requestInProgress"));
+            requestAccess.clearCart();
+
+            setResponsePage(page.getMidpointApplication().getHomePage());
+            return;
+        }
+
+        if (WebComponentUtil.isSuccessOrHandledError(result)
+                || OperationResultStatus.IN_PROGRESS.equals(result.getStatus())) {
+            result.setMessage(getString("ShoppingCartPanel.requestSuccess"));
+            requestAccess.clearCart();
+
+            setResponsePage(page.getMidpointApplication().getHomePage());
+        } else {
+            result.setMessage(getString("ShoppingCartPanel.requestError"));
+
+            target.add(page.getFeedbackPanel());
+            target.add(getWizard().getPanel());
+        }
+    }
+
+    private boolean hasBackgroundTaskOperation(OperationResult result) {
+        String caseOid = OperationResult.referenceToCaseOid(result.findAsynchronousOperationReference());
+        return StringUtils.isNotEmpty(caseOid);
     }
 
     @Override

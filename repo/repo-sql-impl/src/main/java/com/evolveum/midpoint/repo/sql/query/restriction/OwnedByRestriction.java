@@ -14,6 +14,8 @@ import org.jetbrains.annotations.NotNull;
 import com.evolveum.midpoint.prism.ComplexTypeDefinition;
 import com.evolveum.midpoint.prism.Containerable;
 import com.evolveum.midpoint.prism.path.ItemPath;
+import com.evolveum.midpoint.prism.query.AllFilter;
+import com.evolveum.midpoint.prism.query.ObjectFilter;
 import com.evolveum.midpoint.prism.query.OwnedByFilter;
 import com.evolveum.midpoint.repo.sql.data.common.container.RAccessCertificationWorkItem;
 import com.evolveum.midpoint.repo.sql.data.common.other.RAssignmentOwner;
@@ -62,30 +64,30 @@ public class OwnedByRestriction extends Restriction<OwnedByFilter> {
         Class<? extends Containerable> expectedOwnerType;
 
         if (ownedType.equals(AssignmentType.class)) {
-            expectedOwnerType = AbstractRoleType.F_INDUCEMENT.equals(path)
+            expectedOwnerType = AbstractRoleType.F_INDUCEMENT.equivalent(path)
                     ? AbstractRoleType.class
                     : AssignmentHolderType.class;
             if (path != null
-                    && !AbstractRoleType.F_INDUCEMENT.equals(path)
-                    && !AssignmentHolderType.F_ASSIGNMENT.equals(path)) {
+                    && !AbstractRoleType.F_INDUCEMENT.equivalent(path)
+                    && !AssignmentHolderType.F_ASSIGNMENT.equivalent(path)) {
                 throw new QueryException("OwnedBy filter for type '"
                         + ownedType.getSimpleName() + "' used with invalid path: " + path);
             }
         } else if (ownedType.equals(AccessCertificationCaseType.class)) {
             expectedOwnerType = AccessCertificationCampaignType.class;
-            if (path != null && !AccessCertificationCampaignType.F_CASE.equals(path)) {
+            if (path != null && !AccessCertificationCampaignType.F_CASE.equivalent(path)) {
                 throw new QueryException("OwnedBy filter for type '"
                         + ownedType.getSimpleName() + "' used with invalid path: " + path);
             }
         } else if (ownedType.equals(AccessCertificationWorkItemType.class)) {
             expectedOwnerType = AccessCertificationCaseType.class;
-            if (path != null && !AccessCertificationCaseType.F_WORK_ITEM.equals(path)) {
+            if (path != null && !AccessCertificationCaseType.F_WORK_ITEM.equivalent(path)) {
                 throw new QueryException("OwnedBy filter for type '"
                         + ownedType.getSimpleName() + "' used with invalid path: " + path);
             }
         } else if (ownedType.equals(CaseWorkItemType.class)) {
             expectedOwnerType = CaseType.class;
-            if (path != null && !CaseType.F_WORK_ITEM.equals(path)) {
+            if (path != null && !CaseType.F_WORK_ITEM.equivalent(path)) {
                 throw new QueryException("OwnedBy filter for type '"
                         + ownedType.getSimpleName() + "' used with invalid path: " + path);
             }
@@ -139,7 +141,10 @@ public class OwnedByRestriction extends Restriction<OwnedByFilter> {
             addAssignmentVsInducementCondition(subcontext, RAssignmentOwner.FOCUS);
         }
 
-        existsCondition.interpretFilter(filter.getFilter());
+        ObjectFilter innerFilter = filter.getFilter();
+        if (!(innerFilter == null || innerFilter instanceof AllFilter)) {
+            existsCondition.interpretFilter(innerFilter);
+        }
 
         return existsCondition;
     }

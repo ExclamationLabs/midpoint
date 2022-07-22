@@ -553,6 +553,7 @@ public class ResourceTypeUtil {
     }
 
     // TODO specify semantics of this method
+    @Deprecated
     @Nullable
     public static ObjectSynchronizationType findObjectSynchronization(
             @Nullable ResourceType resource, @Nullable ShadowKindType kind, @Nullable String intent) {
@@ -688,5 +689,26 @@ public class ResourceTypeUtil {
 
     public static boolean hasSchema(ResourceType resource) {
         return getResourceXsdSchema(resource) != null;
+    }
+
+    public static boolean isAbstract(@NotNull ResourceType resource) {
+        Boolean isAbstract = resource.isAbstract();
+        if (isAbstract != null) {
+            return isAbstract;
+        } else {
+            return isTemplate(resource);
+        }
+    }
+
+    public static boolean isTemplate(@NotNull ResourceType resource) {
+        return Boolean.TRUE.equals(resource.isTemplate());
+    }
+
+    /**
+     * Note that this method is not 100% accurate. It's because even if the resource is expanded, currently the `super`
+     * item is not removed. This may change in the future.
+     */
+    public static boolean doesNeedExpansion(ResourceType resource) {
+        return resource.getSuper() != null;
     }
 }

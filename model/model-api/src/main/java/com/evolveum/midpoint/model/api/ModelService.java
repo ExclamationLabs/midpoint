@@ -21,19 +21,26 @@ import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.delta.ObjectDelta;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.prism.query.ObjectQuery;
+import com.evolveum.midpoint.provisioning.api.DiscoveredConfiguration;
+import com.evolveum.midpoint.provisioning.api.ProvisioningService;
 import com.evolveum.midpoint.schema.GetOperationOptions;
 import com.evolveum.midpoint.schema.ObjectDeltaOperation;
 import com.evolveum.midpoint.schema.ResultHandler;
 import com.evolveum.midpoint.schema.SearchResultList;
 import com.evolveum.midpoint.schema.SearchResultMetadata;
 import com.evolveum.midpoint.schema.SelectorOptions;
+import com.evolveum.midpoint.schema.processor.ResourceSchema;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.security.api.AuthorizationConstants;
 import com.evolveum.midpoint.task.api.Task;
+import com.evolveum.midpoint.util.annotation.Experimental;
 import com.evolveum.midpoint.util.exception.*;
 import com.evolveum.midpoint.xml.ns._public.common.api_types_3.CompareResultType;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.CapabilityCollectionType;
+
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * <p>
@@ -264,25 +271,23 @@ public interface ModelService {
             throws ObjectNotFoundException, SecurityViolationException, SchemaException, ConfigurationException, ExpressionEvaluationException, CommunicationException;
 
     /**
-     * <p>
      * Search for objects.
-     * </p>
-     * <p>
+     *
      * Searches through all object of a specified type. Returns a list of objects that match
      * search criteria.
-     * </p>
-     * <p>
+     *
      * Note that this method has a very limited scaling capability
      * as all the results are stored in the memory. DO NOT USE on large datasets.
      * Recommended usage is only when using queries that cannot return large number
      * of results (e.g. queries for unique values) or when combined with paging capability.
      * For other cases use searchObjectsIterative instead.
-     * </p>
-     * <p>
+     *
      * Returns empty list if object type is correct but there are no objects of
      * that type. Fails if object type is wrong. Should fail if unknown property is
      * specified in the query.
-     * </p>
+     *
+     * When searching for objects of {@link ShadowType}, there are specific requirements related to the query. Please see
+     * {@link ProvisioningService#searchObjects(Class, ObjectQuery, Collection, Task, OperationResult)} for more information.
      *
      * @param type
      *            (class) of an object to search
@@ -329,17 +334,16 @@ public interface ModelService {
             throws SchemaException, SecurityViolationException, ObjectNotFoundException, ExpressionEvaluationException, CommunicationException, ConfigurationException;
 
     /**
-     * <p>
      * Search for objects in iterative fashion (using callback).
-     * </p>
-     * <p>
+     *
      * Searches through all object of a specified type. A handler is invoked for each object found.
-     * </p>
-     * <p>
+     *
      * The handler is not called at all if object type is correct but there are no objects of
      * that type. Fails if object type is wrong. Should fail if unknown property is
      * specified in the query.
-     * </p>
+     *
+     * When searching for objects of {@link ShadowType}, there are specific requirements related to the query. Please see
+     * {@link ProvisioningService#searchObjects(Class, ObjectQuery, Collection, Task, OperationResult)} for more information.
      *
      * @param type
      *            (class) of an object to search
@@ -374,14 +378,14 @@ public interface ModelService {
             SecurityViolationException, ExpressionEvaluationException;
 
     /**
-     * <p>
      * Count objects.
-     * </p>
-     * <p>
+     *
      * Searches through all object of a specified type and returns a count of such objects.
      * This method is usually much more efficient than equivalent search method. It is used mostly for
      * presentation purposes, e.g. displaying correct number of pages in the GUI listings.
-     * </p>
+     *
+     * When counting objects of {@link ShadowType}, there are specific requirements related to the query. Please see
+     * {@link ProvisioningService#searchObjects(Class, ObjectQuery, Collection, Task, OperationResult)} for more information.
      *
      * @param type
      *            (class) of an object to search
@@ -419,17 +423,7 @@ public interface ModelService {
      * Test the resource connection and basic resource connector functionality.
      * </p>
      * <p>
-     * This operation will NOT throw exception in case the resource connection
-     * fails. It such case it will indicate the failure in the return message,
-     * but the operation itself succeeds. The operations fails only if the
-     * provided arguments are wrong, in case of system error, system
-     * misconfiguration, etc.
-     * </p>
-     * <p>
-     * This returns OperationResult instead of taking it as in/out argument.
-     * This is different from the other methods. The testResource method is not
-     * using OperationResult to track its own execution but rather to track the
-     * execution of resource tests (that in fact happen in provisioning).
+     * Work same as {@link ProvisioningService#testResource(PrismObject, Task, OperationResult)}.
      * </p>
      *
      * @param resourceOid OID of resource to test
@@ -437,7 +431,75 @@ public interface ModelService {
      * @throws ObjectNotFoundException specified object does not exist
      * @throws IllegalArgumentException wrong OID format
      */
-    OperationResult testResource(String resourceOid, Task task, OperationResult parentResult) throws ObjectNotFoundException, SchemaException, ConfigurationException;
+    OperationResult testResource(String resourceOid, Task task, OperationResult parentResult)
+            throws ObjectNotFoundException, SchemaException, ConfigurationException;
+
+    /**
+     * <p>
+     * Test the resource connection and basic resource connector functionality.
+     * </p>
+     * <p>
+     * Work same as {@link com.evolveum.midpoint.provisioning.api.ProvisioningService#testResource(PrismObject, Task, OperationResult)}.
+     * </p>
+     *
+     * @param resource resource to test
+     * @return results of executed tests
+     * @throws ObjectNotFoundException specified object does not exist
+     */
+    OperationResult testResource(PrismObject<ResourceType> resource, Task task, OperationResult parentResult)
+            throws ObjectNotFoundException, SchemaException, ConfigurationException;
+
+
+    /**
+     * <p>
+     * Test partial resource connector configuration. Testing only basic connection.
+     * </p>
+     * <p>
+     * Method work with OperationResult same as method
+     * {@link ProvisioningService#testResource(PrismObject, Task, OperationResult)}.
+     * </p>
+     *
+     * @param resource resource to test
+     * @return results of executed partial test
+     * @throws ObjectNotFoundException specified object does not exist
+     */
+    OperationResult testResourcePartialConfiguration(PrismObject<ResourceType> resource, Task task, OperationResult parentResult)
+            throws ObjectNotFoundException, SchemaException, ConfigurationException;
+
+    /**
+     * <p>
+     * Method work same as
+     * {@link ProvisioningService#discoverConfiguration(PrismObject, OperationResult)}.
+     * </p>
+     *
+     * @param resource resource with minimal connector configuration
+     * @return Suggested configuration properties wrapped in DiscoveredConfiguration.
+     */
+    DiscoveredConfiguration discoverResourceConnectorConfiguration(PrismObject<ResourceType> resource, OperationResult result);
+
+    /**
+     * <p>
+     * Method work same as
+     * {@link com.evolveum.midpoint.provisioning.api.ProvisioningService#fetchSchema(PrismObject, OperationResult)}.
+     * </p>
+     *
+     * @param resource resource with connector configuration
+     * @return Resource schema fetched by connector
+     */
+    @Nullable ResourceSchema fetchSchema(@NotNull PrismObject<ResourceType> resource, @NotNull OperationResult parentResult);
+
+    /**
+     * <p>
+     * Method work same as
+     * {@link com.evolveum.midpoint.provisioning.api.ProvisioningService#getNativeCapabilities(String, OperationResult)}.
+     * </p>
+     *
+     * EXPERIMENTAL feature.
+     */
+    @Experimental
+    @NotNull CapabilityCollectionType getNativeCapabilities(@NotNull String connOid, OperationResult result)
+            throws SchemaException, CommunicationException, ConfigurationException, ObjectNotFoundException;
+
 
     /**
      * <p>

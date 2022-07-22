@@ -26,7 +26,10 @@ import com.evolveum.midpoint.provisioning.impl.shadows.ShadowsFacade;
 import com.evolveum.midpoint.provisioning.impl.shadows.classification.ResourceObjectClassifier;
 import com.evolveum.midpoint.provisioning.impl.shadows.classification.ShadowTagGenerator;
 import com.evolveum.midpoint.schema.processor.ResourceObjectDefinition;
+import com.evolveum.midpoint.schema.processor.ResourceSchema;
 import com.evolveum.midpoint.schema.util.ResourceTypeUtil;
+
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.CapabilityCollectionType;
 
 import com.google.common.base.Preconditions;
 import org.apache.commons.lang3.Validate;
@@ -88,7 +91,8 @@ import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
  * * Creating and closing the operation-level {@link OperationResult} (and recording any exceptions in the standard manner).
  * More complex methods (e.g. `getObject`, `searchObjects`, `searchObjectsIterative`) may *clean up* the result before returning.
  * (Except for auxiliary methods like {@link #classifyResourceObject(ShadowType, ResourceType,
- * ObjectSynchronizationDiscriminatorType, Task, OperationResult)} and {@link ProvisioningService#generateShadowTag(ShadowType, ResourceType, ResourceObjectDefinition, Task, OperationResult)}).
+ * ObjectSynchronizationDiscriminatorType, Task, OperationResult)} and {@link ProvisioningService#generateShadowTag(ShadowType,
+ * ResourceType, ResourceObjectDefinition, Task, OperationResult)}).
  *
  * * Logging at the operation level.
  *
@@ -104,8 +108,12 @@ public class ProvisioningServiceImpl implements ProvisioningService, SystemConfi
     private static final String OP_REFRESH_SHADOW = ProvisioningServiceImpl.class.getName() + ".refreshShadow";
     private static final String OP_DELETE_OBJECT = ProvisioningService.class.getName() + ".deleteObject";
     private static final String OP_DISCOVER_CONFIGURATION = ProvisioningService.class.getName() + ".discoverConfiguration";
+    private static final String OP_EXPAND_CONFIGURATION_OBJECT = ProvisioningService.class.getName()
+            + ".expandConfigurationObject";
     // TODO reconsider names of these operations
     private static final String OP_TEST_RESOURCE = ProvisioningService.class.getName() + ".testResource";
+
+    private static final String OP_GET_NATIVE_CAPABILITIES = ProvisioningService.class.getName() + ".getNativeCapabilities";
 
     @Autowired ShadowsFacade shadowsFacade;
     @Autowired ResourceManager resourceManager;
@@ -686,6 +694,23 @@ public class ProvisioningServiceImpl implements ProvisioningService, SystemConfi
         }
     }
 
+    public @Nullable ResourceSchema fetchSchema(@NotNull PrismObject<ResourceType> resource, @NotNull OperationResult result) {
+        LOGGER.trace("Fetching resource schema for {}", resource);
+        try {
+            return resourceManager.fetchSchema(resource.asObjectable(), result);
+        } catch (Exception e) {
+            LOGGER.warn("Failed while fetch schema: {}", e.getMessage(), e);
+            result.recordFatalError("Failed while fetch schema: " + e.getMessage(), e);
+            return null;
+        } catch (Throwable t) {
+            // This is more serious, like OutOfMemoryError and the like. We won't pretend it's OK.
+            result.recordFatalError(t);
+            throw t;
+        } finally {
+            result.close();
+        }
+    }
+
     @Override
     public void refreshShadow(PrismObject<ShadowType> shadow, ProvisioningOperationOptions options, Task task, OperationResult parentResult)
             throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException,
@@ -830,7 +855,8 @@ public class ProvisioningServiceImpl implements ProvisioningService, SystemConfi
             if (ShadowType.class.isAssignableFrom(delta.getObjectTypeClass())) {
                 shadowsFacade.applyDefinition((ObjectDelta<ShadowType>) delta, (ShadowType) object, task, result);
             } else if (ResourceType.class.isAssignableFrom(delta.getObjectTypeClass())) {
-                resourceManager.applyDefinition((ObjectDelta<ResourceType>) delta, (ResourceType) object, null, task, result);
+                resourceManager.applyDefinition(
+                        (ObjectDelta<ResourceType>) delta, (ResourceType) object, null, task, result);
             } else {
                 throw new IllegalArgumentException("Could not apply definition to deltas for object type: " + delta.getObjectTypeClass());
             }
@@ -858,7 +884,7 @@ public class ProvisioningServiceImpl implements ProvisioningService, SystemConfi
             if (object.isOfType(ShadowType.class)) {
                 shadowsFacade.applyDefinition((PrismObject<ShadowType>) object, task, result);
             } else if (object.isOfType(ResourceType.class)) {
-                resourceManager.applyDefinition((PrismObject<ResourceType>) object, task, result);
+                resourceManager.applyDefinition((ResourceType) object.asObjectable(), result);
             } else {
                 throw new IllegalArgumentException("Could not apply definition to object type: " + object.getCompileTimeClass());
             }
@@ -1096,5 +1122,54 @@ public class ProvisioningServiceImpl implements ProvisioningService, SystemConfi
             @NotNull OperationResult result) throws SchemaException, ExpressionEvaluationException, CommunicationException,
             SecurityViolationException, ConfigurationException, ObjectNotFoundException {
         return shadowTagGenerator.generateTag(combinedObject, resource, definition, task, result);
+    }
+
+    @Override
+    public void expandConfigurationObject(
+            @NotNull PrismObject<? extends ObjectType> configurationObject,
+            @NotNull Task task,
+            @NotNull OperationResult parentResult) throws SchemaException, ConfigurationException, ObjectNotFoundException {
+        OperationResult result = parentResult.subresult(OP_EXPAND_CONFIGURATION_OBJECT)
+                .addParam("configurationObject", configurationObject)
+                .addContext(OperationResult.CONTEXT_IMPLEMENTATION_CLASS, ProvisioningServiceImpl.class)
+                .build();
+        try {
+            ObjectType objectBean = configurationObject.asObjectable();
+            if (objectBean instanceof ResourceType) {
+                ResourceType resource = (ResourceType) objectBean;
+                LOGGER.trace("Starting expanding {}", configurationObject);
+                resourceManager.expandResource(resource, result);
+                LOGGER.trace("Finished expanding {}", configurationObject);
+            } else {
+                // Nothing to do here; intentionally not throwing an exception
+            }
+        } catch (Throwable t) {
+            result.recordFatalError(t);
+            throw t;
+        } finally {
+            result.close();
+        }
+    }
+
+    @Override
+    public CapabilityCollectionType getNativeCapabilities(@NotNull String connOid, OperationResult parentResult)
+            throws SchemaException, CommunicationException, ConfigurationException, ObjectNotFoundException {
+        OperationResult result = parentResult.subresult(OP_GET_NATIVE_CAPABILITIES)
+                .addParam("connectorOid", connOid)
+                .addContext(OperationResult.CONTEXT_IMPLEMENTATION_CLASS, ProvisioningServiceImpl.class)
+                .build();
+        try {
+            LOGGER.trace("Start getting native capabilities by connector oid {}", connOid);
+            CapabilityCollectionType capabilities = resourceManager.getNativeCapabilities(connOid, result);
+            LOGGER.debug("Finished getting native capabilities by connector oid {}:\n{}",
+                    connOid, capabilities.debugDumpLazily(1));
+            return capabilities;
+        } catch (Throwable t) {
+            // This is more serious, like OutOfMemoryError and the like. We won't pretend it's OK.
+            result.recordFatalError(t);
+            throw t;
+        } finally {
+            result.close();
+        }
     }
 }

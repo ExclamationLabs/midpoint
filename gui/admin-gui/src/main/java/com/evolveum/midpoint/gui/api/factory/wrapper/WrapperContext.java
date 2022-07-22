@@ -6,6 +6,7 @@
  */
 package com.evolveum.midpoint.gui.api.factory.wrapper;
 
+import com.evolveum.midpoint.provisioning.api.DiscoveredConfiguration;
 import com.evolveum.midpoint.schema.ResourceShadowCoordinates;
 import com.evolveum.midpoint.schema.processor.ResourceAssociationDefinition;
 import com.evolveum.midpoint.gui.api.prism.ItemStatus;
@@ -14,12 +15,14 @@ import com.evolveum.midpoint.prism.PrismObject;
 import com.evolveum.midpoint.prism.path.ItemPath;
 import com.evolveum.midpoint.schema.result.OperationResult;
 import com.evolveum.midpoint.task.api.Task;
+import com.evolveum.midpoint.util.DisplayableValue;
 import com.evolveum.midpoint.util.annotation.Experimental;
 import com.evolveum.midpoint.util.exception.SchemaException;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
 
 import org.jetbrains.annotations.NotNull;
 
+import javax.xml.namespace.QName;
 import java.util.*;
 
 /**
@@ -223,8 +226,14 @@ public class WrapperContext {
 
     private void collectVirtualContainers(@NotNull Collection<ContainerPanelConfigurationType> panelConfigs, Collection<VirtualContainersSpecificationType> virtualContainers) {
         for (ContainerPanelConfigurationType panelConfig : panelConfigs) {
-            virtualContainers.addAll(panelConfig.getContainer());
-            collectVirtualContainers(panelConfig.getPanel(), virtualContainers);
+            if (objectStatus == null || panelConfig.getApplicableForOperation() == null
+                    || (ItemStatus.NOT_CHANGED.equals(objectStatus)
+                        && OperationTypeType.MODIFY.equals(panelConfig.getApplicableForOperation()))
+                    || (ItemStatus.ADDED.equals(objectStatus)
+                    && OperationTypeType.ADD.equals(panelConfig.getApplicableForOperation()))) {
+                virtualContainers.addAll(panelConfig.getContainer());
+                collectVirtualContainers(panelConfig.getPanel(), virtualContainers);
+            }
         }
     }
 

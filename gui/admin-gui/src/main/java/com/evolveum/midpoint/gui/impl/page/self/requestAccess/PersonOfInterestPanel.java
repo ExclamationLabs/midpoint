@@ -7,25 +7,15 @@
 
 package com.evolveum.midpoint.gui.impl.page.self.requestAccess;
 
+import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 import javax.xml.namespace.QName;
 
-import com.evolveum.midpoint.gui.impl.component.tile.Tile;
-
-import com.evolveum.midpoint.gui.impl.component.tile.TilePanel;
-
-import com.evolveum.midpoint.model.api.authentication.CompiledGuiProfile;
-import com.evolveum.midpoint.security.api.MidPointPrincipal;
-
-import com.evolveum.midpoint.util.exception.SecurityViolationException;
-
-import com.evolveum.midpoint.util.logging.Trace;
-import com.evolveum.midpoint.util.logging.TraceManager;
-
-import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
-
 import org.apache.wicket.ajax.AjaxRequestTarget;
+import org.apache.wicket.ajax.form.AjaxFormComponentUpdatingBehavior;
 import org.apache.wicket.ajax.markup.html.AjaxLink;
 import org.apache.wicket.markup.html.WebMarkupContainer;
 import org.apache.wicket.markup.html.list.ListItem;
@@ -33,13 +23,32 @@ import org.apache.wicket.markup.html.list.ListView;
 import org.apache.wicket.markup.html.panel.Fragment;
 import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.Model;
+import org.wicketstuff.select2.ChoiceProvider;
+import org.wicketstuff.select2.Response;
+import org.wicketstuff.select2.Select2MultiChoice;
 
 import com.evolveum.midpoint.gui.api.component.ObjectBrowserPanel;
 import com.evolveum.midpoint.gui.api.component.wizard.BasicWizardPanel;
 import com.evolveum.midpoint.gui.api.model.LoadableModel;
+import com.evolveum.midpoint.gui.api.util.WebComponentUtil;
+import com.evolveum.midpoint.gui.api.util.WebModelServiceUtils;
+import com.evolveum.midpoint.gui.impl.component.tile.Tile;
+import com.evolveum.midpoint.gui.impl.component.tile.TilePanel;
+import com.evolveum.midpoint.model.api.authentication.CompiledGuiProfile;
+import com.evolveum.midpoint.prism.PrismObject;
+import com.evolveum.midpoint.prism.query.ObjectFilter;
+import com.evolveum.midpoint.prism.query.ObjectQuery;
+import com.evolveum.midpoint.schema.result.OperationResult;
+import com.evolveum.midpoint.security.api.MidPointPrincipal;
 import com.evolveum.midpoint.security.api.SecurityUtil;
+import com.evolveum.midpoint.task.api.Task;
+import com.evolveum.midpoint.util.exception.SecurityViolationException;
+import com.evolveum.midpoint.util.logging.Trace;
+import com.evolveum.midpoint.util.logging.TraceManager;
 import com.evolveum.midpoint.web.component.util.VisibleBehaviour;
 import com.evolveum.midpoint.web.component.util.VisibleEnableBehaviour;
+import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
+import com.evolveum.prism.xml.ns._public.query_3.SearchFilterType;
 
 /**
  * Created by Viliam Repan (lazyman).
@@ -48,22 +57,41 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
 
     private static final long serialVersionUID = 1L;
 
-    private static final Trace LOGGER = TraceManager.getTrace(PersonOfInterest.class);
+    private static final Trace LOGGER = TraceManager.getTrace(TileType.class);
 
-    private enum PersonOfInterest {
+    private static final String DOT_CLASS = RelationPanel.class.getName() + ".";
+    private static final String OPERATION_LOAD_USERS = DOT_CLASS + "loadUsers";
+
+    private static final int MULTISELECT_PAGE_SIZE = 10;
+
+    private static final String DEFAULT_TILE_ICON = "fas fa-user-friends";
+
+    private enum TileType {
 
         MYSELF("fas fa-user-circle"),
 
-        GROUP_OTHERS("fas fa-user-friends");
+        GROUP_OTHERS(DEFAULT_TILE_ICON);
 
         private String icon;
 
-        PersonOfInterest(String icon) {
+        TileType(String icon) {
             this.icon = icon;
         }
 
         public String getIcon() {
             return icon;
+        }
+    }
+
+    private static class PersonOfInterest implements Serializable {
+
+        private String groupIdentifier;
+
+        private TileType type;
+
+        public PersonOfInterest(String groupIdentifier, TileType type) {
+            this.groupIdentifier = groupIdentifier;
+            this.type = type;
         }
     }
 
@@ -80,6 +108,7 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
     private static final String ID_TILE = "tile";
 
     private static final String ID_SELECT_MANUALLY = "selectManually";
+    private static final String ID_MULTISELECT = "multiselect";
 
     private IModel<List<Tile<PersonOfInterest>>> tiles;
 
@@ -117,19 +146,37 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
 
     private void initModels() {
         tiles = new LoadableModel<>(false) {
+
             @Override
             protected List<Tile<PersonOfInterest>> load() {
                 List<Tile<PersonOfInterest>> list = new ArrayList<>();
 
-                TargetSelectionType targetSelection = getTargetSelectionConfiguration();
-                if (targetSelection == null) {
-                    for (PersonOfInterest poi : PersonOfInterest.values()) {
-                        Tile tile = new Tile(poi.getIcon(), getString(poi));
-                        tile.setValue(poi);
+                TargetSelectionType selection = getTargetSelectionConfiguration();
+                if (selection == null) {
+                    for (TileType type : TileType.values()) {
+                        Tile tile = createDefaultTile(type);
                         list.add(tile);
                     }
 
                     return list;
+                }
+
+                if (selection.isAllowRequestForMyself() == null || selection.isAllowRequestForMyself()) {
+                    list.add(createDefaultTile(TileType.MYSELF));
+                }
+
+                if (selection.isAllowRequestForOthers() != null && !selection.isAllowRequestForOthers()) {
+                    return list;
+                }
+
+                List<GroupSelectionType> selections = selection.getGroup();
+                if (selections.isEmpty()) {
+                    list.add(createDefaultTile(TileType.GROUP_OTHERS));
+                    return list;
+                }
+
+                for (GroupSelectionType gs : selections) {
+                    list.add(createTile(gs));
                 }
 
                 return list;
@@ -137,18 +184,53 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
         };
     }
 
+    private Tile<PersonOfInterest> createTile(GroupSelectionType selection) {
+        DisplayType display = selection.getDisplay();
+        if (display == null) {
+            display = new DisplayType();
+        }
+
+        String icon = DEFAULT_TILE_ICON;
+
+        IconType iconType = display.getIcon();
+        if (iconType != null && iconType.getCssClass() != null) {
+            icon = iconType.getCssClass();
+        }
+
+        String label = getString(TileType.GROUP_OTHERS);
+        if (display.getLabel() != null) {
+            label = WebComponentUtil.getTranslatedPolyString(display.getLabel());
+        }
+
+        Tile tile = new Tile(icon, label);
+        tile.setValue(new PersonOfInterest(selection.getIdentifier(), TileType.GROUP_OTHERS));
+
+        return tile;
+    }
+
+    private Tile<PersonOfInterest> createDefaultTile(TileType type) {
+        Tile tile = new Tile(type.getIcon(), getString(type));
+        tile.setValue(new PersonOfInterest(null, type));
+
+        return tile;
+    }
+
     @Override
     public VisibleEnableBehaviour getNextBehaviour() {
         return new VisibleBehaviour(() -> {
-            Tile<PersonOfInterest> myself = getTileBy(PersonOfInterest.MYSELF);
-            Tile<PersonOfInterest> others = getTileBy(PersonOfInterest.GROUP_OTHERS);
+            Tile<PersonOfInterest> selected = getSelectedTile();
+            if (selected == null) {
+                return false;
+            }
 
-            return myself.isSelected() || (others.isSelected() && selectedGroupOfUsers.getObject().size() > 0);
+            TileType type = selected.getValue().type;
+
+            return type == TileType.MYSELF || (type == TileType.GROUP_OTHERS && selectedGroupOfUsers.getObject().size() > 0);
         });
     }
 
-    private Tile<PersonOfInterest> getTileBy(PersonOfInterest type) {
-        return tiles.getObject().stream().filter(t -> t.getValue() == type).findFirst().orElseGet(null);
+    private Tile<PersonOfInterest> getSelectedTile() {
+        return tiles.getObject().stream().filter(t -> t.isSelected()).findFirst().orElse(null);
     }
 
     private void initLayout() {
@@ -172,7 +254,7 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
                     @Override
                     protected void onClick(AjaxRequestTarget target) {
                         Tile<PersonOfInterest> tile = item.getModelObject();
-                        switch (tile.getValue()) {
+                        switch (tile.getValue().type) {
                             case MYSELF:
                                 myselfPerformed(target, tile);
                                 break;
@@ -192,6 +274,40 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
 
     private Fragment initSelectionFragment() {
         Fragment fragment = new Fragment(ID_FRAGMENTS, ID_SELECTION_FRAGMENT, this);
+
+        IModel<Collection<ObjectReferenceType>> multiselectModel = new IModel<>() {
+
+            @Override
+            public Collection<ObjectReferenceType> getObject() {
+                return selectedGroupOfUsers.getObject();
+            }
+
+            @Override
+            public void setObject(Collection<ObjectReferenceType> object) {
+                if (object == null) {
+                    selectedGroupOfUsers.setObject(new ArrayList<>());
+                    return;
+                }
+
+                selectedGroupOfUsers.setObject(new ArrayList<>(object));
+            }
+        };
+
+        Select2MultiChoice<ObjectReferenceType> multiselect = new Select2MultiChoice<>(ID_MULTISELECT, multiselectModel,
+                new ObjectReferenceProvider(this));
+        multiselect.getSettings()
+                .setMinimumInputLength(2);
+        multiselect.add(new AjaxFormComponentUpdatingBehavior("change") {
+
+            @Override
+            protected void onUpdate(AjaxRequestTarget target) {
+                Collection<ObjectReferenceType> refs = multiselect.getModel().getObject();
+                selectedGroupOfUsers.setObject(new ArrayList<>(refs));
+
+                target.add(PersonOfInterestPanel.this.getNext());
+            }
+        });
+        fragment.add(multiselect);
 
         AjaxLink selectManually = new AjaxLink<>(ID_SELECT_MANUALLY) {
 
@@ -231,6 +347,11 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
     }
 
     private void groupOthersPerformed(AjaxRequestTarget target, Tile<PersonOfInterest> groupOthers) {
+        Tile<PersonOfInterest> selected = getSelectedTile();
+        if (selected != null && selected.getValue().type == TileType.GROUP_OTHERS && selected != groupOthers) {
+            selectedGroupOfUsers.setObject(new ArrayList<>());
+        }
+
         tiles.getObject().forEach(t -> t.setSelected(false));
 
         if (!groupOthers.isSelected()) {
@@ -242,10 +363,67 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
         target.add(this);
     }
 
+    private ObjectFilter createObjectFilterFromGroupSelection(String identifier) {
+        if (identifier == null) {
+            return null;
+        }
+
+        TargetSelectionType targetSelection = getTargetSelectionConfiguration();
+        if (targetSelection == null) {
+            return null;
+        }
+
+        List<GroupSelectionType> selections = getTargetSelectionConfiguration().getGroup();
+        GroupSelectionType selection = selections.stream().filter(gs -> identifier.equals(gs.getIdentifier())).findFirst().orElse(null);
+        if (selection == null) {
+            return null;
+        }
+
+        CollectionRefSpecificationType collection = selection.getCollection();
+        if (collection == null) {
+            return null;
+        }
+
+        SearchFilterType search;
+        if (collection.getCollectionRef() != null) {
+            com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType collectionRef = collection.getCollectionRef();
+            PrismObject obj = WebModelServiceUtils.loadObject(collectionRef, getPageBase());
+            if (obj == null) {
+                return null;
+            }
+
+            ObjectCollectionType objectCollection = (ObjectCollectionType) obj.asObjectable();
+            search = objectCollection.getFilter();
+        } else {
+            search = collection.getFilter();
+        }
+
+        if (search == null) {
+            return null;
+        }
+
+        try {
+            return getPageBase().getQueryConverter().createObjectFilter(UserType.class, search);
+        } catch (Exception ex) {
+            LOGGER.debug("Couldn't create search filter", ex);
+            getPageBase().error("Couldn't create search filter, reason: " + ex.getMessage());
+        }
+
+        return null;
+    }
+
     private void selectManuallyPerformed(AjaxRequestTarget target) {
-        ObjectBrowserPanel<UserType> panel = new ObjectBrowserPanel<>(
-                getPageBase().getMainPopupBodyId(), UserType.class,
-                List.of(UserType.COMPLEX_TYPE), true, getPageBase()) {
+        ObjectFilter filter = null;
+
+        Tile<PersonOfInterest> selected = getSelectedTile();
+        if (selected != null) {
+            String identifier = selected.getValue().groupIdentifier;
+            filter = createObjectFilterFromGroupSelection(identifier);
+        }
+
+        ObjectBrowserPanel<UserType> panel = new ObjectBrowserPanel<>(getPageBase().getMainPopupBodyId(), UserType.class,
+                List.of(UserType.COMPLEX_TYPE), true, getPageBase(), filter) {
+
             private static final long serialVersionUID = 1L;
 
             @Override
@@ -266,7 +444,8 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
         for (UserType user : users) {
             refs.add(new ObjectReferenceType()
                     .oid(user.getOid())
-                    .type(UserType.COMPLEX_TYPE));
+                    .type(UserType.COMPLEX_TYPE)
+                    .targetName(WebComponentUtil.getDisplayNameOrName(user.asPrismObject())));
         }
 
         selectedGroupOfUsers.setObject(refs);
@@ -289,8 +468,13 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
 
     @Override
     public boolean onNextPerformed(AjaxRequestTarget target) {
-        Tile<PersonOfInterest> myself = getTileBy(PersonOfInterest.MYSELF);
-        if (myself.isSelected()) {
+        Tile<PersonOfInterest> selected = getSelectedTile();
+        if (selected == null) {
+            return false;
+        }
+
+        TileType type = selected.getValue().type;
+        if (type == TileType.MYSELF) {
             try {
                 MidPointPrincipal principal = SecurityUtil.getPrincipal();
 
@@ -324,5 +508,74 @@ public class PersonOfInterestPanel extends BasicWizardPanel<RequestAccess> {
         }
 
         return accessRequest.getTargetSelection();
+    }
+
+    public static class ObjectReferenceProvider extends ChoiceProvider<ObjectReferenceType> {
+
+        private static final long serialVersionUID = 1L;
+
+        private PersonOfInterestPanel panel;
+
+        public ObjectReferenceProvider(PersonOfInterestPanel panel) {
+            this.panel = panel;
+        }
+
+        @Override
+        public String getDisplayValue(ObjectReferenceType ref) {
+            return WebComponentUtil.getDisplayNameOrName(ref);
+        }
+
+        @Override
+        public String getIdValue(ObjectReferenceType ref) {
+            return ref != null ? ref.getOid() : null;
+        }
+
+        @Override
+        public void query(String text, int page, Response<ObjectReferenceType> response) {
+            ObjectFilter filter = null;
+
+            Tile<PersonOfInterest> selected = panel.getSelectedTile();
+            if (selected != null) {
+                String identifier = selected.getValue().groupIdentifier;
+                filter = panel.createObjectFilterFromGroupSelection(identifier);
+            }
+
+            ObjectFilter substring = panel.getPrismContext().queryFor(UserType.class)
+                    .item(UserType.F_NAME).containsPoly(text).matchingNorm().buildFilter();
+
+            ObjectFilter full = substring;
+            if (filter != null) {
+                full = panel.getPrismContext().queryFactory().createAnd(filter, substring);
+            }
+
+            ObjectQuery query = panel.getPrismContext()
+                    .queryFor(UserType.class)
+                    .filter(full)
+                    .asc(UserType.F_NAME)
+                    .maxSize(MULTISELECT_PAGE_SIZE).offset(page * MULTISELECT_PAGE_SIZE).build();
+
+            Task task = panel.getPageBase().createSimpleTask(OPERATION_LOAD_USERS);
+            OperationResult result = task.getResult();
+
+            try {
+                List<PrismObject<UserType>> objects = WebModelServiceUtils.searchObjects(UserType.class, query, result, panel.getPageBase());
+
+                response.addAll(objects.stream()
+                        .map(o -> new ObjectReferenceType()
+                                .oid(o.getOid())
+                                .type(UserType.COMPLEX_TYPE)
+                                .targetName(WebComponentUtil.getDisplayNameOrName(o))).collect(Collectors.toList()));
+            } catch (Exception ex) {
+                LOGGER.debug("Couldn't search users for multiselect", ex);
+            }
+        }
+
+        @Override
+        public Collection<ObjectReferenceType> toChoices(Collection<String> collection) {
+            return collection.stream()
+                    .map(oid -> new ObjectReferenceType()
+                            .oid(oid)
+                            .type(UserType.COMPLEX_TYPE)).collect(Collectors.toList());
+        }
     }
 }

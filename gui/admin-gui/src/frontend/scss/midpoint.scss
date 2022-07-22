@@ -458,6 +458,11 @@ li.dropdown.user.user-menu {
 	margin-bottom: 20px;
 }
 
+//Self -> Home page, the same width for link panels.
+.dashboard-link-component {
+  flex: 1 1 0 !important;
+}
+
 // assignments dashboard panel
 .dash-assignment-header {
 
@@ -1725,3 +1730,16 @@ th.debug-list-buttons {
     }
   }
 }
+
+.request-access-wizard {
+  & .simple-tile {
+    width: 250px;
+    height: 250px;
+  }
+
+  & .role-catalog-tiles-table .catalog-tile-panel {
+    height: 376px;
+    margin-bottom: $grid-gutter-width;
+  }
+}
+

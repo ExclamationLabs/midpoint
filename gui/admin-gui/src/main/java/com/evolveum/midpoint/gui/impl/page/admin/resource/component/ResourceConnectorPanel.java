@@ -52,6 +52,7 @@ public class ResourceConnectorPanel extends AbstractObjectMainPanel<ResourceType
     private static final String ID_POOL_CONFIG_MAX_IDLE = "poolConfigMaxIdle";
     private static final String ID_POOL_CONFIG_WAIT_TIMEOUT = "poolConfigWaitTimeout";
     private static final String ID_POOL_CONFIG_MIN_EVICTABLE_IDLE_TIME = "poolConfigMinEvictableIdleTime";
+    private static final String ID_POOL_CONFIG_MAX_IDLE_TIME = "poolConfigMaxIdleTime";
     private static final String ID_POOL_STATUS_NUM_IDLE = "poolStatusNumIdle";
     private static final String ID_POOL_STATUS_NUM_ACTIVE = "poolStatusNumActive";
 
@@ -86,7 +87,7 @@ public class ResourceConnectorPanel extends AbstractObjectMainPanel<ResourceType
             private static final long serialVersionUID = 1L;
 
             protected void populateItem(ListItem<ConnectorOperationalStatus> item) {
-//                item.add(new Label("label", item.getModel()));
+//                item.add(new Label("label", item.getModelService()));
                 IModel<ConnectorOperationalStatus> statModel = item.getModel();
                 item.add(createLabel(statModel, ID_CONNECTOR_NAME, ConnectorOperationalStatus.F_CONNECTOR_NAME));
                 item.add(createLabel(statModel, ID_CONNECOTR_CLASS, ConnectorOperationalStatus.F_CONNECTOR_CLASS_NAME));
@@ -96,6 +97,7 @@ public class ResourceConnectorPanel extends AbstractObjectMainPanel<ResourceType
                 item.add(createLabel(statModel, ID_POOL_CONFIG_MAX_IDLE, ConnectorOperationalStatus.F_POOL_CONFIG_MAX_IDLE));
                 item.add(createLabel(statModel, ID_POOL_CONFIG_WAIT_TIMEOUT, ConnectorOperationalStatus.F_POOL_CONFIG_WAIT_TIMEOUT));
                 item.add(createLabel(statModel, ID_POOL_CONFIG_MIN_EVICTABLE_IDLE_TIME, ConnectorOperationalStatus.F_POOL_CONFIG_MIN_EVICTABLE_IDLE_TIME));
+                item.add(createLabel(statModel, ID_POOL_CONFIG_MAX_IDLE_TIME, ConnectorOperationalStatus.F_POOL_CONFIG_MAX_IDLE_TIME));
                 item.add(createLabel(statModel, ID_POOL_STATUS_NUM_IDLE, ConnectorOperationalStatus.F_POOL_STATUS_NUM_IDLE));
                 item.add(createLabel(statModel, ID_POOL_STATUS_NUM_ACTIVE, ConnectorOperationalStatus.F_POOL_STATUS_NUM_ACTIVE));
 

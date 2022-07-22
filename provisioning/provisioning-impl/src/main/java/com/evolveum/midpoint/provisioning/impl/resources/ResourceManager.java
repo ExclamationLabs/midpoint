@@ -12,7 +12,10 @@ import java.util.List;
 
 import com.evolveum.midpoint.provisioning.api.DiscoveredConfiguration;
 import com.evolveum.midpoint.provisioning.api.ResourceTestOptions;
+import com.evolveum.midpoint.schema.processor.ResourceSchema;
 import com.evolveum.midpoint.xml.ns._public.common.common_3.*;
+
+import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.CapabilityCollectionType;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -52,6 +55,8 @@ import com.evolveum.midpoint.util.logging.Trace;
 import com.evolveum.midpoint.util.logging.TraceManager;
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.CapabilityType;
 import com.evolveum.midpoint.xml.ns._public.resource.capabilities_3.ScriptCapabilityType;
+
+import static com.evolveum.midpoint.schema.util.ResourceTypeUtil.*;
 
 @Component
 public class ResourceManager {
@@ -100,7 +105,8 @@ public class ResourceManager {
     /**
      * Gets a resource. We try the cache first. If it's not there, then we fetch, complete, and cache it.
      */
-    @NotNull public PrismObject<ResourceType> getResource(
+    @NotNull
+    public PrismObject<ResourceType> getResource(
             @NotNull String oid, @Nullable GetOperationOptions options, @NotNull Task task, @NotNull OperationResult result)
             throws ObjectNotFoundException, SchemaException, ExpressionEvaluationException, ConfigurationException {
         boolean readonly = GetOperationOptions.isReadOnly(options);
@@ -123,6 +129,12 @@ public class ResourceManager {
             throws ObjectNotFoundException, SchemaException, ExpressionEvaluationException, ConfigurationException {
         String oid = repositoryObject.getOid();
 
+        if (isAbstract(repositoryObject.asObjectable())) {
+            expandResource(repositoryObject.asObjectable(), result);
+            LOGGER.trace("Not putting {} into cache because it's abstract", repositoryObject);
+            return repositoryObject;
+        }
+
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Completing and caching fetched resource {}, version {} to cache "
                             + "(previously cached version {}, options={})",
@@ -138,7 +150,7 @@ public class ResourceManager {
         if (!ResourceTypeUtil.isComplete(completedResource)) {
             // No not cache non-complete resources (e.g. those retrieved with noFetch)
             LOGGER.debug("Not putting {} into cache because it's not complete: hasSchema={}, hasCapabilitiesCached={}",
-                    repositoryObject, ResourceTypeUtil.hasSchema(completedResource), ResourceTypeUtil.hasCapabilitiesCached(completedResource));
+                    repositoryObject, hasSchema(completedResource), hasCapabilitiesCached(completedResource));
         } else {
             OperationResultStatus completionStatus = completionOperation.getOperationResultStatus();
             if (completionStatus != OperationResultStatus.SUCCESS) {
@@ -181,7 +193,6 @@ public class ResourceManager {
         return provisioningService.getSystemConfiguration();
     }
 
-
     /**
      * Tests the connection.
      *
@@ -193,14 +204,14 @@ public class ResourceManager {
             @NotNull Task task,
             @NotNull OperationResult result)
             throws ObjectNotFoundException, SchemaException, ConfigurationException {
-        expandResource(resource, result);
+        expandResource(resource.asObjectable(), result);
         return new ResourceTestOperation(resource, options, task, beans)
                 .execute(result);
     }
 
-    private void expandResource(@NotNull PrismObject<ResourceType> resource, @NotNull OperationResult result)
+    public void expandResource(@NotNull ResourceType resource, @NotNull OperationResult result)
             throws SchemaException, ConfigurationException, ObjectNotFoundException {
-        new ResourceExpansionOperation(resource.asObjectable(), beans)
+        new ResourceExpansionOperation(resource, beans)
                 .execute(result);
     }
 
@@ -209,16 +220,39 @@ public class ResourceManager {
             @NotNull OperationResult result)
             throws SchemaException, ConfigurationException, ObjectNotFoundException, CommunicationException {
 
-        expandResource(resource, result);
+        expandResource(resource.asObjectable(), result);
 
         ConnectorSpec connectorSpec = ConnectorSpec.main(resource.asObjectable());
         result.addParam(OperationResult.PARAM_NAME, connectorSpec.getConnectorName());
         result.addParam(OperationResult.PARAM_OID, connectorSpec.getConnectorOid());
 
         ConnectorInstance connector =
-                connectorManager.getConfiguredConnectorInstance(connectorSpec, false, false, result);
+                connectorManager.getConfiguredConnectorInstance(connectorSpec, result);
         return DiscoveredConfiguration.of(
                 connector.discoverConfiguration(result));
+    }
+
+    //    @Override
+    public CapabilityCollectionType getNativeCapabilities(@NotNull String connOid, OperationResult result)
+            throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException {
+        try {
+            ConnectorInstance connInstance = connectorManager.getConnectorInstanceByConnectorOid(connOid, result);
+            return connInstance.getNativeCapabilities(result);
+        } catch (GenericFrameworkException e) {
+            // Not expected. Transform to system exception
+            result.recordFatalError("Generic provisioning framework error", e);
+            throw new SystemException("Generic provisioning framework error: " + e.getMessage(), e);
+        } catch (CommunicationException | ConfigurationException e) {
+            result.recordFatalError(e);
+            throw e;
+        }
+    }
+
+    public @Nullable ResourceSchema fetchSchema(@NotNull ResourceType resource, @NotNull OperationResult result)
+            throws CommunicationException, GenericFrameworkException, ConfigurationException, ObjectNotFoundException,
+            SchemaException {
+        LOGGER.trace("Fetching resource schema for {}", resource);
+        return schemaFetcher.fetchResourceSchema(resource, null, result);
     }
 
     /**
@@ -233,9 +267,8 @@ public class ResourceManager {
      *
      * @param statusChangeReason Description of the reason of changing the availability status.
      * @param skipGetResource True if we want to skip "getResource" operation and therefore apply the change regardless of
-     *                        the current resource availability status. This is to be used in situations where we expect that
-     *                        the resource might not be successfully retrievable (e.g. if it's broken).
-     *
+     * the current resource availability status. This is to be used in situations where we expect that
+     * the resource might not be successfully retrievable (e.g. if it's broken).
      * @throws ObjectNotFoundException If the resource object does not exist in repository.
      */
     public void modifyResourceAvailabilityStatus(String resourceOid, AvailabilityStatusType newStatus, String statusChangeReason,
@@ -284,7 +317,7 @@ public class ResourceManager {
 
         if (newStatus != currentStatus) {
             OperationalStateType newState = operationalStateManager.createAndLogOperationalState(
-                    currentStatus,newStatus, resourceDesc, statusChangeReason);
+                    currentStatus, newStatus, resourceDesc, statusChangeReason);
             resource.operationalState(newState);
         }
     }
@@ -299,9 +332,13 @@ public class ResourceManager {
         schemaHelper.applyDefinition(delta, resourceWhenNoOid, options, task, objectResult);
     }
 
-    public void applyDefinition(PrismObject<ResourceType> resource, Task task, OperationResult parentResult)
+    /**
+     * Applies a definition on a resource coming from the external client - i.e. it is a resource we know nothing about.
+     * It may be e.g. unexpanded (deriving from a super-resource and not yet expanded).
+     */
+    public void applyDefinition(ResourceType resource, OperationResult result)
             throws ObjectNotFoundException, SchemaException, ExpressionEvaluationException, ConfigurationException {
-        schemaHelper.applyConnectorSchemasToResource(resource.asObjectable(), task, parentResult);
+        schemaHelper.applyConnectorSchemasToResource(resource, result);
     }
 
     public void applyDefinition(ObjectQuery query, OperationResult result) {
@@ -313,8 +350,8 @@ public class ResourceManager {
             ExpressionEvaluationException {
         PrismObject<ResourceType> resource = getResource(resourceOid, null, task, result);
         ConnectorSpec connectorSpec = connectorSelector.selectConnectorRequired(resource, ScriptCapabilityType.class);
-        ConnectorInstance connectorInstance = connectorManager.getConfiguredConnectorInstance(connectorSpec, false, result);
-        ExecuteProvisioningScriptOperation scriptOperation = ProvisioningUtil.convertToScriptOperation(script, "script on "+resource, prismContext);
+        ConnectorInstance connectorInstance = connectorManager.getConfiguredAndInitializedConnectorInstance(connectorSpec, false, result);
+        ExecuteProvisioningScriptOperation scriptOperation = ProvisioningUtil.convertToScriptOperation(script, "script on " + resource, prismContext);
         try {
             UcfExecutionContext ucfCtx = new UcfExecutionContext(
                     lightweightIdentifierGenerator, resource.asObjectable(), task);
@@ -331,7 +368,7 @@ public class ResourceManager {
             throws ObjectNotFoundException, SchemaException, CommunicationException, ConfigurationException {
         List<ConnectorOperationalStatus> statuses = new ArrayList<>();
         for (ConnectorSpec connectorSpec : ConnectorSpec.all(resource.asObjectable())) {
-            ConnectorInstance connectorInstance = connectorManager.getConfiguredConnectorInstance(connectorSpec, false, result);
+            ConnectorInstance connectorInstance = connectorManager.getConfiguredAndInitializedConnectorInstance(connectorSpec, false, result);
             ConnectorOperationalStatus operationalStatus = connectorInstance.getOperationalStatus();
             if (operationalStatus != null) {
                 operationalStatus.setConnectorName(connectorSpec.getConnectorName());
@@ -348,7 +385,7 @@ public class ResourceManager {
             OperationResult parentResult)
             throws SchemaException, ObjectNotFoundException, CommunicationException, ConfigurationException {
         ConnectorSpec connectorSpec = connectorSelector.selectConnectorRequired(resource, capabilityClass);
-        return connectorManager.getConfiguredConnectorInstance(connectorSpec, forceFresh, parentResult);
+        return connectorManager.getConfiguredAndInitializedConnectorInstance(connectorSpec, forceFresh, parentResult);
     }
 
     // Used by the tests. Does not change anything.
