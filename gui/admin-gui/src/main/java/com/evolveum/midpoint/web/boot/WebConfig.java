@@ -8,6 +8,7 @@ package com.evolveum.midpoint.web.boot;
 
 import java.time.Duration;
 
+import org.apache.commons.lang.SystemUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.web.ResourceProperties;
@@ -64,7 +65,7 @@ public class WebConfig {
             if (!registry.hasMappingForPattern("/static-web/**")) {
                 registry
                         .addResourceHandler("/static-web/**")
-                        .addResourceLocations("file://" + midpointHome + "/static-web/")
+                        .addResourceLocations("file://" + (SystemUtils.IS_OS_WINDOWS?"/"+midpointHome:midpointHome) + "/static-web/")
                         .setCachePeriod(getSeconds(cachePeriod))
                         .setCacheControl(cacheControl);
             }
