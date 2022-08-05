@@ -12,6 +12,7 @@ import java.io.Serializable;
 import javax.annotation.PostConstruct;
 
 import org.apache.wicket.ajax.AjaxRequestTarget;
+import org.apache.wicket.markup.html.form.upload.FileUpload;
 import org.springframework.stereotype.Component;
 
 import com.evolveum.midpoint.gui.api.page.PageBase;
@@ -53,8 +54,8 @@ public class UploadDownloadPanelFactory<T> extends AbstractInputGuiComponentFact
             }
 
             @Override
-            public void updateValue(byte[] file) {
-                panelCtx.getRealValueModel().setObject((T) file);
+            public void updateValue(FileUpload file) {
+                panelCtx.getRealValueModel().setObject((T) file.getBytes());
             }
 
             @Override

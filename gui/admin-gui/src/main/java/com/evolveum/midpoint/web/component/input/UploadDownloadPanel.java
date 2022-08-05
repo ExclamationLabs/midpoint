@@ -170,7 +170,7 @@ public class UploadDownloadPanel extends InputPanel {
         Component input = get(ID_INPUT_FILE);
         try {
             FileUpload uploadedFile = getFileUpload();
-            updateValue(uploadedFile.getBytes());
+            updateValue(uploadedFile);
             LOGGER.trace("Upload file success.");
             input.success(getString("UploadPanel.message.uploadSuccess"));
         } catch (Exception e) {
@@ -195,7 +195,7 @@ public class UploadDownloadPanel extends InputPanel {
         LOGGER.trace("Upload file validation failed.");
     }
 
-    public void updateValue(byte[] file) {
+    public void updateValue(FileUpload file) {
     }
 
     public InputStream getStream() {

@@ -47,6 +47,7 @@ import org.apache.wicket.markup.html.WebMarkupContainer;
 import org.apache.wicket.markup.html.basic.Label;
 import org.apache.wicket.markup.html.form.Form;
 import org.apache.wicket.markup.html.form.TextArea;
+import org.apache.wicket.markup.html.form.upload.FileUpload;
 import org.apache.wicket.markup.repeater.RepeatingView;
 import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.Model;
@@ -250,9 +251,11 @@ public class WorkItemDetailsPanel extends BasePanel<CaseWorkItemType> {
             private static final long serialVersionUID = 1L;
 
             @Override
-            public void updateValue(byte[] file) {
+            public void updateValue(FileUpload file) {
                 if (file != null) {
-                    WorkItemTypeUtil.setEvidence(getModelObject(), file);
+                    WorkItemTypeUtil.setEvidence(getModelObject(), file.getBytes());
+                    WorkItemTypeUtil.setEvidenceContentType(getModelObject(), file.getContentType());
+                    WorkItemTypeUtil.setEvidenceFileName(getModelObject(), file.getClientFileName());
                 }
             }
 
@@ -264,9 +267,13 @@ public class WorkItemDetailsPanel extends BasePanel<CaseWorkItemType> {
 
             @Override
             public String getDownloadContentType() {
-                return "image/jpeg";
+                return WorkItemTypeUtil.getEvidenceContentType(getModelObject());
             }
 
+            @Override
+            public String getDownloadFileName() {
+                return WorkItemTypeUtil.getEvidenceFilename(getModelObject());
+            }
         };
         evidenceForm.add(evidencePanel);
         evidencePanel.getBaseFormComponent().add(new EmptyOnBlurAjaxFormUpdatingBehaviour());

@@ -40,6 +40,26 @@ public class WorkItemTypeUtil {
         workItem.getOutput().setEvidence(file);
     }
 
+    public static void setEvidenceFileName(AbstractWorkItemType workItem, String fileName) {
+        if (workItem == null) {
+            return;
+        }
+        if (workItem.getOutput() == null) {
+            workItem.setOutput(new AbstractWorkItemOutputType());
+        }
+        workItem.getOutput().setEvidenceFilename(fileName);
+    }
+
+    public static void setEvidenceContentType(AbstractWorkItemType workItem, String contentType) {
+        if (workItem == null) {
+            return;
+        }
+        if (workItem.getOutput() == null) {
+            workItem.setOutput(new AbstractWorkItemOutputType());
+        }
+        workItem.getOutput().setEvidenceContentType(contentType);
+    }
+
     public static byte[] getEvidence(AbstractWorkItemType workItem) {
         return getEvidence(getOutput(workItem));
     }
