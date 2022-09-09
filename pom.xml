@@ -196,7 +196,7 @@
         <prism.version>${project.version}</prism.version>
 
         <!-- Dependencies global versions -->
-        <commons.io.version>2.9.0</commons.io.version>
+        <commons.io.version>2.11.0</commons.io.version>
         <commons.cli>1.5.0</commons.cli>
         <cxf.version>3.4.4</cxf.version>
         <cxf-xjc.version>3.3.1</cxf-xjc.version>
@@ -1702,7 +1702,7 @@
                         <id>git-describe</id>
                         <phase>initialize</phase>
                         <configuration>
-                            <outputPrefix></outputPrefix>
+                            <outputPrefix/>
                         </configuration>
                     </execution>
                 </executions>
