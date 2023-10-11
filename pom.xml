@@ -243,7 +243,7 @@
         <artemis.version>2.24.0</artemis.version> <!-- name matches property from Boot parent -->
         <asm.version>9.3</asm.version>
         <geronimo-ws-metadata_2.0_spec.version>1.1.3</geronimo-ws-metadata_2.0_spec.version>
-        <jetty.version>11.0.11</jetty.version>
+        <jetty.version>11.0.16</jetty.version>
         <checkstyle.version>3.1.2</checkstyle.version>
         <xalan.version>2.7.2</xalan.version>
         <xerces.version>2.12.2</xerces.version>
@@ -1702,7 +1702,7 @@
                         <id>git-describe</id>
                         <phase>initialize</phase>
                         <configuration>
-                            <outputPrefix></outputPrefix>
+                            <outputPrefix/>
                         </configuration>
                     </execution>
                 </executions>
