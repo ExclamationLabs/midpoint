@@ -1687,7 +1687,7 @@
                         <id>git-describe</id>
                         <phase>initialize</phase>
                         <configuration>
-                            <outputPrefix></outputPrefix>
+                            <outputPrefix/>
                         </configuration>
                     </execution>
                 </executions>
